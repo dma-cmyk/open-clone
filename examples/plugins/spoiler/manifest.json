@@ -1,0 +1,24 @@
+{
+  "name": "spoiler",
+  "version": "1.0.0",
+  "summary": "レス内の [spoiler]〜[/spoiler] をクリックで開くネタバレ表示にする",
+  "description": "宣言的レンダー規則のみで動作するサンプル。JavaScript は実行しません。",
+  "scope": ["personal", "board", "site"],
+  "permissions": [],
+  "connectAllowlist": [],
+  "entry": "plugin.js",
+  "slots": [],
+  "hooks": [],
+  "render": {
+    "post": [
+      {
+        "pattern": "\\[spoiler\\]([\\s\\S]*?)\\[/spoiler\\]",
+        "flags": "g",
+        "template": "$1",
+        "kind": "spoiler"
+      }
+    ]
+  },
+  "author": "open-clone",
+  "license": "MIT"
+}

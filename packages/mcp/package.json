@@ -1,0 +1,34 @@
+{
+  "name": "mcp",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "openclone-mcp": "./src/cli.mjs",
+    "openclone-mcp-bridge": "./src/bridge.mjs"
+  },
+  "files": [
+    "src",
+    "prompts"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint src",
+    "cli": "node ./src/cli.mjs",
+    "bridge": "node ./src/bridge.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/server": "2.4.0",
+    "shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.0"
+  }
+}

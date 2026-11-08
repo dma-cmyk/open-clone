@@ -1,0 +1,27 @@
+{
+  "name": "open-clone",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@12.3.4",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "db:migrate:local": "pnpm --filter api db:migrate:local",
+    "ci:all": "pnpm -r lint && pnpm -r typecheck && pnpm -r test && pnpm --filter web build && pnpm --filter api exec wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "@next/eslint-plugin-next": "^16.4.5",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "turbo": "^2.11.10",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}

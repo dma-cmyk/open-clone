@@ -1,0 +1,18 @@
+packages:
+  - apps/*
+  - packages/*
+  - e2e
+
+# dev 依存の minimatch（GHSA-g3hv-75wg-m249）を修正版へ固定する（L-5）。
+overrides:
+  minimatch: ^11.0.1
+
+# workerd/esbuild 等のネイティブバイナリ取得に必要（pnpm 10+ の暗黙ビルド抑止対応）
+allowBuilds:
+  esbuild: true
+  workerd: true
+  sharp: true
+
+minimumReleaseAgeExclude:
+  - '@cloudflare/workers-types@5.20261108.1'
+  - hono@4.13.17

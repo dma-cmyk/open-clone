@@ -1,0 +1,14 @@
+{
+  "name": "gallery",
+  "version": "1.0.0",
+  "summary": "スレ内の画像 URL をサムネイル一覧で表示する",
+  "description": "data:read:thread でレスを取得し、画像 URL をギャラリー表示します。外部画像は net:fetch の allowlist で許可したホストのみ読み込みます。",
+  "scope": ["personal", "board", "site"],
+  "permissions": ["ui:slot", "data:read:thread", "net:fetch"],
+  "connectAllowlist": ["https://files.catbox.moe"],
+  "entry": "plugin.js",
+  "slots": ["thread-head"],
+  "hooks": [],
+  "author": "open-clone",
+  "license": "MIT"
+}

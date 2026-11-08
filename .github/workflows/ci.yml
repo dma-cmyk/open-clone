@@ -1,0 +1,157 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "12.3.4"
+  TURBO_TELEMETRY_DISABLED: "1"
+  NEXT_TELEMETRY_DISABLED: "1"
+  CI: "true"
+
+jobs:
+  quality:
+    name: lint / typecheck / unit / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Restore Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm -r lint
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      # e2e パッケージの test は `playwright test --list`（設定の静的検証）。
+      - name: Unit and integration tests
+        run: pnpm -r test
+
+      - name: Build web (static export)
+        run: pnpm --filter web build
+
+      - name: Bundle Worker (dry run)
+        run: pnpm --filter api exec wrangler deploy --dry-run --outdir dist
+
+  e2e:
+    name: e2e (shard ${{ matrix.shard }}/2)
+    # PR は unit/統合まで。main への push と手動実行で E2E 全体を回す（DESIGN §14）。
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm --filter e2e exec playwright install --with-deps chromium
+
+      # webServer が D1 migrations apply + seed を実行してから web/api/stub を起動する。
+      - name: Run Playwright
+        run: pnpm --filter e2e exec playwright test --shard=${{ matrix.shard }}/2
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.shard }}
+          path: e2e/playwright-report
+          retention-days: 7
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-${{ matrix.shard }}
+          path: e2e/test-results
+          retention-days: 7
+
+  secret-scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=8.28.0
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # 「検出できること」自体の回帰テスト（テスト用ダミー秘密を一時ファイルに書く）。
+      - name: Gitleaks self-test (dummy secret must be detected)
+        run: |
+          mkdir -p /tmp/gitleaks-selftest
+          # 実在しない高エントロピー文字列。GitHub PAT 風の形式で既定ルールに検出させる。
+          # ソース自体が検出されないよう接頭辞と本体を分けて実行時に連結する。
+          pat_prefix="ghp_"
+          pat_body="aB3dE5fG7hJ9kL2mN4pQ6rS8tU0vW1xY2zA4"
+          printf 'token = %s%s\n' "$pat_prefix" "$pat_body" > /tmp/gitleaks-selftest/leak.txt
+          if gitleaks dir /tmp/gitleaks-selftest --redact --exit-code 1; then
+            echo "::error::self-test failed: gitleaks did not detect the dummy secret"
+            exit 1
+          fi
+          echo "self-test passed: dummy secret detected"
+
+      - name: Scan repository
+        run: gitleaks dir . --redact --config .gitleaks.toml

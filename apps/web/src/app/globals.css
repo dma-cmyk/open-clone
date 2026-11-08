@@ -1,0 +1,2590 @@
+/* おーぷんクローン グローバルスタイル。
+   独自実装。既存サイトの CSS は参照・コピーしない（open2ch.md §5 回避リスト準拠）。
+   参考にしたのは情報設計と実測の配色傾向（緑系 #CCFFCC / #EFEFEF、名前 #228811、スレタイ赤）のみ。 */
+@import "tailwindcss";
+
+:root {
+  --oc-font: "Meiryo", "メイリオ", "ＭＳ ゴシック", "Hiragino Kaku Gothic ProN", "ヒラギノ角ゴ ProN W3", sans-serif;
+  --oc-mono: "MS Gothic", "Osaka-Mono", "IPAMonaGothic", monospace;
+
+  --oc-bg: #efefef;
+  --oc-panel: #ccffcc;
+  --oc-panel-soft: #e4f7e4;
+  --oc-surface: #efefef;
+  --oc-surface-alt: #ffffff;
+  --oc-border: #9fbf9f;
+  --oc-border-strong: #6a9a6a;
+  --oc-link: #0000ee;
+  --oc-link-visited: #660099;
+  --oc-name: #228811;
+  --oc-title: #ff0000;
+  --oc-text: #101010;
+  --oc-muted: #555555;
+  --oc-accent: #1f7a3a;
+  --oc-danger: #c62828;
+  --oc-warn-bg: #fff3cd;
+  --oc-radius: 3px;
+  --oc-header-h: 46px;
+  --oc-form-height: 240px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--oc-font);
+  background: var(--oc-bg);
+  color: var(--oc-text);
+  font-size: 15px;
+  line-height: 1.5;
+  min-height: 100vh;
+  overflow-wrap: anywhere;
+}
+
+a {
+  color: var(--oc-link);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+a:visited {
+  color: var(--oc-link-visited);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--oc-border);
+  margin: 8px 0;
+}
+
+/* ─── layout ─── */
+.oc-app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.oc-main {
+  flex: 1 0 auto;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 8px 10px 40px;
+}
+
+@media (max-width: 700px) {
+  .oc-main {
+    padding: 4px 5px 24px;
+  }
+}
+
+/* ─── header ─── */
+.oc-header {
+  background: linear-gradient(180deg, #d9ffd9 0%, #b8f0b8 100%);
+  border-bottom: 2px solid var(--oc-border-strong);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+.oc-header-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+  min-height: var(--oc-header-h);
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.oc-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: #1c4d2a;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.oc-logo:hover {
+  text-decoration: none;
+}
+.oc-logo-mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+.oc-logo-text {
+  font-size: 17px;
+  letter-spacing: 0.02em;
+}
+.oc-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+}
+.oc-header-nav a,
+.oc-header-nav button {
+  padding: 3px 7px;
+  border-radius: var(--oc-radius);
+  color: #174d22;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(30, 90, 40, 0.18);
+  white-space: nowrap;
+}
+.oc-header-nav a:hover,
+.oc-header-nav button:hover {
+  background: #fff;
+  text-decoration: none;
+}
+.oc-header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.oc-header-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.oc-header-search input {
+  width: 120px;
+  padding: 3px 6px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-radius);
+  background: #fff;
+  font-size: 12.5px;
+}
+@media (max-width: 820px) {
+  .oc-header-nav .oc-hide-sp {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .oc-header-inner {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .oc-header-search input {
+    width: 108px;
+  }
+  .oc-logo-text {
+    font-size: 15px;
+  }
+  .oc-header-nav {
+    font-size: 11.5px;
+  }
+}
+
+/* ─── footer ─── */
+.oc-footer {
+  border-top: 1px solid var(--oc-border);
+  background: #e3e3e3;
+  color: var(--oc-muted);
+  font-size: 11.5px;
+  padding: 12px 10px 20px;
+  text-align: center;
+}
+.oc-footer-links {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.oc-footer p {
+  margin: 6px 0 0;
+}
+
+/* ─── panels / tables ─── */
+.oc-panel {
+  border: 1px solid var(--oc-border);
+  background: var(--oc-panel);
+  padding: 5px;
+  margin-bottom: 10px;
+}
+.oc-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #15401f;
+  padding: 2px 4px 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.oc-panel-inner {
+  background: var(--oc-surface);
+  border: 1px solid #c7c7c7;
+  padding: 8px;
+}
+.oc-surface {
+  background: var(--oc-surface);
+  border: 1px solid #c7c7c7;
+  padding: 8px;
+}
+.oc-card {
+  background: #fff;
+  border: 1px solid #cfcfcf;
+  border-radius: var(--oc-radius);
+  padding: 10px;
+}
+.oc-muted {
+  color: var(--oc-muted);
+}
+.oc-small {
+  font-size: 11.5px;
+}
+.oc-tiny {
+  font-size: 10.5px;
+}
+.oc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.oc-row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.oc-spacer {
+  flex: 1 1 auto;
+}
+.oc-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.oc-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 700px) {
+  .oc-grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── buttons / inputs ─── */
+.oc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid #9a9a9a;
+  border-radius: 2px;
+  background: linear-gradient(#fdfbfb, #ebedee);
+  color: #222;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.oc-btn:hover {
+  background: linear-gradient(#ffffff, #f2f4f5);
+}
+.oc-btn:active {
+  background: #e6e8e9;
+}
+.oc-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.oc-btn-primary {
+  background: linear-gradient(#3f9b57, #2c7d42);
+  border-color: #246b37;
+  color: #fff;
+  font-weight: 700;
+}
+.oc-btn-primary:hover {
+  background: linear-gradient(#4aa862, #318a49);
+}
+.oc-btn-danger {
+  color: var(--oc-danger);
+  border-color: #c99;
+}
+.oc-btn-sm {
+  padding: 2px 7px;
+  font-size: 11.5px;
+}
+.oc-btn-block {
+  width: 100%;
+}
+.oc-input,
+.oc-select,
+.oc-textarea {
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid #9a9a9a;
+  border-radius: 2px;
+  background: #fff;
+  font-size: 14px;
+}
+.oc-textarea {
+  resize: vertical;
+  min-height: 78px;
+  line-height: 1.5;
+}
+.oc-input-sm {
+  padding: 2px 6px;
+  font-size: 12.5px;
+}
+.oc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+.oc-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #333;
+}
+.oc-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.oc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+.oc-check input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+.oc-note {
+  font-size: 11.5px;
+  color: var(--oc-muted);
+}
+.oc-error {
+  background: #ffebee;
+  border: 1px solid #e0a0a0;
+  color: #8b1a1a;
+  padding: 6px 8px;
+  font-size: 12.5px;
+}
+.oc-ok {
+  background: #e8f5e9;
+  border: 1px solid #a5d6a7;
+  color: #1b5e20;
+  padding: 6px 8px;
+  font-size: 12.5px;
+}
+.oc-badge {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  line-height: 16px;
+  border: 1px solid transparent;
+}
+.oc-badge-red {
+  background: #d32f2f;
+  color: #fff;
+  border-color: #b71c1c;
+  font-weight: 700;
+}
+.oc-badge-green {
+  background: #2e7d32;
+  color: #fff;
+}
+.oc-badge-gray {
+  background: #e0e0e0;
+  color: #333;
+  border-color: #bbb;
+}
+.oc-badge-yellow {
+  background: #fff59d;
+  color: #5d4037;
+  border-color: #d4c44a;
+}
+.oc-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  margin: 1px 2px;
+  border-radius: 3px;
+  background: #ddd;
+  border: 1px solid #ddd;
+  font-size: 11.5px;
+  color: #173d1f;
+  cursor: pointer;
+}
+.oc-chip-active {
+  background: #2e7d32;
+  border-color: #1b5e20;
+  color: #fff;
+}
+
+/* ─── home ─── */
+.oc-hero {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  background: linear-gradient(135deg, #e7ffe7, #cff5cf 60%, #eaf7ea);
+  border: 1px solid var(--oc-border);
+  padding: 16px;
+  margin-bottom: 10px;
+}
+.oc-hero h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  color: #164a22;
+}
+.oc-hero p {
+  margin: 0;
+  font-size: 13px;
+  color: #2d4a32;
+}
+.oc-hero-mark {
+  width: 72px;
+  height: 72px;
+  flex: none;
+}
+@media (max-width: 640px) {
+  .oc-hero {
+    gap: 10px;
+    padding: 10px;
+  }
+  .oc-hero h1 {
+    font-size: 18px;
+  }
+  .oc-hero-mark {
+    width: 52px;
+    height: 52px;
+  }
+}
+
+.oc-board-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 6px;
+}
+.oc-board-item {
+  background: #fff;
+  border: 1px solid #cfcfcf;
+  border-radius: var(--oc-radius);
+  padding: 7px 9px;
+  display: block;
+  color: inherit;
+}
+.oc-board-item:hover {
+  background: #f4fff4;
+  text-decoration: none;
+  border-color: #8fbf8f;
+}
+.oc-board-item-name {
+  color: #1450b4;
+  font-weight: 700;
+  font-size: 14px;
+}
+.oc-board-item-desc {
+  font-size: 11.5px;
+  color: var(--oc-muted);
+  margin-top: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.oc-cat-bar {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+/* ─── board page ─── */
+.oc-board-header {
+  border: 1px solid var(--oc-border);
+  background: var(--oc-panel);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+.oc-board-title {
+  margin: 0;
+  font-size: 19px;
+  color: #123f1c;
+  text-shadow: 0 0 0.2em rgba(255, 255, 255, 1);
+  line-height: 1.3;
+}
+.oc-board-title small {
+  font-size: 11px;
+  color: #2f6a3c;
+  font-weight: 400;
+  margin-left: 6px;
+}
+.oc-board-desc {
+  font-size: 12.5px;
+  color: #254a2c;
+  margin: 4px 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.oc-linkbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  background: rgba(100, 100, 100, 0.1);
+  padding: 3px 6px;
+  margin-top: 5px;
+}
+.oc-thread-sort {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  background: #aaddaa;
+  padding: 2px 6px;
+  font-size: 12px;
+  border: 1px solid #8fc98f;
+  border-bottom: 0;
+  flex-wrap: wrap;
+}
+.oc-thread-sort button {
+  border: 0;
+  background: transparent;
+  padding: 1px 6px;
+  cursor: pointer;
+  color: #123f1c;
+  border-radius: 2px;
+}
+.oc-thread-sort button.active {
+  background: #2e7d32;
+  color: #fff;
+  font-weight: 700;
+}
+.oc-thread-list {
+  border: 1px solid #8fc98f;
+  background: var(--oc-surface);
+}
+.oc-thread-row {
+  padding: 8px 9px;
+  border-bottom: 1px solid #d8d8d8;
+}
+.oc-thread-row:last-child {
+  border-bottom: 0;
+}
+.oc-thread-row:hover {
+  background: #f6fff6;
+}
+.oc-thread-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--oc-title);
+  line-height: 1.35;
+}
+.oc-thread-title a {
+  color: var(--oc-title);
+}
+.oc-thread-title .oc-thread-count {
+  color: #333;
+  font-size: 12px;
+  font-weight: 400;
+  margin-left: 4px;
+}
+.oc-thread-excerpt {
+  font-size: 12.5px;
+  color: #333;
+  margin-top: 3px;
+  white-space: pre-wrap;
+  max-height: 4.6em;
+  overflow: hidden;
+}
+.oc-thread-meta {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--oc-muted);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.oc-thread-links {
+  display: flex;
+  gap: 7px;
+  font-size: 11.5px;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+
+/* ─── thread page ─── */
+.oc-thread-toolbar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+  background: #e3f3e3;
+  border: 1px solid var(--oc-border);
+  padding: 4px 6px;
+  margin-bottom: 6px;
+}
+.oc-thread-toolbar .oc-tool-group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.oc-thread-toolbar input[type="text"] {
+  width: 130px;
+}
+.oc-thread-head {
+  background: var(--oc-surface-alt);
+  border: 1px solid #c7c7c7;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+.oc-thread-head h1 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--oc-title);
+  line-height: 1.4;
+}
+.oc-thread-head h1 .oc-thread-count {
+  font-size: 13px;
+  color: #333;
+  font-weight: 400;
+}
+.oc-thread-sub {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--oc-muted);
+  margin-top: 3px;
+}
+.oc-range-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  padding: 4px 0;
+}
+.oc-range-nav a {
+  padding: 1px 5px;
+  border: 1px solid #bbb;
+  background: #f7f7f7;
+  border-radius: 2px;
+}
+.oc-range-nav a.active {
+  background: #2e7d32;
+  border-color: #1b5e20;
+  color: #fff;
+}
+
+.oc-posts {
+  margin: 0;
+  padding: 0;
+}
+.oc-post {
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid #d5d5d5;
+  background: var(--oc-surface);
+}
+.oc-post:last-child {
+  border-bottom: 0;
+}
+.oc-post-op {
+  background: #f3fff3;
+}
+.oc-post-target {
+  animation: oc-flash 1.6s ease;
+}
+@keyframes oc-flash {
+  0% {
+    background: #fff3b0;
+  }
+  100% {
+    background: var(--oc-surface);
+  }
+}
+.oc-post-header {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.oc-post-num {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #000;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-family: inherit;
+}
+.oc-post-num:hover {
+  text-decoration: underline;
+  color: var(--oc-link);
+}
+.oc-post-name {
+  color: var(--oc-name);
+  font-weight: 700;
+}
+.oc-post-name a {
+  color: var(--oc-name);
+}
+.oc-post-trip {
+  color: var(--oc-name);
+  font-weight: 400;
+}
+.oc-post-cap {
+  color: #b26a00;
+  font-size: 11.5px;
+}
+.oc-post-date {
+  color: #333;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.oc-post-id {
+  color: #000;
+  font-size: 12px;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+}
+.oc-post-id:hover {
+  text-decoration: underline;
+  color: var(--oc-link);
+}
+.oc-post-main {
+  white-space: pre-wrap;
+  line-height: 1.65;
+  font-size: var(--oc-post-font-size, 15px);
+  margin: 3px 0 0 0;
+}
+.oc-post-main.oc-aa {
+  font-family: var(--oc-mono);
+  line-height: 1.15;
+  white-space: pre;
+  overflow-x: auto;
+  font-size: 14px;
+}
+.oc-post-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--oc-muted);
+}
+.oc-post-actions button,
+.oc-post-actions a {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: #444;
+  font-size: 11px;
+  font-family: inherit;
+}
+.oc-post-actions button:hover,
+.oc-post-actions a:hover {
+  color: var(--oc-link);
+  text-decoration: underline;
+}
+.oc-like-on {
+  color: #c2185b !important;
+  font-weight: 700;
+}
+.oc-anchor {
+  color: #1450b4;
+  cursor: pointer;
+  background: #eef3ff;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.oc-anchor:hover {
+  background: #dbe6ff;
+  text-decoration: underline;
+}
+.oc-backlinks {
+  font-size: 10.5px;
+  color: #666;
+  border: 1px solid #ccc;
+  border-radius: 2px;
+  padding: 0 4px;
+  background: #fafafa;
+  cursor: pointer;
+}
+.oc-spoiler {
+  background: #222;
+  color: #222;
+  border-radius: 2px;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.oc-spoiler.open {
+  background: #eee;
+  color: #111;
+}
+.oc-attachments {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+}
+.oc-attachment {
+  border: 1px solid #bbb;
+  background: #fff;
+  padding: 3px;
+  max-width: 240px;
+}
+.oc-attachment img {
+  display: block;
+  max-width: 232px;
+  max-height: 232px;
+  height: auto;
+  cursor: zoom-in;
+}
+.oc-attachment video {
+  display: block;
+  max-width: 300px;
+  max-height: 260px;
+}
+.oc-attachment-file {
+  font-size: 11.5px;
+  padding: 2px 4px;
+}
+.oc-ng-block {
+  background: repeating-linear-gradient(45deg, #e8e8e8, #e8e8e8 6px, #dedede 6px, #dedede 12px);
+  color: #666;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-bottom: 1px solid #ccc;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.oc-ng-confirm {
+  border-left: 3px solid #c62828;
+}
+.oc-ng-badge {
+  background: #c62828;
+  color: #fff;
+  border-radius: 2px;
+  padding: 0 4px;
+  font-size: 10px;
+}
+
+/* anchor popup */
+.oc-anchor-pop {
+  position: fixed;
+  z-index: 120;
+  max-width: min(460px, 92vw);
+  background: #fffef2;
+  border: 1px solid #b0a060;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  padding: 7px 9px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  max-height: 45vh;
+  overflow: auto;
+}
+.oc-anchor-pop-head {
+  font-weight: 700;
+  color: var(--oc-name);
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+.oc-anchor-pop-name {
+  color: var(--oc-name);
+  font-weight: 700;
+}
+.oc-anchor-pop-date {
+  color: #555;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+/* post form */
+.oc-form {
+  background: var(--oc-panel);
+  border: 1px solid var(--oc-border);
+  padding: 6px;
+  margin-top: 8px;
+}
+.oc-form-inner {
+  background: var(--oc-surface);
+  border: 1px solid #c7c7c7;
+  padding: 7px;
+}
+.oc-form-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 5px;
+  font-size: 12.5px;
+}
+.oc-form-name {
+  width: 140px;
+  flex: none;
+}
+.oc-form-mail {
+  width: 140px;
+  flex: none;
+}
+.oc-form textarea {
+  width: 100%;
+}
+.oc-form-sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  box-shadow: 0 -3px 10px rgba(0, 0, 0, 0.12);
+}
+.oc-form-floating {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  width: min(560px, 94vw);
+  z-index: 80;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
+}
+@media (max-width: 640px) {
+  .oc-form-name,
+  .oc-form-mail {
+    width: calc(50% - 24px);
+  }
+  .oc-form-sticky {
+    position: sticky;
+    bottom: 0;
+  }
+  .oc-form textarea {
+    min-height: 64px;
+  }
+}
+.oc-form-tools {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+}
+.oc-icon-btn {
+  border: 1px solid #999;
+  background: #fff;
+  border-radius: 2px;
+  padding: 1px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.oc-icon-btn.on {
+  background: #cce8cc;
+  border-color: #2e7d32;
+}
+.oc-draft-note {
+  font-size: 10.5px;
+  color: #666;
+}
+
+/* kome overlay */
+.oc-kome-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 70;
+  overflow: hidden;
+}
+.oc-kome-item {
+  position: absolute;
+  white-space: nowrap;
+  font-weight: 700;
+  text-shadow:
+    0 0 3px #fff,
+    0 0 3px #fff,
+    1px 1px 0 #fff,
+    -1px -1px 0 #fff;
+  animation-name: oc-kome-flow;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  will-change: transform;
+}
+@keyframes oc-kome-flow {
+  from {
+    transform: translateX(100vw);
+  }
+  to {
+    transform: translateX(-130%);
+  }
+}
+.oc-kome-panel {
+  position: fixed;
+  right: 10px;
+  bottom: 10px;
+  z-index: 90;
+  width: min(320px, 92vw);
+  background: rgba(20, 30, 20, 0.88);
+  color: #fff;
+  border-radius: 6px;
+  padding: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.oc-kome-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+.oc-kome-panel input {
+  flex: 1;
+  padding: 4px 6px;
+  border-radius: 3px;
+  border: 0;
+  font-size: 13px;
+  color: #111;
+  background: #fff;
+}
+.oc-kome-log {
+  max-height: 140px;
+  overflow: auto;
+  font-size: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  margin-top: 6px;
+  padding-top: 5px;
+}
+.oc-kome-log div {
+  opacity: 0.9;
+  white-space: pre-wrap;
+}
+
+/* live badge */
+.oc-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  border-radius: 9px;
+  padding: 0 7px;
+  border: 1px solid #bbb;
+  background: #f3f3f3;
+  color: #444;
+}
+.oc-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #9e9e9e;
+}
+.oc-live-on .oc-live-dot {
+  background: #2e7d32;
+  box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.2);
+  animation: oc-pulse 1.6s infinite;
+}
+.oc-live-polling .oc-live-dot {
+  background: #ef6c00;
+}
+@keyframes oc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.oc-new-marker {
+  background: #2e7d32;
+  color: #fff;
+  font-size: 10px;
+  border-radius: 2px;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+
+/* modal */
+.oc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+.oc-modal {
+  background: #f4f4f4;
+  border: 1px solid #777;
+  border-radius: 4px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  width: min(560px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+}
+.oc-modal-head {
+  background: linear-gradient(#e9f5e9, #d2ecd2);
+  border-bottom: 1px solid #9dbf9d;
+  padding: 6px 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.oc-modal-body {
+  padding: 10px;
+}
+.oc-modal-foot {
+  padding: 8px 10px;
+  border-top: 1px solid #ccc;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* oekaki */
+.oc-oekaki-wrap {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.oc-oekaki-canvas {
+  border: 1px solid #888;
+  background: #fff;
+  touch-action: none;
+  max-width: 100%;
+  cursor: crosshair;
+}
+.oc-oekaki-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 150px;
+}
+.oc-swatches {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.oc-swatch {
+  width: 20px;
+  height: 20px;
+  border: 1px solid #777;
+  border-radius: 2px;
+  cursor: pointer;
+  padding: 0;
+}
+.oc-swatch.active {
+  outline: 2px solid #1f7a3a;
+  outline-offset: 1px;
+}
+
+/* settings */
+.oc-settings-section {
+  margin-bottom: 12px;
+}
+.oc-settings-section h2 {
+  font-size: 15px;
+  margin: 0 0 6px;
+  padding: 3px 6px;
+  background: var(--oc-panel);
+  border: 1px solid var(--oc-border);
+}
+.oc-ng-list {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: 6px 0;
+}
+.oc-ng-item {
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 10px;
+  padding: 0 8px;
+  font-size: 12px;
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.oc-ng-item button {
+  border: 0;
+  background: transparent;
+  color: #b71c1c;
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+}
+.oc-empty {
+  padding: 18px;
+  text-align: center;
+  color: #777;
+  font-size: 13px;
+}
+.oc-loading {
+  padding: 18px;
+  text-align: center;
+  color: #666;
+  font-size: 13px;
+}
+.oc-tabs {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--oc-border-strong);
+  margin-bottom: 8px;
+}
+.oc-tabs a,
+.oc-tabs button {
+  padding: 4px 10px;
+  border: 1px solid var(--oc-border);
+  border-bottom: 0;
+  background: #dcefdc;
+  border-radius: 3px 3px 0 0;
+  font-size: 12.5px;
+  color: #174d22;
+  cursor: pointer;
+}
+.oc-tabs a.active,
+.oc-tabs button.active {
+  background: #fff;
+  font-weight: 700;
+  color: #111;
+}
+.oc-history-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 0;
+  border-bottom: 1px dotted #ccc;
+  font-size: 12.5px;
+}
+.oc-history-time {
+  color: #777;
+  font-size: 11px;
+  flex: none;
+}
+
+/* toast */
+.oc-toasts {
+  position: fixed;
+  top: 52px;
+  right: 10px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(360px, 92vw);
+}
+.oc-toast {
+  background: #263238;
+  color: #fff;
+  padding: 7px 10px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+/* utility */
+.oc-nowrap {
+  white-space: nowrap;
+}
+.oc-right {
+  text-align: right;
+}
+.oc-mt {
+  margin-top: 8px;
+}
+.oc-mb {
+  margin-bottom: 8px;
+}
+.oc-warn-box {
+  background: var(--oc-warn-bg);
+  border: 1px solid #e0c060;
+  padding: 6px 8px;
+  font-size: 12.5px;
+}
+
+/* reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .oc-kome-item {
+    animation-duration: 12s !important;
+  }
+  * {
+    scroll-behavior: auto !important;
+  }
+}
+/* =====================================================================
+   open2ch 寄せスキン（2026-11-08 再調整）
+   実測値ベース: #CCFFCC / #EFEFEF / #999 枠線 / 名前 #228811 / スレタイ赤
+   角丸・影を廃止し、表組み・罫線・ベタ塗りの古い掲示板らしさを優先する。
+   ===================================================================== */
+:root {
+  --oc-radius: 0px;
+  --oc-panel: #ccffcc;
+  --oc-panel-soft: #e8ffe8;
+  --oc-surface: #efefef;
+  --oc-surface-alt: #ffffff;
+  --oc-border: #999999;
+  --oc-border-strong: #666666;
+  --oc-accent: #228811;
+  --oc-name: #228811;
+  --oc-title: #ff0000;
+  --oc-text: #000000;
+  --oc-muted: #666666;
+  --oc-header-h: 40px;
+  --oc-sidebar-w: 103px;
+}
+
+body {
+  background-color: #c9b39c;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(120, 90, 60, 0.18) 0 1px, transparent 1px 22px),
+    repeating-linear-gradient(90deg, rgba(120, 90, 60, 0.18) 0 1px, transparent 1px 46px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.06) 0 2px, transparent 2px 22px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0 2px, transparent 2px 46px);
+  background-size: 46px 22px;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+/* レイアウト: PC は frameset 風の左 103px 板一覧 + 本文 */
+.oc-layout {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  background: #efefef;
+  border-left: 1px solid #8c8c8c;
+  border-right: 1px solid #8c8c8c;
+  min-height: calc(100vh - var(--oc-header-h));
+}
+.oc-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 6px 8px 48px;
+  background: transparent;
+}
+.oc-sidebar {
+  flex: none;
+  width: var(--oc-sidebar-w);
+  align-self: stretch;
+  background: #ffffff;
+  border-right: 1px solid #999;
+  padding: 4px 3px 12px;
+  font-size: 11px;
+  line-height: 1.35;
+  position: sticky;
+  top: var(--oc-header-h);
+  max-height: calc(100vh - var(--oc-header-h));
+  overflow-y: auto;
+}
+.oc-sidebar a {
+  display: block;
+  color: #0000ee;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oc-sidebar-title {
+  color: #b35b00;
+  font-weight: 700;
+  margin: 7px 0 1px;
+  font-size: 11px;
+  border-bottom: 1px dotted #bbb;
+}
+.oc-sidebar-top {
+  color: #b35b00;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+@media (max-width: 900px) {
+  .oc-layout {
+    border-left: 0;
+    border-right: 0;
+    display: block;
+  }
+  .oc-sidebar {
+    display: none;
+  }
+  .oc-main {
+    padding: 4px 3px 90px;
+  }
+}
+
+/* ヘッダ: 緑の帯 + 素のテキストリンク（ピル/影なし） */
+.oc-header {
+  background: #ccffcc;
+  border-bottom: 1px solid #666;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+.oc-header-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  min-height: var(--oc-header-h);
+  padding: 2px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.oc-logo-mark {
+  width: 22px;
+  height: 22px;
+}
+.oc-logo-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: #14500f;
+}
+.oc-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.oc-header-nav a,
+.oc-header-nav button {
+  padding: 0 5px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #0000ee;
+  font-size: 12px;
+}
+.oc-header-nav a + a::before,
+.oc-header-nav a + button::before {
+  content: "|";
+  color: #666;
+  margin-right: 5px;
+}
+.oc-header-nav a:hover,
+.oc-header-nav button:hover {
+  background: none;
+  text-decoration: underline;
+}
+.oc-header-search input {
+  width: 110px;
+  padding: 1px 3px;
+  border: 1px solid #999;
+  border-radius: 0;
+  background: #fff;
+  font-size: 12px;
+}
+.oc-header-right .oc-btn {
+  border-radius: 0;
+  padding: 0 5px;
+  font-size: 12px;
+  min-height: 20px;
+}
+@media (max-width: 640px) {
+  .oc-header-inner {
+    flex-wrap: nowrap;
+    gap: 4px;
+    min-height: 36px;
+  }
+  .oc-logo-text {
+    font-size: 13px;
+  }
+  .oc-header-search {
+    display: none;
+  }
+  .oc-header-nav {
+    font-size: 11px;
+    gap: 0;
+  }
+  .oc-header-nav a,
+  .oc-header-nav button {
+    padding: 0 3px;
+    font-size: 11px;
+  }
+  .oc-header-nav a + a::before,
+  .oc-header-nav a + button::before {
+    margin-right: 3px;
+  }
+}
+
+/* パネル/表: 1px 罫線・角丸なし・緑の見出し帯 */
+.oc-panel,
+.oc-card,
+.oc-surface {
+  border: 1px solid #999;
+  background: #ffffff;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+.oc-panel {
+  background: var(--oc-panel);
+  padding: 4px;
+  margin-bottom: 8px;
+}
+.oc-panel-title {
+  background: var(--oc-panel);
+  border-bottom: 1px solid #999;
+  padding: 2px 5px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 0;
+}
+.oc-panel-inner {
+  background: #ffffff;
+  padding: 6px;
+  border-top: 1px solid #fff;
+}
+.oc-panel > .oc-panel-inner {
+  border: 1px solid #999;
+}
+.oc-card,
+.oc-surface {
+  padding: 6px;
+  margin-bottom: 6px;
+  background: #efefef;
+}
+.oc-surface.oc-panel-soft {
+  background: #e8ffe8;
+}
+
+/* ボタン/入力: 四角・細罫線 */
+.oc-btn {
+  border: 1px solid #999;
+  border-radius: 0;
+  background: linear-gradient(#fdfbfb, #ebedee);
+  color: #000;
+  padding: 2px 10px;
+  min-height: 24px;
+  font-size: 13px;
+}
+.oc-btn:hover {
+  background: linear-gradient(#ffffff, #f2f4f5);
+  border-color: #666;
+}
+.oc-btn-primary {
+  border-color: #333;
+  background: linear-gradient(#fdfbfb, #e3e7e3);
+  color: #000;
+  font-weight: 700;
+}
+.oc-btn-danger {
+  border-color: #a00;
+  color: #a00;
+  background: linear-gradient(#fff, #f5e8e8);
+}
+.oc-btn-sm {
+  min-height: 20px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+.oc-input,
+.oc-select,
+.oc-textarea {
+  border: 1px solid #999;
+  border-radius: 0;
+  background: #fff;
+  padding: 2px 4px;
+  font-size: 13px;
+}
+.oc-textarea {
+  line-height: 1.5;
+}
+.oc-label {
+  font-size: 12px;
+  color: #333;
+}
+.oc-chip {
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  background: #ddd;
+  padding: 1px 6px;
+  font-size: 12px;
+}
+.oc-chip-active {
+  background: #ccffcc;
+  border-color: #666;
+  font-weight: 700;
+}
+.oc-badge {
+  border-radius: 0;
+  border: 1px solid #999;
+  background: #fff;
+  font-size: 11px;
+  padding: 0 3px;
+}
+.oc-badge-red {
+  background: #ffdddd;
+  border-color: #c00;
+  color: #a00;
+}
+.oc-badge-green {
+  background: #ddffdd;
+  border-color: #228811;
+  color: #14500f;
+}
+.oc-badge-yellow {
+  background: #ffffcc;
+  border-color: #b58900;
+  color: #6b4e00;
+}
+
+/* 板ページ: 緑のヘッダ表とスレ表 */
+.oc-board-header {
+  background: var(--oc-panel);
+  border: 1px solid #999;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+}
+.oc-board-title {
+  font-size: 19px;
+  color: #000;
+  margin: 0 0 2px;
+  font-weight: 700;
+  text-shadow: 0 0 0.2em #fff;
+}
+.oc-board-title small {
+  font-size: 13px;
+  font-weight: 400;
+}
+.oc-board-desc {
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 2px 0;
+}
+.oc-linkbar {
+  background: rgba(100, 100, 100, 0.1);
+  border-top: 1px solid #b9d9b9;
+  border-bottom: 1px solid #b9d9b9;
+  padding: 2px 4px;
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0;
+}
+.oc-thread-sort {
+  background: #aaddaa;
+  border: 1px solid #999;
+  padding: 2px 5px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.oc-thread-sort button {
+  border: 1px solid transparent;
+  background: none;
+  color: #0000ee;
+  padding: 0 3px;
+  font-size: 12px;
+}
+.oc-thread-sort button.active {
+  background: #ffffff;
+  border-color: #999;
+  color: #000;
+  font-weight: 700;
+}
+.oc-thread-list {
+  border: 1px solid #999;
+  background: var(--oc-panel);
+  padding: 5px;
+}
+.oc-thread-row {
+  background: #efefef;
+  border: 1px solid #999;
+  padding: 5px 7px;
+  margin-bottom: 6px;
+}
+.oc-thread-row:hover {
+  background: #f7f7f7;
+}
+.oc-thread-title {
+  font-size: 15px;
+}
+.oc-thread-title a {
+  color: #ff0000;
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.3;
+}
+.oc-thread-count {
+  font-size: 13px;
+  color: #8b0000;
+  font-weight: 400;
+}
+.oc-board-item {
+  border: 1px solid #999;
+  background: #efefef;
+  border-radius: 0;
+  padding: 5px 7px;
+}
+.oc-board-item:hover {
+  background: #f7f7f7;
+}
+.oc-board-item-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+.oc-cat-bar {
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+}
+
+/* スレページ: ベタ背景 + 罫線のみのレス */
+.oc-thread-toolbar {
+  background: #efefef;
+  border: 1px solid #999;
+  border-bottom: 0;
+  padding: 3px 5px;
+  font-size: 12px;
+}
+.oc-thread-head {
+  background: #efefef;
+  border: 1px solid #999;
+  padding: 6px 8px;
+}
+.oc-thread-head h1 {
+  color: #ff0000;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0 0 3px;
+  font-family: inherit;
+}
+.oc-thread-head h1 .oc-thread-count {
+  font-size: 14px;
+  color: #8b0000;
+}
+.oc-thread-sub {
+  font-size: 12px;
+  color: #333;
+  gap: 8px;
+}
+.oc-posts {
+  border: 1px solid #999;
+  border-top: 0;
+  background: #efefef;
+  padding: 0;
+}
+.oc-post {
+  border: 0;
+  border-bottom: 1px dotted #c0c0c0;
+  background: transparent;
+  border-radius: 0;
+  padding: 6px 8px 6px 6px;
+  margin: 0;
+  box-shadow: none;
+}
+.oc-post:last-child {
+  border-bottom: 0;
+}
+.oc-post:hover {
+  background: #e7e7e7;
+}
+.oc-post-op {
+  background: #e4f4e4;
+}
+.oc-post-target {
+  background: #ffffcc;
+}
+.oc-post-header {
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0;
+}
+.oc-post-num {
+  color: #000;
+  font-weight: 700;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 14px;
+  min-width: 0;
+}
+.oc-post-name {
+  color: #228811;
+  font-weight: 700;
+  margin-left: 0;
+  font-size: 14px;
+}
+.oc-post-date {
+  color: #000;
+  font-size: 14px;
+  margin-left: 0;
+}
+.oc-post-id {
+  color: #0000ee;
+  font-size: 14px;
+  cursor: pointer;
+}
+.oc-post-main {
+  margin-left: 20pt;
+  font-size: var(--oc-post-font-size, 16px);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.oc-post-actions {
+  margin-left: 20pt;
+  font-size: 11px;
+  color: #666;
+  opacity: 0.85;
+}
+.oc-post-actions button {
+  font-size: 11px;
+  border: 0;
+  background: none;
+  color: #666;
+  padding: 0 3px;
+}
+.oc-post-actions button:hover {
+  color: #0000ee;
+  text-decoration: underline;
+}
+.oc-anchor {
+  color: #0000ee;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* 投稿フォーム: 素の表組み */
+.oc-form {
+  border: 1px solid #999;
+  background: #efefef;
+  padding: 4px;
+  border-radius: 0;
+}
+.oc-form-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.oc-form-name {
+  width: 120px;
+}
+.oc-form-mail {
+  width: 120px;
+}
+.oc-form textarea.oc-textarea {
+  width: 100%;
+  min-height: 78px;
+  font-size: 14px;
+}
+.oc-form-tools {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.oc-icon-btn {
+  border: 1px solid #999;
+  background: linear-gradient(#fdfbfb, #ebedee);
+  border-radius: 0;
+  padding: 1px 6px;
+  font-size: 12px;
+  color: #000;
+}
+.oc-icon-btn:hover {
+  background: #fff;
+}
+.oc-icon-btn.on {
+  background: #ccffcc;
+  border-color: #228811;
+  font-weight: 700;
+}
+
+/* モバイル: 黒帯ナビ + 下部固定フォーム */
+@media (max-width: 640px) {
+  body {
+    font-size: 15px;
+    background-image: none;
+    background-color: #efefef;
+  }
+  .oc-header {
+    background: #222;
+    border-bottom: 1px solid #000;
+  }
+  .oc-logo-text {
+    color: #fff;
+  }
+  .oc-header-nav a,
+  .oc-header-nav button {
+    color: #ddd;
+  }
+  .oc-header-nav a + a::before,
+  .oc-header-nav a + button::before {
+    color: #777;
+  }
+  .oc-header-right .oc-btn {
+    background: #444;
+    border-color: #666;
+    color: #fff;
+  }
+  .oc-panel {
+    padding: 3px;
+    margin-bottom: 6px;
+  }
+  .oc-thread-title a {
+    font-size: 17px;
+  }
+  .oc-thread-head h1 {
+    font-size: 18px;
+  }
+  .oc-post {
+    padding: 5px 4px;
+  }
+  .oc-post-main {
+    margin-left: 12px;
+    font-size: var(--oc-post-font-size, 15px);
+  }
+  .oc-post-actions {
+    margin-left: 12px;
+  }
+  .oc-post-header {
+    font-size: 13px;
+  }
+  .oc-form {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    border-top: 1px solid #666;
+    background: #f7f7f7;
+    padding: 3px;
+    margin: 0 -3px;
+  }
+  .oc-form textarea.oc-textarea {
+    min-height: 62px;
+  }
+}
+
+/* スレ行の詳細（open2ch の板ページ風） */
+.oc-thread-excerpt {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  margin: 2px 0 2px 10px;
+}
+.oc-thread-meta {
+  font-size: 12px;
+  color: #333;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.oc-thread-links {
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.oc-thread-rank {
+  color: #8b0000;
+  font-weight: 700;
+  margin-right: 2px;
+}
+.oc-sidebar a.oc-sidebar-active {
+  background: #ccffcc;
+  font-weight: 700;
+}
+
+/* トップ: open2ch ロビー風の緑パネル */
+.oc-hero {
+  background: #ccffcc;
+  border: 1px solid #999;
+  border-radius: 0;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.oc-hero h1 {
+  font-size: 20px;
+  color: #000;
+  margin: 4px 0;
+  text-shadow: 0 0 0.2em #fff;
+}
+.oc-hero p {
+  font-size: 13px;
+  color: #000;
+  margin: 2px 0;
+  line-height: 1.6;
+}
+.oc-hero-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.oc-board-list {
+  display: block;
+  border: 1px solid #999;
+  background: #efefef;
+  padding: 4px;
+}
+.oc-board-list .oc-board-item {
+  display: block;
+  border: 0;
+  border-bottom: 1px dotted #bbb;
+  background: transparent;
+  padding: 3px 2px;
+}
+.oc-board-list .oc-board-item:last-child {
+  border-bottom: 0;
+}
+.oc-board-item-name {
+  color: #0000ee;
+  font-weight: 400;
+  font-size: 14px;
+}
+.oc-board-item-desc {
+  font-size: 12px;
+  color: #333;
+}
+.oc-panel-title .oc-icon-btn,
+.oc-panel-title .oc-btn {
+  margin-left: 3px;
+}
+
+/* レス一覧は表のベタ面に載せる */
+.oc-panel:has(> .oc-posts) {
+  background: #efefef;
+  border: 1px solid #999;
+  padding: 0;
+}
+.oc-panel-inner.oc-posts {
+  padding: 0;
+  background: #efefef;
+  border: 0;
+}
+.oc-form-inner {
+  padding: 3px;
+  background: #efefef;
+}
+.oc-form .oc-form-row + .oc-form-row {
+  margin-top: 3px;
+}
+.oc-empty,
+.oc-loading {
+  padding: 10px;
+  font-size: 13px;
+  color: #555;
+  background: #fff;
+  border: 1px solid #ccc;
+}
+
+/* モーダル/ポップアップも角丸なし */
+.oc-modal,
+.oc-anchor-pop,
+.oc-kome-panel {
+  border-radius: 0;
+}
+.oc-modal {
+  border: 1px solid #666;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.25);
+}
+.oc-modal-head {
+  background: #ccffcc;
+  border-bottom: 1px solid #999;
+}
+.oc-toast {
+  border-radius: 0;
+}
+
+.oc-post-op-mark {
+  color: #ff0000;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 2px;
+}
+.oc-post-ng {
+  border: 0;
+  background: none;
+  color: #999;
+  font-size: 13px;
+  padding: 0 2px;
+  margin-left: 2px;
+  cursor: pointer;
+}
+.oc-post-ng:hover {
+  color: #c00;
+}
+.oc-post-trip,
+.oc-post-cap {
+  color: #000;
+  font-size: 13px;
+  margin-left: 2px;
+}
+
+.oc-post-id {
+  margin-left: 0;
+}
+.oc-turnstile {
+  margin-top: 3px;
+  transform-origin: top left;
+}
+@media (max-width: 640px) {
+  .oc-turnstile {
+    transform: scale(0.72);
+    height: 48px;
+    overflow: hidden;
+  }
+  .oc-form .oc-form-row {
+    gap: 3px;
+  }
+  .oc-form .oc-input,
+  .oc-form .oc-select {
+    font-size: 13px;
+  }
+}
+
+/* 板ページのスレ内最新レス（open2ch 風） */
+.oc-thread-preview {
+  margin: 3px 0 2px 10px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.oc-preview-post {
+  display: block;
+}
+.oc-preview-num {
+  color: #000;
+  font-weight: 700;
+}
+.oc-preview-name {
+  color: #228811;
+  font-weight: 700;
+}
+.oc-preview-body {
+  white-space: pre-wrap;
+}
+@media (max-width: 640px) {
+  .oc-thread-preview {
+    margin-left: 4px;
+  }
+}
+
+/* スマホ: 投稿欄は初期状態で1行バー。タップで展開。 */
+.oc-form-openbar {
+  display: none;
+}
+.oc-form-collapse {
+  display: none;
+}
+@media (max-width: 640px) {
+  .oc-form-openbar {
+    display: block;
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid #666;
+    background: linear-gradient(#fdfbfb, #e3e7e3);
+    font-size: 14px;
+    font-weight: 700;
+    text-align: left;
+    color: #222;
+  }
+  .oc-form-openbar::after {
+    content: "▲";
+    float: right;
+    color: #666;
+    font-size: 11px;
+  }
+  .oc-form-collapse {
+    display: block;
+    flex: 1 0 100%;
+    width: 100%;
+    min-height: 38px;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+  }
+  .oc-form:not(.oc-form-collapsed) {
+    max-height: 62vh;
+    overflow-y: auto;
+  }
+}
+
+/* =====================================================================
+   仕様12 反映（open2ch 寄せ直しチェックリスト 高→低）
+   ===================================================================== */
+
+/* SP 専用要素は PC では出さない */
+.oc-sp-threadnav,
+.oc-sp-maintitle,
+.oc-sp-totop {
+  display: none;
+}
+
+/* PC: 閲覧人数ボックス（実況中のみ） */
+.oc-viewers {
+  position: fixed;
+  top: 44px;
+  left: 110px;
+  z-index: 45;
+  background: #fff;
+  border: 1px solid #999;
+  font-size: 9pt;
+  padding: 1px 5px;
+  color: #000;
+}
+
+/* PC: 投稿ボタン全幅 */
+.oc-form-submit {
+  width: 100%;
+  margin-top: 4px;
+  height: 30px;
+  font-size: 13pt;
+  border-radius: 2px;
+}
+
+/* PC: レス区切りは罫なし + dl 風余白 */
+.oc-post {
+  border-bottom: 0;
+  margin-bottom: 10px;
+  padding-bottom: 2px;
+}
+.oc-panel-inner.oc-posts .oc-post:last-of-type {
+  margin-bottom: 0;
+}
+
+/* 低: 板ヘッダ h1 を 14pt 相当 + 白グロー */
+.oc-board-title {
+  font-size: 18.7px;
+  text-shadow: 0 0 0.2em #fff;
+}
+
+/* 低: 板バナーは 490x120 枠 */
+.oc-board-header > img {
+  width: 490px;
+  max-width: 100%;
+  height: 120px;
+  object-fit: cover;
+  display: block;
+  margin: 0 auto 6px;
+}
+
+/* 低: SP トップの検索帯（PC はヘッダ検索があるため非表示） */
+.oc-home-search {
+  display: none;
+}
+
+/* 低: タグチップは基本定義（#DDD・角丸 3px）を使用。選択中のみ緑。 */
+.oc-chip-active {
+  background: #ccffcc;
+  border-color: #228811;
+}
+
+/* 低: サイドバー見出しは黒太字・訪問済み紫 */
+.oc-sidebar-title {
+  color: #000;
+  font-weight: 700;
+}
+.oc-sidebar a:visited {
+  color: #660099;
+}
+
+/* 低: フッタ文字色（#828282 は背景 #E3E3E3 で 2.99:1。AA を満たす #5f5f5f=約5.0:1 へ） */
+.oc-footer {
+  color: #5f5f5f;
+}
+
+/* ---- SP（max-width: 640px） ---- */
+@media (max-width: 640px) {
+  /* 高: mainTitle 暗色帯 */
+  .oc-sp-maintitle {
+    display: block;
+    background: linear-gradient(#3c3c3c, #222222);
+    color: #fff;
+    padding: 9px 10px;
+    font-size: 125%;
+    font-weight: 700;
+    text-shadow: -1px -1px 0 #1d1d1d;
+    border-bottom: 1px solid #444;
+  }
+  .oc-sp-maintitle a {
+    color: #fff;
+  }
+
+  /* 高: スレナビ暗色 4 分割 */
+  .oc-sp-threadnav {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 4px 0;
+    background: #222;
+    border-bottom: 1px solid #111;
+    padding: 10px;
+  }
+  .oc-sp-threadnav a {
+    display: table-cell;
+    width: 25%;
+    background: linear-gradient(#838383, #363636);
+    border: 1px solid #111;
+    border-radius: 4px;
+    color: #fff;
+    font-weight: 700;
+    line-height: 27px;
+    text-align: center;
+    text-shadow: 0 -1px 0 #000;
+    font-size: 13px;
+  }
+  .oc-sp-threadnav a:hover {
+    text-decoration: none;
+  }
+  /* PC 用リンク群は隠し、操作系だけ残す */
+  .oc-thread-toolbar .oc-tool-links {
+    display: none;
+  }
+  .oc-thread-toolbar {
+    background: #222;
+    border: 0;
+    border-bottom: 1px solid #111;
+    padding: 5px 6px;
+  }
+  .oc-thread-toolbar .oc-icon-btn {
+    background: linear-gradient(#838383, #363636);
+    border-color: #111;
+    color: #fff;
+  }
+  .oc-thread-toolbar .oc-icon-btn.on {
+    background: #2e7d32;
+    border-color: #14500f;
+  }
+  .oc-thread-toolbar .oc-live-badge {
+    color: #ddd;
+  }
+
+  /* 高: セクション見出し暗色グラデ帯 */
+  .oc-panel-title {
+    background: linear-gradient(#3c3c3c, #222222);
+    color: #fff;
+    border-bottom: 1px solid #444;
+    padding: 9px 10px;
+    font-size: 125%;
+    text-shadow: -1px -1px 0 #1d1d1d;
+  }
+  .oc-panel-title a,
+  .oc-panel-title .oc-muted {
+    color: #eee;
+  }
+  .oc-panel-title .oc-icon-btn {
+    background: #444;
+    border-color: #666;
+    color: #fff;
+    text-shadow: none;
+  }
+  .oc-panel-title .oc-icon-btn.on {
+    background: #2e7d32;
+  }
+  .oc-board-header .oc-board-title {
+    display: none;
+  }
+  .oc-board-title {
+    background: linear-gradient(#3c3c3c, #222222);
+    color: #fff;
+    display: block;
+    margin: -6px -8px 6px;
+    padding: 9px 10px;
+    font-size: 125%;
+    text-shadow: -1px -1px 0 #1d1d1d;
+    border-bottom: 1px solid #444;
+  }
+  .oc-board-title small {
+    color: #ddd;
+  }
+
+  /* 高: リスト行をグラデ + 右矢印に */
+  .oc-thread-list {
+    border: 0;
+    background: #fff;
+    padding: 0;
+  }
+  .oc-thread-row,
+  .oc-board-list .oc-board-item {
+    position: relative;
+    background: linear-gradient(#ffffff, #f0f0f0) !important;
+    border: 0;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 15px 30px 15px 10px !important;
+    min-height: 44px;
+    display: block;
+  }
+  .oc-thread-row::after,
+  .oc-board-list .oc-board-item::after {
+    content: "";
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    width: 9px;
+    height: 9px;
+    border-top: 2px solid #999;
+    border-right: 2px solid #999;
+    transform: translateY(-50%) rotate(45deg);
+  }
+  .oc-board-list {
+    border: 0;
+    background: #fff;
+    padding: 0;
+  }
+
+  /* 中: SP 検索帯（暗色 + ピンクボタン） */
+  .oc-sp-search {
+    background: #222;
+    border: 0;
+    padding: 10px;
+    margin: 0 0 8px;
+  }
+  .oc-sp-search input {
+    flex: 1;
+    background: #fff;
+    border: 1px solid #000;
+    border-radius: 3px;
+    padding: 4px 6px;
+    font-size: 14px;
+    max-width: none !important;
+  }
+  .oc-sp-search .oc-btn {
+    background: linear-gradient(#ff8bca, #fd5ab5);
+    border: 1px solid #ff4eae;
+    color: #fff;
+    border-radius: 3px;
+    font-weight: 700;
+    padding: 3px 10px;
+  }
+  .oc-home-search {
+    display: flex;
+  }
+
+  /* 高: フォーム（折りたたみバー／展開時） */
+  .oc-form {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0 -3px;
+  }
+  .oc-form .oc-form-openbar {
+    border-radius: 5px;
+    height: 48px;
+  }
+  .oc-form-inner {
+    background: #eee;
+    border-radius: 5px;
+    padding: 5px;
+  }
+  .oc-form-submit {
+    height: 32px;
+    border-radius: 4px;
+    border: 1px solid #bbb;
+    background: linear-gradient(#fcfcfc, #eeeeee);
+    color: #000;
+    font-size: 14px;
+  }
+  .oc-input,
+  .oc-select,
+  .oc-textarea {
+    border-color: #ccc;
+    border-radius: 3px;
+  }
+
+  /* レス区切りは実線 */
+  .oc-post {
+    border-bottom: 1px solid #e0e0e0;
+    margin-bottom: 0;
+    padding: 5px;
+  }
+  .oc-post:last-child {
+    border-bottom: 0;
+  }
+
+  /* 低: レス下アクションと NG × のタップ領域（44px 推奨に近づける） */
+  .oc-post-actions {
+    gap: 2px;
+  }
+  .oc-post-actions button,
+  .oc-post-actions a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .oc-post-ng {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 4px;
+    font-size: 15px;
+  }
+
+  /* 低: トップへ戻る帯 */
+  .oc-sp-totop {
+    display: block;
+    background: #333;
+    color: #fff;
+    text-align: center;
+    font-weight: 700;
+    padding: 9px;
+    border-top: 1px solid #000;
+    border-bottom: 1px solid #000;
+  }
+  .oc-footer {
+    color: #5f5f5f;
+  }
+}

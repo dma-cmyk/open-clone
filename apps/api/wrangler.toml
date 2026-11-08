@@ -1,0 +1,53 @@
+# ローカル開発用設定。本番は Cloudflare ダッシュボード/CLI で
+# `wrangler secret put`（秘密）と [vars] 追加（非機密）を行う。
+name = "open-clone-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "development"
+# カンマ区切りの許可オリジン（originGuard / CORS）
+ALLOWED_ORIGINS = "http://localhost:3000"
+
+# D1（唯一の永続 DB）。database_id は初回 `wrangler d1 create` 後に置き換える。
+[[d1_databases]]
+binding = "DB"
+database_name = "open-clone"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# Durable Objects（Free では SQLite-backed のみ = new_sqlite_classes）
+[[durable_objects.bindings]]
+name = "REALTIME"
+class_name = "RealtimeHub"
+
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+
+[[durable_objects.bindings]]
+name = "AI_GATE"
+class_name = "AiGate"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RealtimeHub", "RateLimiter", "AiGate"]
+
+# Cron Triggers（Free 上限 5。割当: WORKPACKAGES §3.2 cron 行）
+#  1. */10 * * * *  監視/警報
+#  2. 5 * * * *    ランキング snapshot
+#  3. 15 3 * * *   板自動削除/prune
+#  4. */30 * * * * 添付リンク死活
+#  5. 20 * * * *   webhook 再送/ログ掃除
+[triggers]
+crons = [
+  "*/10 * * * *",
+  "5 * * * *",
+  "15 3 * * *",
+  "*/30 * * * *",
+  "20 * * * *",
+]
+
+[observability]
+enabled = true

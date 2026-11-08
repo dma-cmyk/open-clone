@@ -1,0 +1,92 @@
+name: deploy
+
+# 自動デプロイはしない。手動 workflow_dispatch のみ（DESIGN §14）。
+# 必要な repository secrets:
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
+#   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID（Vercel へ反映する場合のみ）
+on:
+  workflow_dispatch:
+    inputs:
+      apply_migrations:
+        description: "D1 の remote migrations を適用する"
+        type: boolean
+        default: true
+      deploy_web:
+        description: "Vercel へ web をデプロイする"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "12.3.4"
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    name: Workers + D1 (+ Vercel)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Require Cloudflare credentials
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID が未設定です"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply D1 migrations (remote)
+        if: ${{ inputs.apply_migrations }}
+        run: pnpm --filter api exec wrangler d1 migrations apply open-clone --remote
+
+      - name: Deploy Worker
+        run: pnpm --filter api exec wrangler deploy
+
+      - name: Verify Worker health
+        run: |
+          echo "Worker deployed. 公開 URL は wrangler deploy の出力を参照。"
+          echo "手動確認: curl https://<worker-domain>/v1/health"
+
+      - name: Build web (static export)
+        if: ${{ inputs.deploy_web }}
+        run: pnpm --filter web build
+
+      - name: Deploy web to Vercel
+        if: ${{ inputs.deploy_web }}
+        working-directory: apps/web
+        run: |
+          if [ -z "${VERCEL_TOKEN}" ]; then
+            echo "::error::VERCEL_TOKEN が未設定です（deploy_web=false でスキップ可能）"
+            exit 1
+          fi
+          npx --yes vercel@latest pull --yes --environment=production --token "${VERCEL_TOKEN}"
+          npx --yes vercel@latest build --prod --token "${VERCEL_TOKEN}"
+          npx --yes vercel@latest deploy --prebuilt --prod --yes --token "${VERCEL_TOKEN}"

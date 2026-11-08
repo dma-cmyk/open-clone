@@ -1,0 +1,29 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "out/**", "dist/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"]
+    },
+    "lint": {},
+    "test:e2e": {
+      "cache": false,
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "gen:api-docs": {
+      "cache": false,
+      "outputs": ["../docs/api.md"]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "dice",
+  "version": "1.0.0",
+  "summary": "レスごとに 1d6 / 2d10 などのサイコロを振れるボタンを追加",
+  "description": "スロット UI と乱数（crypto）のサンプル。スレッド表示のレス下にボタンを出します。",
+  "scope": ["personal", "board", "site"],
+  "permissions": ["ui:slot"],
+  "connectAllowlist": [],
+  "entry": "plugin.js",
+  "slots": ["thread-post-footer"],
+  "hooks": [],
+  "author": "open-clone",
+  "license": "MIT"
+}

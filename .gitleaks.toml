@@ -1,0 +1,60 @@
+# gitleaks 設定（CI: .github/workflows/ci.yml の secret-scan）。
+# 既定ルールを全て有効にしたうえで、公開済みの公式テストキーと
+# ローカル専用ダミー値だけを明示的に許可する。実秘密は許可しない。
+title = "open-clone"
+
+[extend]
+useDefault = true
+
+# 生成物・依存・ローカル状態はスキャン対象外（git 管理外。CI checkout には存在しない）。
+[[allowlists]]
+description = "生成物 / 依存 / ローカル状態"
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)\.next/''',
+  '''(^|/)\.wrangler/''',
+  '''(^|/)\.turbo/''',
+  '''(^|/)dist/''',
+  '''(^|/)coverage/''',
+  '''(^|/)playwright-report/''',
+  '''(^|/)test-results/''',
+]
+
+[[allowlists]]
+description = "公開されている Turnstile 公式テストキー / ローカル専用ダミー値"
+condition = "OR"
+paths = [
+  '''(^|/)\.dev\.vars\.example$''',
+  '''(^|/)\.env\.example$''',
+]
+regexTarget = "line"
+regexes = [
+  '''1x0{20,}AA''',
+  '''local-dev-only-not-a-secret''',
+  '''local-owner-bootstrap''',
+  '''MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=''',
+]
+
+# 統合テストで使う固定のダミー資格情報（本番値ではない）。
+[[allowlists]]
+description = "テスト用の固定ダミー値"
+regexTarget = "line"
+regexes = [
+  '''ownerpass-1234''',
+  '''test-owner-key''',
+]
+
+# ドキュメント中のプレースホルダ（実値ではない）を許可する。
+[[allowlists]]
+description = "ドキュメント内の明示的なプレースホルダ"
+condition = "OR"
+paths = [
+  '''(^|/)README\.md$''',
+  '''(^|/)docs/.*\.md$''',
+]
+regexTarget = "line"
+regexes = [
+  '''<[A-Z0-9_]+>''',
+  '''example\.(com|workers\.dev)''',
+  '''your-.*-here''',
+]

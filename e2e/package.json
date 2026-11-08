@@ -1,0 +1,23 @@
+{
+  "name": "e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test --list",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test smoke.spec.ts",
+    "test:e2e:security": "playwright test security",
+    "test:e2e:pc": "playwright test --project=pc",
+    "stubs": "node scripts/stub-server.mjs",
+    "gen:api-docs": "tsx ../tools/gen-api-docs.ts",
+    "db:setup": "bash scripts/start-api.sh --setup-only"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3"
+  }
+}

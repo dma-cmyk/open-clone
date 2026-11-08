@@ -1,0 +1,41 @@
+# wrangler dev が読むローカル専用ファイル（.gitignore 済み）。本番は wrangler secret put。
+# 以下は全て公開されている公式ダミー値/ローカル専用の開発値。実秘密は絶対に書かない。
+
+# Turnstile 公式テストキー（常に成功）
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+# 表示ID/端末ハッシュのローカル用 salt
+ID_SALT=local-dev-only-not-a-secret
+# 暗号化鍵（ローカル用ダミー 32bytes base64）
+ENC_KEY=MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+# owner 初期セットアップのローカル用キー
+OWNER_BOOTSTRAP_KEY=local-owner-bootstrap
+
+# --- WP4（アップローダ / GitHub 連携）任意キー ---
+# 未設定でも動作する。GitHub 連携は OAuth 未設定なら fine-grained PAT のみ案内される。
+# GitHub OAuth App（https://github.com/settings/developers で作成。callback は <web>/account/github）
+# GITHUB_CLIENT_ID=
+# GITHUB_CLIENT_SECRET=
+# GITHUB_OAUTH_REDIRECT_URI=http://localhost:3000/account/github
+# 運営側 GitHub App の webhook 署名検証（任意）
+# GITHUB_WEBHOOK_SECRET=
+# プラグイン配布リポジトリ webhook の専用 secret（任意。未設定なら GITHUB_WEBHOOK_SECRET → ID_SALT）
+# GITHUB_PLUGIN_HOOK_SECRET=
+# Catbox アカウントの userhash（任意。匿名アップロードでよければ不要）
+# CATBOX_USERHASH=
+# Cloudinary（署名付き direct アップロード。未設定ならアダプタ一覧で利用不可）
+# CLOUDINARY_CLOUD_NAME=
+# CLOUDINARY_API_KEY=
+# CLOUDINARY_API_SECRET=
+# プラグイン AI 連携（ai:complete）の OpenAI 互換 API キー。接続先はサイト設定
+# plugin.ai.baseUrl / plugin.ai.model（/admin/settings または PUT /v1/admin/site-config）で指定する。
+# 未設定なら AI 連携は 503 AI_DISABLED（ダミー応答なし）。
+# PLUGIN_AI_API_KEY=
+# E2E スタブ用の Turnstile siteverify URL 上書き（通常は未設定）
+# TURNSTILE_VERIFY_URL=
+# E2E スタブ用の base URL 上書き（通常は未設定のまま。e2e/scripts/start-api.sh が --var で渡す）
+# GITHUB_API_BASE=http://127.0.0.1:8898/api/v3
+# GITHUB_OAUTH_AUTHORIZE_URL=http://127.0.0.1:8898/login/oauth/authorize
+# GITHUB_OAUTH_TOKEN_URL=http://127.0.0.1:8898/login/oauth/access_token
+# CATBOX_API_URL=http://127.0.0.1:8898/user/api.php
+# LITTERBOX_API_URL=http://127.0.0.1:8898/resources/internals/api.php
+# CLOUDINARY_API_BASE=http://127.0.0.1:8898
