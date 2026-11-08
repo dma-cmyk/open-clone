@@ -100,7 +100,15 @@ jobs:
         run: pnpm --filter e2e exec playwright install --with-deps chromium
 
       # webServer が D1 migrations apply + seed を実行してから web/api/stub を起動する。
+      # 外部スタブ（Catbox / GitHub / Turnstile）を有効にし、アップロード・GitHub 連携の
+      # e2e を CI でも常に実行する。スタブは http://127.0.0.1:8898（e2e/scripts/stub-server.mjs）
+      # だけを向き、実 Catbox / GitHub / Cloudflare へは送信しない（start-api.sh が
+      # CATBOX_API_URL / GITHUB_API_BASE / TURNSTILE_VERIFY_URL を上書きする）。
       - name: Run Playwright
+        env:
+          E2E_UPLOAD_STUB: "1"
+          E2E_GITHUB_STUB: "1"
+          E2E_TURNSTILE_STUB: "1"
         run: pnpm --filter e2e exec playwright test --shard=${{ matrix.shard }}/2
 
       - name: Upload Playwright report
