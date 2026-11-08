@@ -60,9 +60,6 @@ const DEV_SECURITY_HEADERS = SECURITY_HEADERS.map((header) =>
 export default function nextConfig(phase: string): NextConfig {
   const base: NextConfig = {
     images: { unoptimized: true },
-    // 静的エクスポート + Vercel の filesystem ルートで /account/login 等を
-    // 拡張子なしで配信するため、各ページを <path>/index.html として出力する。
-    trailingSlash: true,
     // shared は TS ソースをそのまま提供するためトランスパイルが必要
     transpilePackages: ["shared"],
     // 同じ作業ツリーで複数の `next dev`（E2E と手元の dev）を並行させるため、
@@ -93,5 +90,10 @@ export default function nextConfig(phase: string): NextConfig {
   }
 
   // 本番（build / export）は静的エクスポート。API 中継は vercel.json の rewrites。
-  return { ...base, output: "export" };
+  // 静的エクスポート + Vercel の filesystem ルートで /account/login 等を
+  // 拡張子なしで配信するため、各ページを <path>/index.html として出力する。
+  // dev（E2E・手元）には適用しない: trailingSlash を dev でも有効にすると
+  // `/api/*` や `/b/<slug>` へのリクエストが 308 で末尾スラッシュへ飛び、
+  // POST の本文が失われる・URL 期待値が変わる（CI e2e で実測）。
+  return { ...base, output: "export", trailingSlash: true };
 }

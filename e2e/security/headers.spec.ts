@@ -38,12 +38,22 @@ test.describe("security headers", () => {
     expect(csp).toContain("frame-ancestors 'none'");
     // dev は Turbopack が eval を使うため next.config.ts の DEV_CSP が 'unsafe-eval' を許可する。
     // 本番（静的エクスポート + vercel.json）の CSP は eval を許可しないことを設定ファイルで検証する。
+    // vercel.json は SPA の直リンクを 200 で返すため `routes`（レガシー形式）を使う。
+    // `routes` と `headers` は併用できないので、ヘッダーは routes 先頭の
+    // `{ src, headers }` エントリに入っている。旧形式（headers 配列）も読めるようにする。
     const vercel = JSON.parse(readFileSync(path.join(repoRoot, "apps/web/vercel.json"), "utf8")) as {
-      headers: Array<{ headers: Array<{ key: string; value: string }> }>;
+      headers?: Array<{ headers: Array<{ key: string; value: string }> }>;
+      routes?: Array<{ headers?: Record<string, string> }>;
     };
-    const prodCsp = vercel.headers
-      .flatMap((entry) => entry.headers)
-      .find((header) => header.key === "Content-Security-Policy")?.value;
+    const headerEntries = [
+      ...(vercel.headers ?? []).flatMap((entry) => entry.headers),
+      ...(vercel.routes ?? [])
+        .filter((route) => route.headers)
+        .flatMap((route) =>
+          Object.entries(route.headers!).map(([key, value]) => ({ key, value })),
+        ),
+    ];
+    const prodCsp = headerEntries.find((header) => header.key === "Content-Security-Policy")?.value;
     expect(prodCsp, "vercel.json に Content-Security-Policy がありません").toBeTruthy();
     expect(prodCsp).not.toContain("'unsafe-eval'");
     expect(prodCsp).not.toContain("frame-ancestors *");
