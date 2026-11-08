@@ -1,20 +1,25 @@
-# ローカル開発用設定。本番は Cloudflare ダッシュボード/CLI で
-# `wrangler secret put`（秘密）と [vars] 追加（非機密）を行う。
+# 本番（Workers Free）の設定。秘密は `wrangler secret put`、非機密は [vars]。
+# ローカルの差分（ENVIRONMENT / ALLOWED_ORIGINS）は apps/api/.dev.vars で上書きする
+# （`wrangler dev` は .dev.vars を [vars] より優先する）。
 name = "open-clone-api"
 main = "src/index.ts"
 compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
 
+# WS（実況）は rewrites で中継できないため workers.dev を直接使う。
+workers_dev = true
+preview_urls = false
+
 [vars]
-ENVIRONMENT = "development"
+ENVIRONMENT = "production"
 # カンマ区切りの許可オリジン（originGuard / CORS）
-ALLOWED_ORIGINS = "http://localhost:3000"
+ALLOWED_ORIGINS = "https://open-clone-nine.vercel.app"
 
 # D1（唯一の永続 DB）。database_id は初回 `wrangler d1 create` 後に置き換える。
 [[d1_databases]]
 binding = "DB"
 database_name = "open-clone"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "4fa6a947-64ed-4bbf-a87f-f08092f29e87"
 migrations_dir = "migrations"
 
 # Durable Objects（Free では SQLite-backed のみ = new_sqlite_classes）
@@ -34,19 +39,17 @@ class_name = "AiGate"
 tag = "v1"
 new_sqlite_classes = ["RealtimeHub", "RateLimiter", "AiGate"]
 
-# Cron Triggers（Free 上限 5。割当: WORKPACKAGES §3.2 cron 行）
+# Cron Triggers（Free はアカウント全体で 5 枠。既存 Worker が 1 枠使用中のため 4 枠に統合）
 #  1. */10 * * * *  監視/警報
-#  2. 5 * * * *    ランキング snapshot
-#  3. 15 3 * * *   板自動削除/prune
-#  4. */30 * * * * 添付リンク死活
-#  5. 20 * * * *   webhook 再送/ログ掃除
+#  2. 5,20 * * * *  ランキング snapshot（毎時 :05）+ webhook 再送/ログ掃除（毎時 :20）
+#  3. 15 3 * * *    板自動削除/prune
+#  4. */30 * * * *  添付リンク死活
 [triggers]
 crons = [
   "*/10 * * * *",
-  "5 * * * *",
+  "5,20 * * * *",
   "15 3 * * *",
   "*/30 * * * *",
-  "20 * * * *",
 ]
 
 [observability]

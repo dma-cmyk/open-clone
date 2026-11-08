@@ -89,7 +89,10 @@ ALLOWED_ORIGINS = "https://<web-domain>"
 ## 4. Turnstile
 
 1. Cloudflare ダッシュボード → Turnstile → ウィジェット追加
-2. ドメインに `<web-domain>` を登録（`workers.dev` / `vercel.app` の可否は**要確認**）
+2. ドメインに `<web-domain>`（例: `open-clone-nine.vercel.app`）を登録する。Turnstile は
+   **ウィジェットを表示するページのホスト名**で検証するため、Vercel の本番ドメインを登録する
+   （`workers.dev` は WS/API 用なので不要）。登録後にサイトキーを変更した場合は web の再ビルドが必要
+   （`NEXT_PUBLIC_*` はビルド時に埋め込まれる）
 3. **Site Key**（公開可）→ web の `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
 4. **Secret Key** → `wrangler secret put TURNSTILE_SECRET_KEY`
 5. ローカル/CI は公式テストキー:
@@ -121,6 +124,10 @@ pnpm --filter api exec wrangler deploy
 ```
 
 - 出力される URL（`https://open-clone-api.<account>.workers.dev` 等）を控える
+- `wrangler.toml` には `workers_dev = true` と `preview_urls = false` を明示している（WS を直接つなぐため）
+- cron は **Free プランのアカウント全体で 5 枠**。既存 Worker が枠を使っている場合は
+  `wrangler deploy` が `reached the Workers Free limit of 5 cron triggers per account` で
+  途中失敗するので、[`docs/operations.md`](operations.md) §3 の 4 枠構成に統合する
 - ヘルスチェック: `curl https://<api-domain>/v1/health`
 - カスタムドメインを使う場合は Cloudflare ダッシュボードで route を設定
 - Durable Objects（`RealtimeHub` / `RateLimiter` / `AiGate`）は `index.ts` から export 済み。
@@ -131,10 +138,21 @@ pnpm --filter api exec wrangler deploy
 ### 7.1 プロジェクト設定
 
 - Root Directory: `apps/web`
-- Framework Preset: Next.js
-- Build Command: `pnpm --filter web build`（または `next build`）
-- Output Directory: `out`（`output: 'export'`）
-- Install Command: `pnpm install`（monorepo のためリポジトリルートで実行される設定にする）
+- Framework Preset: **Other**（`output: 'export'` の静的配信。Next.js プリセットだと
+  未定義パスが `404.html` になり SPA の直リンクが開かない）
+- Build Command: `pnpm build`
+- Output Directory: `out`
+- Install Command: `pnpm install`（monorepo のためリポジトリルートで実行される）
+
+`apps/web/next.config.ts` で `trailingSlash: true` を有効にし、静的ページを
+`out/account/login/index.html` の形で出力する。Vercel では `vercel.json` の
+**`routes`（レガシー形式）で `{"handle": "filesystem"}` を先に評価**し、実ファイルを優先したうえで
+API/互換プロキシ → `/(.*)` → `/index.html` の順にフォールバックする。
+これで `/b/<slug>` や `/b/<slug>/t/<id>` の直リンクも **200** で SPA シェルを返す。
+
+- `rewrites` + `cleanUrls` の組み合わせでは、静的ファイルへの rewrite が 404 になり直リンクが開かなかった
+- `routes` と `cleanUrls` / `headers` は併用できないため、セキュリティヘッダーは `routes` の先頭に
+  `{"src": "/(.*)", "headers": {…}}` として書く
 
 環境変数:
 
@@ -144,9 +162,9 @@ pnpm --filter api exec wrangler deploy
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Turnstile Site Key |
 | `API_ORIGIN` | 開発時のみ（`next dev` の rewrites 先） |
 
-### 7.2 rewrites の宛先を更新
+### 7.2 rewrites / CSP の宛先を更新
 
-`apps/web/vercel.json` の `destination` を実際の Worker ドメインへ変更します。
+`apps/web/vercel.json` の `destination` と CSP の `connect-src` を実際の Worker ドメインへ変更します。
 
 ```json
 {
@@ -155,7 +173,12 @@ pnpm --filter api exec wrangler deploy
 }
 ```
 
-`/test/:path*` と `/(.*)` はシェル HTML（`/index.html`）への SPA フォールバックです。
+- `/api/:path*`（互換）、`/compat/:path*`（専ブラ互換）も同じ Worker へプロキシする
+- CSP の `connect-src` には `https://<api-domain>` と `wss://<api-domain>` を明示する
+  （実況 WebSocket は rewrites で中継できないため Worker へ直接接続する）
+- vercel.json は **Root Directory（`apps/web`）側**に置く。リポジトリルートから `vercel deploy` しても
+  Root Directory 側の設定が読まれる
+- SPA フォールバック以外のパス（`/api/*`, `/compat/*`）は Worker へ proxy する
 
 ### 7.3 デプロイ
 
@@ -167,6 +190,8 @@ vercel --prod
 
 または GitHub 連携で `apps/web` を root に設定し、main への push で自動デプロイ（Vercel 側の設定）。
 本リポジトリの CI からは**自動デプロイしません**（§9 の手動 workflow のみ）。
+CLI からデプロイする場合はリポジトリルートで `vercel deploy --prod` を実行する
+（`.vercelignore` が `node_modules` / `.next` / `out` をアップロード対象から除く）。
 
 ## 8. 初回セットアップ
 

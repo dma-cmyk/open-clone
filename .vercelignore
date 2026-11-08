@@ -1,0 +1,17 @@
+# ルートから `vercel deploy` する場合（Project の Root Directory = apps/web）に、
+# ローカル生成物と依存をアップロードしない。git 連携デプロイには影響しない。
+node_modules
+**/node_modules
+**/.next
+**/.next-*
+**/out
+**/dist
+**/.turbo
+**/.vercel
+**/coverage
+**/playwright-report*
+**/test-results*
+**/*.tsbuildinfo
+**/*.log
+.wrangler
+**/.wrangler

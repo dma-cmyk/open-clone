@@ -1,6 +1,6 @@
 // 各ドメインの handler は `services/<domain>/cron.ts` に置き、
 // このファイルは import して dispatch するだけにする。
-// Free 上限 5 cron（wrangler.toml の [triggers].crons）。
+// Free の cron はアカウント全体で 5 枠（wrangler.toml の [triggers].crons は 4 枠に統合済み）。
 //
 // 各 handler は自分の例外を内部で握る契約だが、1 つの cron の失敗で他の処理を止めないよう
 // ここでも try/catch してログに残す（cron はリトライされないため、失敗は監視で拾う）。
@@ -29,10 +29,19 @@ export async function handleScheduled(
       // WP5: AI 監視/警報（POST 急増・通報急増・エラー率・action 反復・キュー却下連続 → 自動 suspend）
       await runStep("ai.monitor", () => handleAiMonitorCron(env));
       break;
-    case "5 * * * *":
-      // WP1: ランキング snapshot
-      await runStep("board.ranking_snapshot", () => runRankingSnapshot(env));
+    case "5,20 * * * *": {
+      // Free の cron はアカウント全体で 5 枠のため、毎時の 2 本（:05 snapshot / :20 webhook）を
+      // 1 本の式に統合している。発火時刻の分で振り分ける。
+      const minute = new Date(event.scheduledTime).getUTCMinutes();
+      if (minute === 5) {
+        // WP1: ランキング snapshot
+        await runStep("board.ranking_snapshot", () => runRankingSnapshot(env));
+      } else {
+        // WP5: webhook 再送/ログ掃除
+        await runStep("ai.webhook_maintenance", () => handleWebhookMaintenanceCron(env));
+      }
       break;
+    }
     case "15 3 * * *":
       // WP1: 板自動削除/prune
       await runStep("board.prune", () => runPrune(env));
@@ -40,10 +49,6 @@ export async function handleScheduled(
     case "*/30 * * * *":
       // WP4: 添付リンク死活監視（404/410 のみ dead 化、期限切れチケット/添付の掃除）
       await runStep("uploads.link_check", () => runAttachmentLinkCheck(env));
-      break;
-    case "20 * * * *":
-      // WP5: webhook 再送/ログ掃除
-      await runStep("ai.webhook_maintenance", () => handleWebhookMaintenanceCron(env));
       break;
     default:
       console.log("UNMAPPED_CRON", event.cron);

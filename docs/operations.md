@@ -35,7 +35,7 @@ curl -fsS https://<api-domain>/v1/meta/usage
 | D1 storage | **500MB / DB** | 400MB | 古い audit / 削除済み行の prune、板 archive |
 | DO requests | 100,000 / 日 | 80,000 | publish 回数・WS 再接続の見直し |
 | DO duration | 13,000 GB-s / 日 | 10,000 | Hibernation が有効か確認 |
-| Cron | 5 個 | — | 追加不可（割当済み） |
+| Cron | 5 個（アカウント全体） | — | 追加不可（4 枠使用 + 既存 Worker 1 枠） |
 
 - 上限超過は**課金ではなくサービス停止**です。現在は自動通知なし。週次のダッシュボード確認を運用に組み込む
 - D1 の実容量: `wrangler d1 info open-clone` / ダッシュボード
@@ -121,18 +121,19 @@ curl -X POST https://<api-domain>/v1/admin/suspensions \
 
 ## 3. 定期実行（Cron）
 
-`apps/api/wrangler.toml` の 5 枠（Free 上限）:
+`apps/api/wrangler.toml` の 4 枠。**Free プランの cron 上限はアカウント全体で 5 枠**で、
+既存 Worker が 1 枠使っているため 4 枠に統合しています（毎時の 2 本を 1 本の式にまとめている）:
 
 | cron | 内容 | 担当 |
 |---|---|---|
 | `*/10 * * * *` | 監視・異常検知・警報 | WP5 |
-| `5 * * * *` | ランキング snapshot | WP1 |
+| `5,20 * * * *` | 毎時 :05 ランキング snapshot / :20 webhook 再送・ログ掃除 | WP1 / WP5 |
 | `15 3 * * *` | 板の自動削除 / prune | WP1 |
 | `*/30 * * * *` | 添付リンク死活監視 | WP4 |
-| `20 * * * *` | webhook 再送 / ログ掃除 | WP5 |
 
+- 統合した式は `apps/api/src/cron.ts` が発火時刻の分（:05 / :20）で振り分ける
 - ローカルで手動実行: `curl "http://localhost:8787/cdn-cgi/local/scheduled"`
-- 追加は不可（枠を使い切っている）。必要なら既存の割当を設計変更
+- 追加は不可（アカウント全体の 5 枠を使い切っている）。必要なら既存の割当を設計変更
 
 ## 4. 障害対応プレイブック
 

@@ -1,7 +1,7 @@
 // Cron ハンドラ（WORKPACKAGES §3.2 の割当）。
 // `apps/api/src/cron.ts`から次の 2 つを呼ぶ:
-//   "*/10 * * * *" → handleAiMonitorCron
-//   "20 * * * *"   → handleWebhookMaintenanceCron
+//   "*/10 * * * *"   → handleAiMonitorCron
+//   "5,20 * * * *" の :20 → handleWebhookMaintenanceCron
 // 例外は握りつぶさずログに残し、Cron 全体を落とさない（次回実行で回復できる）。
 
 import type { Env } from "../../lib/env";

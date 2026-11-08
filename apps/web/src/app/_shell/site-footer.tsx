@@ -8,7 +8,7 @@ export function SiteFooter() {
       <div className="oc-footer-links">
         <a href="/">板一覧</a>
         <a href="/plugins">プラグイン</a>
-        <a href="/api/v1/compat">専ブラ互換</a>
+        <a href="/compat/bbsmenu.html">専ブラ互換</a>
         <a href="/settings">設定</a>
         <a href="/admin">運営</a>
       </div>
