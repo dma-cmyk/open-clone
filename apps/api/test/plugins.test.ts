@@ -878,6 +878,33 @@ describe("レンダー規則の ReDoS 対策（報告書 24 M-1）", () => {
     expect(checks.reasons.join("\n")).toContain("render.post[0]");
   });
 
+  it("可変長の要素を含む並びの繰り返しも schema と静的検査で拒否する（M-2）", async () => {
+    const dev = await seedAccount("user");
+    for (const pattern of ["(a+[ab])+x", "(\\w+a)+x", "(?:a+[b])+x", "(?=(a+[ab])+)"]) {
+      const result = await call("/v1/plugins", {
+        method: "POST",
+        cookie: dev.cookie,
+        body: {
+          manifest: manifest("redos-seq", {
+            permissions: [],
+            slots: [],
+            render: { post: [{ pattern, flags: "g", template: "$1", kind: "text" }] },
+          }),
+          code: "register({});",
+          visibility: "private",
+        },
+      });
+      expect(result.status, pattern).toBe(400);
+      expect(result.json?.code, pattern).toBe("VALIDATION");
+
+      const checks = await runStaticChecks("register({});", {
+        render: { post: [{ pattern, flags: "g", template: "$1", kind: "text" }] },
+      } as unknown as PluginManifest);
+      expect(checks.allowed, pattern).toBe(false);
+      expect(checks.reasons.join("\n"), pattern).toContain("render.post[0]");
+    }
+  });
+
   it("公式サンプル（spoiler）のレンダー規則は作成・公開できる", async () => {
     const dev = await seedAccount("user");
     const created = await createPlugin(dev.cookie, {

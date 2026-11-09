@@ -235,6 +235,11 @@ function nullable(node: Node): boolean {
   }
 }
 
+/** 文字を消費しないノード（位置指定子・先読み/後読み）。 */
+function isZeroWidth(node: Node): boolean {
+  return (node.type === "atom" && node.atom === "anchor") || (node.type === "group" && node.kind === "lookaround");
+}
+
 /**
  * ノード（シーケンス）が可変長の要素で終わるか。
  * 例: `a+` → true、`(a+)` → true、`\.` → false、`(a|b)` → false。
@@ -251,14 +256,48 @@ function endsWithVariable(node: Node): boolean {
       for (let i = node.items.length - 1; i >= 0; i -= 1) {
         const item = node.items[i]!;
         // 位置指定子・先読みは文字を消費しないので読み飛ばす。
-        const zeroWidth =
-          (item.type === "atom" && item.atom === "anchor") || (item.type === "group" && item.kind === "lookaround");
-        if (zeroWidth) continue;
+        if (isZeroWidth(item)) continue;
         return endsWithVariable(item);
       }
       return false;
     }
   }
+}
+
+
+/** 長さが固定でない（可変長の）要素か。 */
+function canVaryLength(node: Node): boolean {
+  switch (node.type) {
+    case "atom":
+      return node.atom !== "anchor" && isVariable(node.quantifier);
+    case "group":
+      if (node.kind === "lookaround") return false;
+      return isVariable(node.quantifier) || canVaryLength(node.body);
+    case "alt":
+      return node.options.some(canVaryLength);
+    case "seq":
+      return node.items.some(canVaryLength);
+  }
+}
+
+/** 量指定子の無い透過的なグループ・1 要素の並びを剥がして実体を見る。 */
+function unwrapSingle(node: Node): Node {
+  if (node.type === "seq" && node.items.length === 1) return unwrapSingle(node.items[0]!);
+  if (node.type === "group" && node.quantifier === null && node.kind !== "lookaround") return unwrapSingle(node.body);
+  return node;
+}
+
+/**
+ * 繰り返されるグループの本体が「2 要素以上の並び」で、そのいずれかが可変長か。
+ * `(a+[ab])+` のように、量指定子と重なり得る文字の並びが繰り返される形は
+ * 破滅的バックトラックになる（固定長だけの `(abc)+` は許可する）。
+ */
+function hasVariableInMultiElementSequence(node: Node): boolean {
+  const target = unwrapSingle(node);
+  if (target.type === "alt") return target.options.some(hasVariableInMultiElementSequence);
+  if (target.type !== "seq") return false;
+  const consuming = target.items.filter((item) => !isZeroWidth(item));
+  return consuming.length >= 2 && consuming.some(canVaryLength);
 }
 
 /** 選択肢の先頭から決定的に読めるトークン列（判定できない部分は null）。 */
@@ -368,6 +407,9 @@ function checkNode(node: Node): string | null {
         }
         if (endsWithVariable(node.body)) {
           return "入れ子の量指定子（例: (a+)+）は使用できません";
+        }
+        if (hasVariableInMultiElementSequence(node.body)) {
+          return "可変長の要素を含む並びの繰り返し（例: (a+[ab])+）は使用できません";
         }
       }
       return checkNode(node.body);

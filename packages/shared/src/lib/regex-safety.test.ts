@@ -25,6 +25,25 @@ describe("analyzeRegexPattern", () => {
     }
   });
 
+  it("可変長の要素を含む並びの繰り返しを拒否する（報告書 24 第2回 M-2）", () => {
+    for (const pattern of [
+      "(a+[ab])+x",
+      "(\\w+a)+x",
+      "(?:a+[b])+x",
+      // lookahead / lookbehind の中も同じ判定
+      "(?=(a+[ab])+)",
+      "(?<=(a+[ab])+)",
+      // 透過的なグループで包んでも判定する
+      "((a+b))+",
+      "(\\d+\\.)+",
+      "([A-Z][a-z]+)+",
+    ]) {
+      const result = analyzeRegexPattern(pattern);
+      expect(result.safe, pattern).toBe(false);
+      expect(result.reason, pattern).toBeTruthy();
+    }
+  });
+
   it("後方参照・過大な長さ・過大な繰り返し回数を拒否する", () => {
     expect(analyzeRegexPattern("(a)\\1").safe).toBe(false);
     expect(analyzeRegexPattern("(?<x>a)\\k<x>").safe).toBe(false);
@@ -40,7 +59,7 @@ describe("analyzeRegexPattern", () => {
       "\\|\\|(.+?)\\|\\|",
       "1d6",
       "(?:ab)+",
-      "(\\d+\\.)+",
+      "(abc)+",
       "(a|b)+",
       "(?=a)",
       "[a-z]+@[a-z]+\\.[a-z]+",

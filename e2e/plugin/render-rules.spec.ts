@@ -162,30 +162,33 @@ test.describe("プラグインのレンダー規則と本文描画", () => {
     }
   });
 
-  test("危険な正規表現（(a+)+b）を含むレンダー規則は作成時に拒否される", async ({ request }) => {
-    const name = unique("redos").toLowerCase();
-    const response = await request.post(`${API_BASE}/v1/plugins`, {
-      headers: userHeaders(),
-      data: {
-        manifest: {
-          name,
-          version: "1.0.0",
-          summary: "ReDoS の回帰検証",
-          scope: ["personal"],
-          permissions: [],
-          connectAllowlist: [],
-          entry: "plugin.js",
-          slots: [],
-          hooks: [],
-          render: { post: [{ pattern: "(a+)+b", flags: "g", template: "$1", kind: "text" }] },
+  test("危険な正規表現を含むレンダー規則は作成時に拒否される", async ({ request }) => {
+    // (a+)+b に加え、報告書 24 第2回 M-2 の「可変長を含む並びの繰り返し」も拒否する。
+    for (const pattern of ["(a+)+b", "(a+[ab])+x", "(\\w+a)+x", "(?:a+[b])+x", "(?=(a+[ab])+)"]) {
+      const name = unique("redos").toLowerCase();
+      const response = await request.post(`${API_BASE}/v1/plugins`, {
+        headers: userHeaders(),
+        data: {
+          manifest: {
+            name,
+            version: "1.0.0",
+            summary: "ReDoS の回帰検証",
+            scope: ["personal"],
+            permissions: [],
+            connectAllowlist: [],
+            entry: "plugin.js",
+            slots: [],
+            hooks: [],
+            render: { post: [{ pattern, flags: "g", template: "$1", kind: "text" }] },
+          },
+          code: "register({});",
+          visibility: "private",
+          changelog: "e2e",
         },
-        code: "register({});",
-        visibility: "private",
-        changelog: "e2e",
-      },
-    });
-    expect(response.status(), await response.text()).toBe(400);
-    const body = await readEnvelope<{ code?: string }>(response);
-    if (body && !body.ok) expect(body.code).toBe("VALIDATION");
+      });
+      expect(response.status(), `${pattern}: ${await response.text()}`).toBe(400);
+      const body = await readEnvelope<{ code?: string }>(response);
+      if (body && !body.ok) expect(body.code, pattern).toBe("VALIDATION");
+    }
   });
 });
