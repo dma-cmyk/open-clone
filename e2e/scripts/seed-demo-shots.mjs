@@ -11,6 +11,7 @@
 // - 実在の人物・サイト・他人の書き込みは使わない。すべてこのスクリプト内の創作テキスト。
 // - 再実行しても板・スレは slug / タイトルで判定して重複作成しない（レス・いいねは新規スレのみ）。
 // - セッションは e2e/fixtures/seed.sql のローカル専用固定トークン（本番 DB では使えない）。
+import { createHmac } from "node:crypto";
 
 const API = (process.env.SHOT_API_URL ?? "http://127.0.0.1:8852").replace(/\/$/, "");
 const ORIGIN = (process.env.SHOT_ORIGIN ?? "http://localhost:3152").replace(/\/$/, "");
@@ -45,6 +46,43 @@ async function call(method, path, { body, session = true, ip } = {}) {
     throw new Error(`${method} ${path} -> ${response.status}: ${JSON.stringify(json)}`);
   }
   return json.data;
+}
+
+// ─────────────────────────── TOTP（撮影用） ───────────────────────────
+// プラグイン作成トークンの発行は TOTP（step-up）必須のため、デモアカウントの TOTP を
+// 有効化するときだけ使う。e2e の補助実装と同じ RFC 6238（SHA-1 / 6桁 / 30秒）を独立に計算する。
+
+const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function base32Decode(input) {
+  let bits = 0;
+  let value = 0;
+  const bytes = [];
+  for (const char of input.toUpperCase().replace(/[^A-Z2-7]/g, "")) {
+    const index = BASE32_ALPHABET.indexOf(char);
+    if (index < 0) continue;
+    value = (value << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+function totpCode(secret) {
+  const counter = Math.floor(Date.now() / 1000 / 30);
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(counter));
+  const digest = createHmac("sha1", base32Decode(secret)).update(message).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary =
+    ((digest[offset] & 0x7f) << 24) |
+    (digest[offset + 1] << 16) |
+    (digest[offset + 2] << 8) |
+    digest[offset + 3];
+  return String(binary % 1_000_000).padStart(6, "0");
 }
 
 // ─────────────────────────── デモ内容（すべて創作） ───────────────────────────
@@ -339,6 +377,30 @@ async function main() {
   if (me.profile?.name === "owner") {
     await call("PATCH", "/v1/accounts/me", { body: { name: "demo" } });
     console.log("[seed] ローカル所有者の表示名を demo に変更");
+  }
+
+  // プラグイン作成トークン画面（docs/images/plugin-tokens-pc.webp）用のデモデータ。
+  // 発行には TOTP が必要なため、未設定なら撮影用に有効化してから 1 本だけ発行する。
+  // 平文は保存せず読み捨てる（画面の一覧には prefix だけが出る）。
+  const account = await call("GET", "/v1/accounts/me");
+  if (account.totp?.enabled !== true) {
+    const setup = await call("POST", "/v1/auth/totp/setup", { body: {} });
+    await call("POST", "/v1/auth/totp/enable", {
+      body: { secret: setup.secret, code: totpCode(setup.secret) },
+    });
+    console.log("[seed] demo アカウントの TOTP を有効化（撮影用）");
+  }
+  const tokenList = await call("GET", "/v1/me/plugin-tokens");
+  const hasActiveToken = (tokenList.items ?? []).some(
+    (token) => token.status === "active" && !token.expired,
+  );
+  if (hasActiveToken) {
+    console.log("[seed] プラグイン作成トークンは既にあります");
+  } else {
+    const issued = await call("POST", "/v1/me/plugin-tokens", {
+      body: { name: "自宅の Claude Code" },
+    });
+    console.log(`[seed] プラグイン作成トークンを発行: ${issued.prefix}…`);
   }
 
   console.log(`[seed] 完了: 板 ${BOARDS.length} / 新規スレ ${summary.length}`);
