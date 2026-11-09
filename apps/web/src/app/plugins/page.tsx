@@ -27,12 +27,15 @@ type Tab = RegistryTab;
 
 export default function PluginsPage() {
   // `/account/plugin-tokens` の「AI が作った下書き」導線（報告書27 §5.4）は
-  // `/plugins/?tab=mine` で mine タブを直接開く。初回レンダーで URL からタブを決めるので、
-  // 「公開一覧 → 自分のプラグイン」の二重取得は起きない（報告書40 §10）。
+  // `/plugins/?tab=mine` で mine タブを直接開く。
+  //
+  // 静的エクスポートのプリレンダー HTML は URL のクエリを知らないため、初回レンダーで
+  // `window.location.search` を読むとプリレンダー（公開タブ）とハイドレーション時の
+  // クライアント（mine タブ）でテキストが食い違い、React #418 になる（報告書42）。
+  // そこで初回レンダーは「タブ未確定・読み込み中」に固定し、マウント後の effect で
+  // タブを決めてから初めて取得する（`?tab=mine` の直開きでも取得は 1 本）。
   const tabParameter = useQueryParam("tab");
-  const [tab, setTab] = useState<Tab>(() =>
-    initialRegistryTab(typeof window === "undefined" ? "" : window.location.search),
-  );
+  const [tab, setTab] = useState<Tab | null>(null);
   // 取得ごとの世代番号。古い取得の応答が新しい結果を上書きしないようにする。
   const latest = useRef(createLatestOnly());
   const [query, setQuery] = useState("");
@@ -40,13 +43,16 @@ export default function PluginsPage() {
   const [sort, setSort] = useState<"updated" | "popular" | "new">("updated");
   const [items, setItems] = useState<PluginSummary[]>([]);
   const [installed, setInstalled] = useState<PluginActiveInstall[]>([]);
-  const [loading, setLoading] = useState(false);
+  // タブ確定までの間も「読み込み中」を出す（プリレンダーと初回レンダーを同じ見た目にする）。
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [gist, setGist] = useState("");
   const [repo, setRepo] = useState("");
 
   const load = useCallback(async () => {
+    // タブ未確定（マウント前）は取得しない。ここで取得すると公開一覧の余計な 1 本が飛ぶ。
+    if (tab === null) return;
     const token = latest.current.begin();
     setLoading(true);
     setError(null);
@@ -75,6 +81,11 @@ export default function PluginsPage() {
       if (latest.current.isCurrent(token)) setLoading(false);
     }
   }, [tab, query, scope, sort]);
+
+  useEffect(() => {
+    // プリレンダーでは URL を見られないので、ハイドレーション完了後にここで決める。
+    setTab(initialRegistryTab(window.location.search));
+  }, []);
 
   useEffect(() => {
     if (tabParameter === "mine" || tabParameter === "installed") setTab(tabParameter);
@@ -211,9 +222,13 @@ export default function PluginsPage() {
         ) : null}
       </Card>
 
-      {loading ? <p className="oc-muted oc-small">読み込み中…</p> : null}
+      {tab !== null && loading ? <p className="oc-muted oc-small">読み込み中…</p> : null}
 
-      {tab === "installed" ? (
+      {tab === null ? (
+        <Card title="プラグイン一覧">
+          <p className="oc-muted oc-small">読み込み中…</p>
+        </Card>
+      ) : tab === "installed" ? (
         <Card title={`導入済み（${installed.length}）`}>
           {installed.length === 0 ? (
             <p className="oc-muted oc-small">導入済みのプラグインはありません。</p>
