@@ -30,6 +30,8 @@ import plugins from "./routes/plugins";
 import pluginNet from "./routes/plugin-net";
 import ai from "./routes/ai";
 import mcp from "./routes/mcp";
+import mcpPlugin from "./routes/mcp-plugin";
+import pluginTokens from "./routes/plugin-tokens";
 
 const app = new Hono<AppEnv>();
 
@@ -94,6 +96,10 @@ app.route("/v1/plugin-net", pluginNet);
 app.route("/v1/ai", ai);
 app.route("/mcp", mcp);
 app.route("/mcp/legacy", mcp);
+// WP-A: 個人用プラグイン作成トークン + 作成専用 MCP レーン（`ocp_`）
+app.route("/v1/me/plugin-tokens", pluginTokens);
+app.route("/mcp-plugin", mcpPlugin);
+app.route("/mcp-plugin/legacy", mcpPlugin);
 
 // 404
 app.notFound(notFoundHandler);

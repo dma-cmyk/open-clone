@@ -26,6 +26,7 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
             <Link href="/account">プロフィール</Link>
             <Link href="/account/security">セキュリティ</Link>
             <Link href="/account/totp">TOTP 二段階認証</Link>
+            <Link href="/account/plugin-tokens">プラグイン作成トークン</Link>
             <Link href="/account/github">GitHub 連携</Link>
             <Link href="/account/login">ログイン</Link>
             <Link href="/account/register">新規登録</Link>

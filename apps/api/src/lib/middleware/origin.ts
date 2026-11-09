@@ -1,8 +1,10 @@
 // Origin / CSRF 防御ミドルウェア。
 // 全 mutation（POST/PUT/DELETE/PATCH）で Origin を検証し、CORS もここで制御する。
 
+import type { Context } from "hono";
+import { getCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
-import { ApiError } from "shared";
+import { ApiError, SESSION_COOKIE } from "shared";
 import type { AppEnv } from "../env";
 
 function allowedOrigins(env: AppEnv["Bindings"]): string[] {
@@ -17,6 +19,30 @@ const MUTATION_METHODS: Record<string, true> = {
   DELETE: true,
   PATCH: true,
 };
+
+/**
+ * Bearer 認証だけで動く MCP レーン（報告書29 決定1）。完全一致のみ。
+ * ブラウザからの Cookie 認証経路（/v1/*）は対象にしない。
+ */
+const BEARER_MCP_PATHS: Record<string, true> = {
+  "/mcp": true,
+  "/mcp/legacy": true,
+  "/mcp-plugin": true,
+  "/mcp-plugin/legacy": true,
+};
+
+/**
+ * Origin なしでも許可してよい「非ブラウザの Bearer MCP 呼び出し」か。
+ * - `Authorization: Bearer <token>` がある（トークンの正当性は後段の認証が判定する）
+ * - セッション Cookie を送っていない（Cookie 認証の CSRF 防御を維持する）
+ * - パスが MCP レーンの完全一致（`/mcp-plugin/` や `/mcp-plugin/xxx` は対象外）
+ */
+function isBearerMcpLane(c: Context<AppEnv>): boolean {
+  const authorization = c.req.header("authorization")?.trim() ?? "";
+  if (!/^Bearer\s+\S+$/i.test(authorization)) return false;
+  if (getCookie(c, SESSION_COOKIE)) return false;
+  return BEARER_MCP_PATHS[new URL(c.req.url).pathname] === true;
+}
 
 /**
  * mutation の Origin を許可リストと照合する。
@@ -46,7 +72,9 @@ export const originGuard = createMiddleware<AppEnv>(async (c, next) => {
     } else {
       // Origin なし mutation はブラウザ経由では発生しない（curl / サーバ間）。
       // 本番では拒否、開発時のみ許可する。
-      if (!isDev && !allowAll) {
+      // 例外は Bearer 認証の MCP レーンだけ（非ブラウザの CLI/外部 AI。報告書29 決定1）。
+      // トークン自体が認証であり CSRF は成立しない。トークンの可否は後段の認証が判定する。
+      if (!isDev && !allowAll && !isBearerMcpLane(c)) {
         throw new ApiError(403, "BAD_ORIGIN", "Origin ヘッダが必要です");
       }
     }

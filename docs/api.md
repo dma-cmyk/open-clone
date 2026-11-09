@@ -209,42 +209,46 @@
 | GET | `/inspect` | — | `invites.ts` | 125 |
 | POST | `/prepare-totp` | — | `invites.ts` | 132 |
 | POST | `/accept` | `requireTurnstile` | `invites.ts` | 174 |
+| ALL | `/` | — | `mcp-plugin.ts` | 199 |
+| ALL | `/legacy` | — | `mcp-plugin.ts` | 200 |
 | ALL | `/` | — | `mcp.ts` | 112 |
 | ALL | `/legacy` | — | `mcp.ts` | 113 |
 | GET | `/health` | — | `meta.ts` | 10 |
 | GET | `/usage` | `requireAdminActive` | `meta.ts` | 24 |
 | POST | `/fetch` | — | `plugin-net.ts` | 24 |
 | GET | `/log` | `requireRole` | `plugin-net.ts` | 105 |
-| GET | `/mine` | `requireAuth` | `plugins.ts` | 166 |
-| GET | `/active` | — | `plugins.ts` | 179 |
-| GET | `/installed` | — | `plugins.ts` | 211 |
-| GET | `/reviews` | `requireRole` | `plugins.ts` | 277 |
-| POST | `/preview-check` | `requireAuth` | `plugins.ts` | 291 |
-| POST | `/import/gist` | `requireAuth` | `plugins.ts` | 298 |
-| POST | `/import/repo` | `requireAuth` | `plugins.ts` | 322 |
-| POST | `/hooks/github` | — | `plugins.ts` | 354 |
-| GET | `/:id` | — | `plugins.ts` | 466 |
-| GET | `/:id/versions` | — | `plugins.ts` | 477 |
-| GET | `/:id/code` | — | `plugins.ts` | 499 |
-| POST | `/:id/versions` | `requireAuth` | `plugins.ts` | 537 |
-| POST | `/:id/publish` | `requireAuth` | `plugins.ts` | 569 |
-| POST | `/:id/install` | — | `plugins.ts` | 613 |
-| POST | `/:id/update` | — | `plugins.ts` | 680 |
-| POST | `/:id/uninstall` | — | `plugins.ts` | 711 |
-| POST | `/:id/report` | — | `plugins.ts` | 732 |
-| GET | `/:id/reports` | — | `plugins.ts` | 755 |
-| POST | `/:id/disable` | — | `plugins.ts` | 766 |
-| POST | `/:id/enable` | — | `plugins.ts` | 802 |
-| DELETE | `/:id` | — | `plugins.ts` | 816 |
-| POST | `/:id/fork` | `requireAuth` | `plugins.ts` | 834 |
-| GET | `/:id/state` | — | `plugins.ts` | 877 |
-| POST | `/:id/state` | — | `plugins.ts` | 900 |
-| DELETE | `/:id/state` | — | `plugins.ts` | 935 |
-| POST | `/:id/review` | `requireRole` | `plugins.ts` | 962 |
-| GET | `/:id/review` | `requireRole` | `plugins.ts` | 994 |
-| POST | `/:id/export/gist` | `requireAuth` | `plugins.ts` | 1010 |
-| POST | `/:id/export/repo` | `requireAuth` | `plugins.ts` | 1036 |
-| POST | `/:id/sync` | `requireAuth` | `plugins.ts` | 1075 |
+| POST | `/revoke-all` | `requireAuth` | `plugin-tokens.ts` | 83 |
+| DELETE | `/:id` | `requireAuth` | `plugin-tokens.ts` | 97 |
+| GET | `/mine` | `requireAuth` | `plugins.ts` | 142 |
+| GET | `/active` | — | `plugins.ts` | 155 |
+| GET | `/installed` | — | `plugins.ts` | 187 |
+| GET | `/reviews` | `requireRole` | `plugins.ts` | 253 |
+| POST | `/preview-check` | `requireAuth` | `plugins.ts` | 267 |
+| POST | `/import/gist` | `requireAuth` | `plugins.ts` | 274 |
+| POST | `/import/repo` | `requireAuth` | `plugins.ts` | 298 |
+| POST | `/hooks/github` | — | `plugins.ts` | 330 |
+| GET | `/:id` | — | `plugins.ts` | 442 |
+| GET | `/:id/versions` | — | `plugins.ts` | 453 |
+| GET | `/:id/code` | — | `plugins.ts` | 475 |
+| POST | `/:id/versions` | `requireAuth` | `plugins.ts` | 513 |
+| POST | `/:id/publish` | `requireAuth` | `plugins.ts` | 545 |
+| POST | `/:id/install` | — | `plugins.ts` | 589 |
+| POST | `/:id/update` | — | `plugins.ts` | 656 |
+| POST | `/:id/uninstall` | — | `plugins.ts` | 687 |
+| POST | `/:id/report` | — | `plugins.ts` | 708 |
+| GET | `/:id/reports` | — | `plugins.ts` | 731 |
+| POST | `/:id/disable` | — | `plugins.ts` | 742 |
+| POST | `/:id/enable` | — | `plugins.ts` | 778 |
+| DELETE | `/:id` | — | `plugins.ts` | 792 |
+| POST | `/:id/fork` | `requireAuth` | `plugins.ts` | 810 |
+| GET | `/:id/state` | — | `plugins.ts` | 853 |
+| POST | `/:id/state` | — | `plugins.ts` | 876 |
+| DELETE | `/:id/state` | — | `plugins.ts` | 911 |
+| POST | `/:id/review` | `requireRole` | `plugins.ts` | 938 |
+| GET | `/:id/review` | `requireRole` | `plugins.ts` | 970 |
+| POST | `/:id/export/gist` | `requireAuth` | `plugins.ts` | 986 |
+| POST | `/:id/export/repo` | `requireAuth` | `plugins.ts` | 1012 |
+| POST | `/:id/sync` | `requireAuth` | `plugins.ts` | 1051 |
 | GET | `/:id` | — | `posts.ts` | 46 |
 | POST | `/` | — | `posts.ts` | 68 |
 | POST | `/tsubuyaki` | — | `posts.ts` | 96 |
@@ -309,6 +313,8 @@
 | `plugin-net.ts` | WP3 | `/v1/plugin-net` | 実装あり |
 | `ai.ts` | WP5 | `/v1/ai` | 実装あり |
 | `mcp.ts` | WP5 | `/mcp, /mcp/legacy` | 実装あり |
+| `plugin-tokens.ts` | WP-A | `/v1/me/plugin-tokens` | 実装あり |
+| `mcp-plugin.ts` | WP-A | `/mcp-plugin, /mcp-plugin/legacy` | 実装あり |
 
 ## 4. 予定エンドポイント（WORKPACKAGES §3.2 の契約）
 

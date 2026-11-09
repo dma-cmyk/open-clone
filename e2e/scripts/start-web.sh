@@ -19,6 +19,8 @@ export NEXT_DIST_DIR="${E2E_NEXT_DIST_DIR:-.next-e2e}"
 # 実況（WebSocket）は next dev の rewrites では中継できないため、クライアントは API へ直接つなぐ。
 # wsBase() の dev 既定ポートは 8787 固定なので、E2E の API ポートを明示する。
 export NEXT_PUBLIC_WS_BASE="${NEXT_PUBLIC_WS_BASE:-$(printf '%s' "$API_ORIGIN" | sed -e 's#^http#ws#')}"
+# 接続手順画面に表示する MCP の API オリジン（本番は Vercel の NEXT_PUBLIC_API_ORIGIN）。
+export NEXT_PUBLIC_API_ORIGIN="${NEXT_PUBLIC_API_ORIGIN:-$API_ORIGIN}"
 
 echo "[e2e] next dev :$PORT (dir: $ROOT/apps/web, distDir: $NEXT_DIST_DIR, API_ORIGIN=$API_ORIGIN, WS=$NEXT_PUBLIC_WS_BASE)"
 cd "$ROOT/apps/web"

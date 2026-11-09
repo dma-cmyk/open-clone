@@ -15,11 +15,15 @@ import {
   errorText,
   formatTime,
   ui,
+  useQueryParam,
 } from "./_shared";
 
 type Tab = "public" | "mine" | "installed";
 
 export default function PluginsPage() {
+  // `/account/plugin-tokens` の「AI が作った下書き」導線（報告書27 §5.4）は
+  // `/plugins/?tab=mine` で mine タブを直接開く。
+  const tabParameter = useQueryParam("tab");
   const [tab, setTab] = useState<Tab>("public");
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<"" | PluginScope>("");
@@ -57,6 +61,10 @@ export default function PluginsPage() {
       setLoading(false);
     }
   }, [tab, query, scope, sort]);
+
+  useEffect(() => {
+    if (tabParameter === "mine" || tabParameter === "installed") setTab(tabParameter);
+  }, [tabParameter]);
 
   useEffect(() => {
     void load();

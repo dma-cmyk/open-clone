@@ -166,6 +166,8 @@ const ROUTE_FILES: Array<{ file: string; owner: string; mount: string }> = [
   { file: "plugin-net.ts", owner: "WP3", mount: "/v1/plugin-net" },
   { file: "ai.ts", owner: "WP5", mount: "/v1/ai" },
   { file: "mcp.ts", owner: "WP5", mount: "/mcp, /mcp/legacy" },
+  { file: "plugin-tokens.ts", owner: "WP-A", mount: "/v1/me/plugin-tokens" },
+  { file: "mcp-plugin.ts", owner: "WP-A", mount: "/mcp-plugin, /mcp-plugin/legacy" },
 ];
 
 function routeFileStatuses(): RouteFileStatus[] {
