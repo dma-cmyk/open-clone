@@ -2,9 +2,14 @@
 
 // プラグインレジストリ（一覧・検索・導入・GitHub 取込）
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PluginActiveInstall, PluginScope, PluginSummary } from "shared";
 import { pluginApi } from "@/features/plugin-host";
+import {
+  createLatestOnly,
+  initialRegistryTab,
+  type RegistryTab,
+} from "@/features/plugin-host/registry-query";
 import {
   Badge,
   Card,
@@ -18,13 +23,18 @@ import {
   useQueryParam,
 } from "./_shared";
 
-type Tab = "public" | "mine" | "installed";
+type Tab = RegistryTab;
 
 export default function PluginsPage() {
   // `/account/plugin-tokens` の「AI が作った下書き」導線（報告書27 §5.4）は
-  // `/plugins/?tab=mine` で mine タブを直接開く。
+  // `/plugins/?tab=mine` で mine タブを直接開く。初回レンダーで URL からタブを決めるので、
+  // 「公開一覧 → 自分のプラグイン」の二重取得は起きない（報告書40 §10）。
   const tabParameter = useQueryParam("tab");
-  const [tab, setTab] = useState<Tab>("public");
+  const [tab, setTab] = useState<Tab>(() =>
+    initialRegistryTab(typeof window === "undefined" ? "" : window.location.search),
+  );
+  // 取得ごとの世代番号。古い取得の応答が新しい結果を上書きしないようにする。
+  const latest = useRef(createLatestOnly());
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<"" | PluginScope>("");
   const [sort, setSort] = useState<"updated" | "popular" | "new">("updated");
@@ -37,11 +47,13 @@ export default function PluginsPage() {
   const [repo, setRepo] = useState("");
 
   const load = useCallback(async () => {
+    const token = latest.current.begin();
     setLoading(true);
     setError(null);
     try {
       if (tab === "installed") {
         const response = await pluginApi.active();
+        if (!latest.current.isCurrent(token)) return;
         setInstalled(response.items);
         setItems([]);
       } else {
@@ -52,13 +64,15 @@ export default function PluginsPage() {
           limit: 50,
           mine: tab === "mine" ? true : undefined,
         });
+        if (!latest.current.isCurrent(token)) return;
         setItems(page.items);
         setInstalled([]);
       }
     } catch (caught) {
+      if (!latest.current.isCurrent(token)) return;
       setError(errorText(caught));
     } finally {
-      setLoading(false);
+      if (latest.current.isCurrent(token)) setLoading(false);
     }
   }, [tab, query, scope, sort]);
 
