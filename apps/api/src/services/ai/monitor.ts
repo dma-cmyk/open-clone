@@ -5,6 +5,7 @@
 
 import { ulid } from "shared";
 import type { Env } from "../../lib/env";
+import { prunePluginAuthorData } from "../plugin-authoring/audit";
 import { recordAiAudit } from "./audit";
 import { emitAgentSuspended, emitAnomaly } from "./events";
 import { setAgentStatus } from "./agents";
@@ -229,6 +230,8 @@ export async function runWebhookMaintenance(env: Env): Promise<{
   prunedAudit: number;
   prunedCounters: number;
   prunedDeliveries: number;
+  prunedPluginAuthorUsage: number;
+  prunedPluginAuthorAudit: number;
 }> {
   const retried = await retryPendingDeliveries(env, 20);
   const ts = now();
@@ -248,11 +251,17 @@ export async function runWebhookMaintenance(env: Env): Promise<{
     .bind(ts - 30 * DAY_SECONDS)
     .run();
 
+  // WP-A: プラグイン作成トークンの日次カウンタ（8 日）と監査（90 日）を既存ジョブで掃除する。
+  // 新規 cron は作らない（Free 枠の節約。報告書28 §5.2）。
+  const pluginAuthor = await prunePluginAuthorData(env, ts);
+
   return {
     retried: retried.processed,
     prunedAudit: audit.meta.rows_written ?? 0,
     prunedCounters: counters.meta.rows_written ?? 0,
     prunedDeliveries: deliveries.meta.rows_written ?? 0,
+    prunedPluginAuthorUsage: pluginAuthor.usage,
+    prunedPluginAuthorAudit: pluginAuthor.audit,
   };
 }
 

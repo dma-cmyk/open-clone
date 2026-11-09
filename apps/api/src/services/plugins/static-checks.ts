@@ -6,10 +6,36 @@ import {
   analyzeRegexPattern,
   PLUGIN_CODE_MAX_BYTES,
   type PluginManifest,
+  type PluginPermission,
   type PluginStaticCheckResult,
 } from "shared";
 
 export type StaticCheckResult = PluginStaticCheckResult;
+
+/**
+ * コードが実際に使いそうな RPC と permission 宣言の突き合わせ（審査の補助）。
+ * `POST /v1/plugins/preview-check` と `/mcp-plugin` の `authoring.check` が共有する。
+ */
+export function manifestPermissionWarnings(manifest: PluginManifest, code: string): string[] {
+  const warnings: string[] = [];
+  const checks: { needle: string; permission: PluginPermission; label: string }[] = [
+    { needle: "net.fetch", permission: "net:fetch", label: "net.fetch" },
+    { needle: "storage.set", permission: "storage:shared", label: "storage.set" },
+    { needle: "storage.get", permission: "storage:shared", label: "storage.get" },
+    { needle: "data.post.create", permission: "data:write:post", label: "data.post.create" },
+    { needle: "github.gist", permission: "github:gist", label: "github.gist" },
+    { needle: "github.repo", permission: "github:repo", label: "github.repo" },
+    { needle: "upload.start", permission: "upload:start", label: "upload.start" },
+    { needle: "ai.complete", permission: "ai:complete", label: "ai.complete" },
+    { needle: "events.subscribe", permission: "events:subscribe", label: "events.subscribe" },
+  ];
+  for (const check of checks) {
+    if (code.includes(check.needle) && !manifest.permissions.includes(check.permission)) {
+      warnings.push(`${check.label} を呼んでいますが ${check.permission} 権限が宣言されていません`);
+    }
+  }
+  return warnings;
+}
 
 interface Rule {
   pattern: RegExp;

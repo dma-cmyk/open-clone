@@ -28,8 +28,6 @@ import {
   pluginUpdateSchema,
   pluginVersionCreateSchema,
   timingSafeEqual,
-  type PluginManifest,
-  type PluginPermission,
   type PluginScope,
 } from "shared";
 import type { AppEnv } from "../lib/env";
@@ -38,7 +36,7 @@ import { getReqCtx } from "../lib/context";
 import { assertReadRateLimit } from "../lib/do";
 import { requireAuth, requireRole } from "../lib/middleware/auth";
 import { writeAudit } from "../lib/audit";
-import { runStaticChecks } from "../services/plugins/static-checks";
+import { manifestPermissionWarnings, runStaticChecks } from "../services/plugins/static-checks";
 import { emitPluginReviewRequested } from "../services/ai/events";
 import {
   assertBoardStopPermission,
@@ -113,28 +111,6 @@ function isOwner(actor: PluginActor, ownerAccountId: string | null): boolean {
 function assertPluginEditor(actor: PluginActor, ownerAccountId: string | null): void {
   if (isOwner(actor, ownerAccountId) || actor.isAdmin) return;
   throw ApiError.forbidden("プラグインの所有者またはサイト管理者のみ操作できます");
-}
-
-/** コードが実際に使いそうな RPC と permission 宣言の突き合わせ（審査の補助）。 */
-function manifestPermissionWarnings(manifest: PluginManifest, code: string): string[] {
-  const warnings: string[] = [];
-  const checks: { needle: string; permission: PluginPermission; label: string }[] = [
-    { needle: "net.fetch", permission: "net:fetch", label: "net.fetch" },
-    { needle: "storage.set", permission: "storage:shared", label: "storage.set" },
-    { needle: "storage.get", permission: "storage:shared", label: "storage.get" },
-    { needle: "data.post.create", permission: "data:write:post", label: "data.post.create" },
-    { needle: "github.gist", permission: "github:gist", label: "github.gist" },
-    { needle: "github.repo", permission: "github:repo", label: "github.repo" },
-    { needle: "upload.start", permission: "upload:start", label: "upload.start" },
-    { needle: "ai.complete", permission: "ai:complete", label: "ai.complete" },
-    { needle: "events.subscribe", permission: "events:subscribe", label: "events.subscribe" },
-  ];
-  for (const check of checks) {
-    if (code.includes(check.needle) && !manifest.permissions.includes(check.permission)) {
-      warnings.push(`${check.label} を呼んでいますが ${check.permission} 権限が宣言されていません`);
-    }
-  }
-  return warnings;
 }
 
 function queryObject(url: string): Record<string, string> {

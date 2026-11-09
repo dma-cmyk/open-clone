@@ -250,6 +250,8 @@ export async function listPlugins(
     cursor?: string;
     ownerAccountId?: string;
     includeAllStatuses?: boolean;
+    /** レジストリ状態での絞り込み（`/mcp-plugin` の authoring.list 用）。 */
+    status?: PluginStatus;
   },
 ): Promise<PluginListPage> {
   const where: string[] = [];
@@ -258,6 +260,10 @@ export async function listPlugins(
   if (options.ownerAccountId) {
     where.push("p.owner_account_id = ?");
     params.push(options.ownerAccountId);
+  }
+  if (options.status) {
+    where.push("p.status = ?");
+    params.push(options.status);
   }
   if (!options.includeAllStatuses) {
     where.push("p.status = 'published'", "p.visibility = 'public'");

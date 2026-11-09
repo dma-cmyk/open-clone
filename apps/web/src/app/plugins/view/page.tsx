@@ -103,12 +103,17 @@ export default function PluginViewPage() {
             一覧へ
           </a>
           {plugin?.viewer.canEdit ? (
-            <a
-              href={`/plugins/new/?id=${encodeURIComponent(plugin.id)}`}
-              className="oc-btn oc-btn-primary"
-            >
-              新バージョンを作成
-            </a>
+            <>
+              <a href={`/plugins/new/?id=${encodeURIComponent(plugin.id)}`} className="oc-btn">
+                プレビュー（sandbox）
+              </a>
+              <a
+                href={`/plugins/new/?id=${encodeURIComponent(plugin.id)}`}
+                className="oc-btn oc-btn-primary"
+              >
+                新バージョンを作成
+              </a>
+            </>
           ) : null}
         </>
       }
@@ -311,6 +316,27 @@ export default function PluginViewPage() {
               <p className="oc-muted oc-small">
                 個人用/板用のみなら即時公開。site を含むと審査キューに入り、owner / 特別管理人の承認後に公開されます。
               </p>
+              <div className="oc-row">
+                <button
+                  type="button"
+                  className="oc-btn oc-btn-sm"
+                  disabled={busy || !code}
+                  onClick={() =>
+                    void run(async () => {
+                      if (!code) return "コードを読み込めませんでした";
+                      const result = await pluginApi.previewCheck(code, plugin.manifest);
+                      return result.checks.allowed
+                        ? `静的検査: 問題ありません（リスク ${result.checks.riskScore}）`
+                        : `静的検査: 不合格 — ${result.checks.reasons.join(" / ")}`;
+                    }, false)
+                  }
+                >
+                  静的検査を再実行
+                </button>
+                <span className="oc-muted oc-small">
+                  保存済みの最新コードを検査します（AI が作った下書きの確認用）
+                </span>
+              </div>
 
               {plugin.status === "pending" && pendingReview ? (
                 <div className="oc-card" style={{ background: "#fffdf2" }}>
