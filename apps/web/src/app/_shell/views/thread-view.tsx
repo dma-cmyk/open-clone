@@ -1,12 +1,12 @@
 "use client";
 
-// スレ表示。レス範囲・安価・ID抽出・NG・画像/動画・いいね・実況・kome を統合する。
+// スレ表示。レス範囲・安価・ID抽出・NG・画像/動画・いいね・実況・つぶやきを統合する。
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api, ApiError } from "@/features/board-ui/api";
 import { AnchorPopup, type AnchorTarget } from "@/features/board-ui/anchor-popup";
 import { formatRelative, threadPath, boardPath } from "@/features/board-ui/format";
 import { getLastRead, isBookmarked, recordRead, setLastRead, toggleBookmark } from "@/features/board-ui/history";
-import { KomeOverlay } from "@/features/board-ui/kome-overlay";
+import { TsubuyakiOverlay } from "@/features/board-ui/tsubuyaki-overlay";
 import { PostForm } from "@/features/board-ui/post-form";
 import { PostRow } from "@/features/board-ui/post-row";
 import { ReportModal } from "@/features/board-ui/report-modal";
@@ -70,7 +70,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   );
 
   const [posts, setPosts] = useState<Post[]>([]);
-  const [kome, setKome] = useState<Post[]>([]);
+  const [tsubuyakiComments, setTsubuyakiComments] = useState<Post[]>([]);
   const boardInfo = useApiData(() => api.getBoard(slug), [slug]);
   const canManage = Boolean(boardInfo.data?.canManage);
   const renderRules = usePluginPostRenderRules({
@@ -80,7 +80,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   });
   const [live, setLive] = useState(false);
   const [viewers, setViewers] = useState<number | null>(null);
-  const [komeOpen, setKomeOpen] = useState(settings.behavior.kome);
+  const [tsubuyakiOpen, setTsubuyakiOpen] = useState(settings.behavior.tsubuyaki);
   const [anchor, setAnchor] = useState<AnchorTarget | null>(null);
   const [report, setReport] = useState<{ posts: string } | null>(null);
   const [searchDraft, setSearchDraft] = useState(qFilter);
@@ -98,9 +98,9 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
 
   useEffect(() => {
     if (!page.data) return;
-    const own = page.data.posts.filter((post) => post.kind !== "kome");
+    const own = page.data.posts.filter((post) => post.kind !== "tsubuyaki");
     setPosts(own);
-    setKome(page.data.posts.filter((post) => post.kind === "kome"));
+    setTsubuyakiComments(page.data.posts.filter((post) => post.kind === "tsubuyaki"));
     const maxId = own.reduce((max, post) => Math.max(max, post.id), 0);
     if (loadedThreadId.current !== threadId) {
       loadedThreadId.current = threadId;
@@ -148,8 +148,8 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
 
   const appendPost = useCallback(
     (post: Post) => {
-      if (post.kind === "kome") {
-        setKome((prev) => [...prev, post]);
+      if (post.kind === "tsubuyaki") {
+        setTsubuyakiComments((prev) => [...prev, post]);
         return;
       }
       setPosts((prev) => {
@@ -176,7 +176,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
     enabled: live,
     getLastPostId: () => lastIdRef.current,
     onPost: appendPost,
-    onKome: (post) => setKome((prev) => [...prev, post]),
+    onTsubuyaki: (post) => setTsubuyakiComments((prev) => [...prev, post]),
     onInvalidate: page.reload,
   });
 
@@ -379,10 +379,10 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
           </span>
           <button
             type="button"
-            className={`oc-icon-btn${komeOpen || settings.behavior.kome ? " on" : ""}`}
-            onClick={() => setKomeOpen((value) => !value)}
+            className={`oc-icon-btn${tsubuyakiOpen || settings.behavior.tsubuyaki ? " on" : ""}`}
+            onClick={() => setTsubuyakiOpen((value) => !value)}
           >
-            💬 kome
+            💬 つぶやき
           </button>
           <button
             type="button"
@@ -622,7 +622,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
               toast.show("投稿しました");
             }
           }}
-          onOpenKome={() => setKomeOpen(true)}
+          onOpenTsubuyaki={() => setTsubuyakiOpen(true)}
         />
       ) : (
         <div className="oc-panel">
@@ -651,14 +651,14 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
         defaultPosts={report?.posts ?? "all"}
       />
 
-      <KomeOverlay
+      <TsubuyakiOverlay
         threadId={threadId}
-        open={komeOpen}
-        onClose={() => setKomeOpen(false)}
-        comments={kome}
+        open={tsubuyakiOpen}
+        onClose={() => setTsubuyakiOpen(false)}
+        comments={tsubuyakiComments}
         initialLoaded={Boolean(page.data)}
         onSent={(post) => {
-          if (post) setKome((prev) => [...prev, post]);
+          if (post) setTsubuyakiComments((prev) => [...prev, post]);
         }}
         enabled={canPost}
         turnstile={boardInfo.data?.board.settings?.turnstile ?? "anonymous"}

@@ -1,4 +1,4 @@
-// 個人設定（NG・表示・新着・kome）。open2ch 同様、端末ローカルが正本（DESIGN §6.2）。
+// 個人設定（NG・表示・新着・つぶやき）。open2ch 同様、端末ローカルが正本（DESIGN §6.2）。
 // サーバーには保存しない（アカウント同期は将来 WP6 の設定 API で拡張可能）。
 
 import { createLocalStore } from "./storage";
@@ -28,10 +28,10 @@ export interface UserSettings {
     autoScroll: boolean;
     sound: boolean;
     readAloud: boolean;
-    kome: boolean;
+    tsubuyaki: boolean;
     floatForm: boolean;
   };
-  kome: {
+  tsubuyaki: {
     size: number;
     speed: number;
     opacity: number;
@@ -42,18 +42,99 @@ export interface UserSettings {
 export const DEFAULT_SETTINGS: UserSettings = {
   ng: { mode: "confirm", words: [], ids: [], names: [], trips: [], threads: [] },
   display: { fontSize: 15, showImages: true, aa: false, reverse: false },
-  behavior: { autoScroll: true, sound: false, readAloud: false, kome: false, floatForm: false },
-  kome: { size: 22, speed: 9, opacity: 0.95, color: "#ffffff" },
+  behavior: { autoScroll: true, sound: false, readAloud: false, tsubuyaki: false, floatForm: false },
+  tsubuyaki: { size: 22, speed: 9, opacity: 0.95, color: "#ffffff" },
 };
 
-export const settingsStore = createLocalStore<UserSettings>("oc.settings.v1", DEFAULT_SETTINGS, {
+/** 個人設定の localStorage キー（e2e も参照する）。 */
+export const SETTINGS_STORAGE_KEY = "oc.settings.v1";
+
+/**
+ * 旧名 kome で保存された端末設定を新しい名前に移す（純関数）。
+ * 保存済みの利用者設定を失わないための移行で、旧キーは移行後に残さない。
+ * - `behavior.kome` → `behavior.tsubuyaki`
+ * - トップレベル `kome`（文字サイズ等）→ `tsubuyaki`
+ * - NG の特殊指定 `:kome` → `:tsubuyaki`
+ */
+export function migrateLegacySettings(stored: unknown): unknown {
+  if (typeof stored !== "object" || stored === null || Array.isArray(stored)) return stored;
+  const source = stored as Record<string, unknown>;
+  const next: Record<string, unknown> = { ...source };
+  let changed = false;
+
+  const behaviorRaw = source["behavior"];
+  if (typeof behaviorRaw === "object" && behaviorRaw !== null && !Array.isArray(behaviorRaw)) {
+    const behavior = { ...(behaviorRaw as Record<string, unknown>) };
+    if ("kome" in behavior) {
+      if (behavior["tsubuyaki"] === undefined) behavior["tsubuyaki"] = behavior["kome"];
+      delete behavior["kome"];
+      next["behavior"] = behavior;
+      changed = true;
+    }
+  }
+
+  if ("kome" in next) {
+    if (next["tsubuyaki"] === undefined) next["tsubuyaki"] = next["kome"];
+    delete next["kome"];
+    changed = true;
+  }
+
+  const ngRaw = source["ng"];
+  if (typeof ngRaw === "object" && ngRaw !== null && !Array.isArray(ngRaw)) {
+    const ng = { ...(ngRaw as Record<string, unknown>) };
+    const words = ng["words"];
+    if (Array.isArray(words)) {
+      let mapped = false;
+      const renamed = words.map((word) => {
+        if (typeof word === "string" && word.trim().toLowerCase() === ":kome") {
+          mapped = true;
+          return ":tsubuyaki";
+        }
+        return word;
+      });
+      if (mapped) {
+        const seen = new Set<unknown>();
+        ng["words"] = renamed.filter((word) => {
+          if (seen.has(word)) return false;
+          seen.add(word);
+          return true;
+        });
+        next["ng"] = ng;
+        changed = true;
+      }
+    }
+  }
+
+  return changed ? next : stored;
+}
+
+/** 端末に保存済みの旧設定を新しい名前に書き戻す（ブラウザのみ）。 */
+export function migrateSettingsStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as unknown;
+    const migrated = migrateLegacySettings(parsed);
+    if (migrated !== parsed) {
+      window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(migrated));
+    }
+  } catch {
+    // 壊れた JSON は store の merge が既定値で吸収する
+  }
+}
+
+// モジュール読み込み時（ブラウザ）に旧キーを新しい名前に移して保存し直す。
+migrateSettingsStorage();
+
+export const settingsStore = createLocalStore<UserSettings>(SETTINGS_STORAGE_KEY, DEFAULT_SETTINGS, {
   merge(stored, fallback) {
-    const value = (stored ?? {}) as Partial<UserSettings>;
+    const value = (migrateLegacySettings(stored) ?? {}) as Partial<UserSettings>;
     return {
       ng: { ...fallback.ng, ...(value.ng ?? {}), threads: value.ng?.threads ?? [] },
       display: { ...fallback.display, ...(value.display ?? {}) },
       behavior: { ...fallback.behavior, ...(value.behavior ?? {}) },
-      kome: { ...fallback.kome, ...(value.kome ?? {}) },
+      tsubuyaki: { ...fallback.tsubuyaki, ...(value.tsubuyaki ?? {}) },
     };
   },
 });
@@ -66,7 +147,7 @@ export interface NgVerdict {
 const SPECIAL: Record<string, (post: Post) => boolean> = {
   ":url": (post) => /https?:\/\//.test(post.body),
   ":image": (post) => (post.attachments?.length ?? 0) > 0 || /https?:\/\/\S+\.(png|jpe?g|gif|webp)/i.test(post.body),
-  ":kome": (post) => post.kind === "kome",
+  ":tsubuyaki": (post) => post.kind === "tsubuyaki",
   ":ai": (post) => Boolean(post.aiAgent),
 };
 

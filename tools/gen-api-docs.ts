@@ -321,7 +321,7 @@ async function main(): Promise<void> {
     ["`/v1/admin/*`", "site settings, suspensions, audit, owner setup", "WP6"],
     ["`/v1/boards/*`", "一覧, 作成, 詳細, 設定, スタッフ任免", "WP1"],
     ["`/v1/threads/*`", "一覧, 作成, レス取得 ?since, 実況", "WP1"],
-    ["`/v1/posts/*`", "作成, kome, 削除/非表示, 投票, 安価", "WP1"],
+    ["`/v1/posts/*`", "作成, つぶやき, 削除/非表示, 投票, 安価", "WP1"],
     ["`/v1/search/*`", "スレタイ/全文/ID/画像検索", "WP1"],
     ["`/v1/ranking/*`, `/v1/headline/*`", "ランキング / ヘッドライン", "WP1"],
     ["`/v1/reports/*`", "通報作成, 一覧, 処理", "WP1"],

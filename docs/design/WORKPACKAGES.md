@@ -75,7 +75,7 @@ WP0 (基盤) ──┬─► WP1 (掲示板コアAPI) ──┬─► WP2 (掲�
 | `admin.ts` | `/v1/admin/*`(site settings, suspensions, audit, owner setup) ※ invites・ai 除く | WP6 |
 | `boards.ts` | `/v1/boards/*`(一覧, 作成, 詳細, 設定, スタッフ任免) | WP1 |
 | `threads.ts` | `/v1/threads/*`(一覧, 作成, レス取得 ?since, 実況) | WP1 |
-| `posts.ts` | `/v1/posts/*`(作成, kome, 削除/非表示, 投票, 安価) | WP1 |
+| `posts.ts` | `/v1/posts/*`(作成, つぶやき, 削除/非表示, 投票, 安価) | WP1 |
 | `search.ts` | `/v1/search/*` | WP1 |
 | `ranking.ts` | `/v1/ranking/*`, `/v1/headline/*` | WP1 |
 | `reports.ts` | `/v1/reports/*`(通報作成, 一覧, 処理) | WP1 |
@@ -136,7 +136,7 @@ Worker 内部ライブラリ（`apps/api/src/lib/`）も同様に排他:
 | ディレクトリ | 所有WP | 内容 |
 |---|---|---|
 | `e2e/playwright.config.ts`, `e2e/helpers/*`, `e2e/fixtures/*` | WP7 | 基盤（起動スクリプト・スタブ外部サービス・シード） |
-| `e2e/core/*.spec.ts`（投稿〜実況〜kome、板作成、検索、ランキング） | WP1+WP2 | |
+| `e2e/core/*.spec.ts`（投稿〜実況〜つぶやき、板作成、検索、ランキング） | WP1+WP2 | |
 | `e2e/plugin/*.spec.ts`（作成→実行→公開→導入、sandbox セキュリティ） | WP3 | |
 | `e2e/upload/*.spec.ts`（アップロード、GitHub連携モック） | WP4 | |
 | `e2e/ai/*.spec.ts`（REST+MCP 政策シナリオ、injection） | WP5 | |
@@ -178,14 +178,14 @@ Worker 内部ライブラリ（`apps/api/src/lib/`）も同様に排他:
   - 内部関数（他 WP が import）: `createPost()`（WP5 の medium 投稿が使用）、`hidePost()`/`deletePost()`（WP5）、`setBoardStaff()`（WP6 の UI から）、`getThread()/getBoard()`（WP3/WP5）。
   - WS イベント型 `schemas/realtime.ts`（WP2/WP3 が購読）。
   - 専ブラ互換 `/compat/*`（subject.txt/dat、Shift_JIS）。
-- **受入条件**: 共通条件 + ①DESIGN §6.2 の「必須」機能の API 統合テスト（@cloudflare/vitest-pool-workers）が全てパス: 投稿（ID/トリップ/安価解決/backlinks/sage/kome）、1000レス上限、!aku/!sub/!cap の主副権限、投票 1IP1票、板作成/1週間無投稿削除 cron、通報作成/処理、FTS5+LIKE 検索、ランキング snapshot、compat dat の Shift_JIS バイト一致 ②RealtimeHub: Hibernation 使用（`ctx.acceptWebSocket` + autoResponse）、再接続で差分返却、publish→購読者受信の統合テスト ③RateLimiter の窓制限テスト ④**1投稿の rows_written ≤12 を D1 meta で assert** ⑤権限ミドルウェアの 403 テスト（§5.4 の板スタッフ行） ⑥e2e/core の API 前提部分がグリーン。
+- **受入条件**: 共通条件 + ①DESIGN §6.2 の「必須」機能の API 統合テスト（@cloudflare/vitest-pool-workers）が全てパス: 投稿（ID/トリップ/安価解決/backlinks/sage/つぶやき）、1000レス上限、!aku/!sub/!cap の主副権限、投票 1IP1票、板作成/1週間無投稿削除 cron、通報作成/処理、FTS5+LIKE 検索、ランキング snapshot、compat dat の Shift_JIS バイト一致 ②RealtimeHub: Hibernation 使用（`ctx.acceptWebSocket` + autoResponse）、再接続で差分返却、publish→購読者受信の統合テスト ③RateLimiter の窓制限テスト ④**1投稿の rows_written ≤12 を D1 meta で assert** ⑤権限ミドルウェアの 403 テスト（§5.4 の板スタッフ行） ⑥e2e/core の API 前提部分がグリーン。
 
 ### WP2 掲示板フロントUI
 
-- **担当範囲**: `apps/web/src/app/` の WP2 ルート（§3.1: layout, トップ, `b/`, `settings/`）、`apps/web/src/components/*`（共通UI。ただし `components/uploader/*`・`components/github-link-panel.tsx` は WP4、`components/ai-board-panel.tsx` は WP5 所有＝import して使う）、`apps/web/src/features/board-ui/*`（投稿フォーム、レス表示、安価ポップアップ、NG、お絵かきエディタ、kome オーバーレイ、実況モード、履歴/ブクマ、忍法帖表示）、`e2e/core/*.spec.ts`、`apps/web/public/*`（favicon・OGP 等の**独自生成素材**、既存サイト素材の流用禁止）。
+- **担当範囲**: `apps/web/src/app/` の WP2 ルート（§3.1: layout, トップ, `b/`, `settings/`）、`apps/web/src/components/*`（共通UI。ただし `components/uploader/*`・`components/github-link-panel.tsx` は WP4、`components/ai-board-panel.tsx` は WP5 所有＝import して使う）、`apps/web/src/features/board-ui/*`（投稿フォーム、レス表示、安価ポップアップ、NG、お絵かきエディタ、つぶやきオーバーレイ、実況モード、履歴/ブクマ、忍法帖表示）、`e2e/core/*.spec.ts`、`apps/web/public/*`（favicon・OGP 等の**独自生成素材**、既存サイト素材の流用禁止）。
 - **依存**: WP0、WP1（契約確定後モックで先行可）。WP4（アップロード UI コンポーネント `components/uploader/*` を WP4 が提供し、WP2 が投稿フォームに組み込む）、WP3（プラグインスロット `<PluginSlot>` を WP3 が提供し layout に組み込む — layout への組み込み行は WP2 が WP3 の export を import する形）。
 - **提供インターフェース**: `components/` の共有UI（他 WP の admin/plugins ページが import 可）、`features/board-ui/uploader-mount.tsx`（WP4 コンポの差し込み点）、デザイン トークン（Tailwind theme、open2ch 実測値ベース: 緑系 #CCFFCC/#EFEFEF、名前 #228811、スレタイ赤、メイリオ系フォント — ただしコード/画像は独自実装）。
-- **受入条件**: 共通条件 + ①PC/スマホ両対応（レスポンシブ、sticky 投稿欄、スワイプでスレ無視）を Playwright viewport テストで確認 ②板一覧→スレ（範囲URL `?r=l50|1-100|n|3,4,8`）→投稿→WS 新着反映→kome 弾幕→安価ポップアップ→NG（3段階）→お絵かき→実況追尾 の e2e/core がグリーン ③設定ページ（NG・表示・新着音・読み上げ）が localStorage に永続化 ④静的エクスポート（`next build && output export`）が成功し、シェル+クライアントルーティングで全 URL が表示 ⑤Lighthouse mobile ≥80（performance は目標値）。
+- **受入条件**: 共通条件 + ①PC/スマホ両対応（レスポンシブ、sticky 投稿欄、スワイプでスレ無視）を Playwright viewport テストで確認 ②板一覧→スレ（範囲URL `?r=l50|1-100|n|3,4,8`）→投稿→WS 新着反映→つぶやき弾幕→安価ポップアップ→NG（3段階）→お絵かき→実況追尾 の e2e/core がグリーン ③設定ページ（NG・表示・新着音・読み上げ）が localStorage に永続化 ④静的エクスポート（`next build && output export`）が成功し、シェル+クライアントルーティングで全 URL が表示 ⑤Lighthouse mobile ≥80（performance は目標値）。
 
 ### WP3 プラグイン（サーバ+SDK+UI）
 

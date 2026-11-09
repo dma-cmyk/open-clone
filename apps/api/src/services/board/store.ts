@@ -185,7 +185,9 @@ export function mapPost(row: PostRow, decoration: PostDecoration = EMPTY_DECORAT
     threadId: row.thread_id,
     boardId: row.board_id,
     num: row.num,
-    kind: row.kind === "kome" ? "kome" : "post",
+    // DB の posts.kind は本番 D1 のテーブル作り直しを避けるため 'kome' のまま。
+    // 外向け（PostKind）は 'tsubuyaki' に変換し、DB の値を API に出さない。
+    kind: row.kind === "kome" ? "tsubuyaki" : "post",
     name: row.name,
     mail: row.mail,
     trip: row.trip,

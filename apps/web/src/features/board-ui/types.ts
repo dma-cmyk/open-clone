@@ -32,7 +32,7 @@ export interface BoardSettings {
   live?: boolean;
   noId?: boolean;
   allowImages?: boolean;
-  kome?: boolean;
+  tsubuyaki?: boolean;
   maxPosts?: number;
   uploader?: string | null;
   forceSage?: boolean;
@@ -108,7 +108,7 @@ export interface Post {
   likeCount?: number;
   liked?: boolean;
   backlinks?: number[];
-  kind?: "post" | "kome";
+  kind?: "post" | "tsubuyaki";
   provider?: string;
   aiAgent?: { id?: string; name?: string } | null;
   hidden?: boolean;

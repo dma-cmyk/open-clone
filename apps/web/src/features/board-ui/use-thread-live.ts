@@ -16,7 +16,7 @@ interface LiveOptions {
   /** 現在の最終レス id（ポーリング差分に使う） */
   getLastPostId: () => number;
   onPost: (post: Post) => void;
-  onKome: (post: Post) => void;
+  onTsubuyaki: (post: Post) => void;
   /** 非表示・削除など、一覧の再取得が必要なイベント */
   onInvalidate: () => void;
 }
@@ -46,11 +46,11 @@ export async function runPollOnce(
   apply(result.items);
 }
 
-export function useThreadLive({ threadId, enabled, getLastPostId, onPost, onKome, onInvalidate }: LiveOptions) {
+export function useThreadLive({ threadId, enabled, getLastPostId, onPost, onTsubuyaki, onInvalidate }: LiveOptions) {
   const [status, setStatus] = useState<LiveStatus>("off");
   const seqRef = useRef(0);
-  const handlers = useRef({ onPost, onKome, onInvalidate });
-  handlers.current = { onPost, onKome, onInvalidate };
+  const handlers = useRef({ onPost, onTsubuyaki, onInvalidate });
+  handlers.current = { onPost, onTsubuyaki, onInvalidate };
   const lastPostId = useRef<number>(getLastPostId());
   lastPostId.current = getLastPostId();
 
@@ -59,13 +59,13 @@ export function useThreadLive({ threadId, enabled, getLastPostId, onPost, onKome
       seqRef.current = event.seq;
     }
     const payload = (event.data ?? {}) as Record<string, unknown>;
-    const rawPost = payload.post ?? payload.kome ?? event.data;
+    const rawPost = payload.post ?? payload.tsubuyaki ?? event.data;
     switch (event.type) {
       case "post.created":
         if (rawPost) handlers.current.onPost(normalizePost(rawPost));
         break;
-      case "kome.created":
-        if (rawPost) handlers.current.onKome(normalizePost(rawPost));
+      case "tsubuyaki.created":
+        if (rawPost) handlers.current.onTsubuyaki(normalizePost(rawPost));
         break;
       case "post.hidden":
       case "post.deleted":
@@ -97,8 +97,8 @@ export function useThreadLive({ threadId, enabled, getLastPostId, onPost, onKome
           () => api.getPostsSince(threadId, since),
           (items) => {
             for (const post of items) {
-              if (post.kind === "kome") {
-                handlers.current.onKome(post);
+              if (post.kind === "tsubuyaki") {
+                handlers.current.onTsubuyaki(post);
               } else {
                 handlers.current.onPost(post);
               }

@@ -32,7 +32,7 @@ export function BoardNewView() {
     cooldownSeconds: 5,
     live: false,
     allowImages: true,
-    kome: true,
+    tsubuyaki: true,
     noId: false,
     maxPosts: 1000,
   });
@@ -72,7 +72,7 @@ export function BoardNewView() {
           cooldownSeconds: settings.cooldownSeconds,
           live: settings.live,
           allowImages: settings.allowImages,
-          kome: settings.kome,
+          tsubuyaki: settings.tsubuyaki,
           noId: settings.noId,
           maxPosts: settings.maxPosts,
           ngWords: ngWords
@@ -272,10 +272,10 @@ export function BoardNewView() {
                 <label className="oc-check">
                   <input
                     type="checkbox"
-                    checked={settings.kome}
-                    onChange={(event) => setSettings({ ...settings, kome: event.target.checked })}
+                    checked={settings.tsubuyaki}
+                    onChange={(event) => setSettings({ ...settings, tsubuyaki: event.target.checked })}
                   />
-                  kome を許可
+                  つぶやきを許可
                 </label>
                 <label className="oc-check">
                   <input

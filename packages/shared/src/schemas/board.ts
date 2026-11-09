@@ -32,8 +32,8 @@ export const boardSettingsSchema = z.object({
   noId: z.boolean().default(false),
   /** 画像添付の許可 */
   allowImages: z.boolean().default(true),
-  /** kome（コメント流し）の許可 */
-  kome: z.boolean().default(true),
+  /** つぶやき（コメント流し）の許可 */
+  tsubuyaki: z.boolean().default(true),
   /** 既定のレス上限（スレ作成時に `!maxNNN` が無い場合） */
   maxPosts: z.number().int().min(10).max(1000).default(1000),
   /** 使用するアップローダアダプタ（null = サイト既定） */

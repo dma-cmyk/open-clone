@@ -254,7 +254,7 @@ pnpm dev
 |---|---|---|---|
 | `apps/api/src/services/uploads/attach.ts` | `attachToPost(postId, ids)` | WP1 | WP4 |
 | `apps/api/src/services/github/service.ts` | `createGist/pushToRepo/listUserRepos/getRateInfo` | WP3 | WP4 |
-| `apps/api/src/lib/pipeline.ts` | `createPostInternal/createThreadInternal/createKomeInternal`（投稿・スレ作成・kome の唯一の経路） | WP1/WP5 | WP1 |
+| `apps/api/src/lib/pipeline.ts` | `createPostInternal/createThreadInternal/createTsubuyakiInternal`（投稿・スレ作成・つぶやきの唯一の経路） | WP1/WP5 | WP1 |
 | `apps/api/src/services/board/index.ts` | `hidePost/unhidePost/deletePost`（管理操作のみ。投稿系は pipeline を直接呼ぶ） | WP1 | WP1 |
 | `apps/api/src/services/plugins/static-checks.ts` | `runStaticChecks(code)` | WP5 | WP3 |
 | `apps/api/src/services/ai/policy-engine.ts` | `enforceAiPolicy(agent, action, params)` | WP5 | WP5 |

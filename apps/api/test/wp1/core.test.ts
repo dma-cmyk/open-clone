@@ -436,7 +436,7 @@ describe("Turnstile", () => {
   });
 });
 
-describe("投票・kome", () => {
+describe("投票・つぶやき", () => {
   it("投票の作成・1 IP 1 票・結果取得", async () => {
     const { owner, thread } = await setupWorld();
     const anon = new TestClient();
@@ -463,31 +463,31 @@ describe("投票・kome", () => {
     expect(owner.account.id).toBeTruthy();
   });
 
-  it("未ログインの kome は Turnstile トークンで通る（body / cf-turnstile-response / ヘッダ）", async () => {
+  it("未ログインのつぶやきは Turnstile トークンで通る（body / cf-turnstile-response / ヘッダ）", async () => {
     const { thread } = await setupWorld({ settings: { turnstile: "anonymous" } });
     const anon = new TestClient();
 
-    const missing = await anon.post<{ kome: { kind: string } }>(`/v1/threads/${thread.threadId}/kome`, {
+    const missing = await anon.post<{ tsubuyaki: { kind: string } }>(`/v1/threads/${thread.threadId}/tsubuyaki`, {
       body: "トークンなし",
     });
     expect(missing.status).toBe(400);
     if (!missing.body.ok) expect(missing.body.code).toBe("TURNSTILE_FAILED");
 
-    const fromBody = await anon.post<{ kome: { kind: string } }>(`/v1/threads/${thread.threadId}/kome`, {
+    const fromBody = await anon.post<{ tsubuyaki: { kind: string } }>(`/v1/threads/${thread.threadId}/tsubuyaki`, {
       body: "トークン付き",
       turnstileToken: "XXXX.DUMMY.TOKEN.XXXX",
     });
     expect(fromBody.status).toBe(201);
-    if (fromBody.body.ok) expect(fromBody.body.data.kome.kind).toBe("kome");
+    if (fromBody.body.ok) expect(fromBody.body.data.tsubuyaki.kind).toBe("tsubuyaki");
 
-    const fromCfField = await anon.post<{ kome: { kind: string } }>(`/v1/threads/${thread.threadId}/kome`, {
+    const fromCfField = await anon.post<{ tsubuyaki: { kind: string } }>(`/v1/threads/${thread.threadId}/tsubuyaki`, {
       body: "cf フィールド",
       "cf-turnstile-response": "XXXX.DUMMY.TOKEN.XXXX",
     });
     expect(fromCfField.status).toBe(201);
 
     // posts ルート（threadId をボディで受ける）も同じ受け渡し。
-    const fromPostsRoute = await anon.fetch(`/v1/posts/kome`, {
+    const fromPostsRoute = await anon.fetch(`/v1/posts/tsubuyaki`, {
       method: "POST",
       headers: { "x-turnstile-token": "XXXX.DUMMY.TOKEN.XXXX" },
       body: JSON.stringify({ threadId: thread.threadId, body: "ヘッダのトークン" }),
@@ -495,16 +495,35 @@ describe("投票・kome", () => {
     expect(fromPostsRoute.status).toBe(201);
   });
 
-  it("kome はレス一覧に含まれない", async () => {
+  it("つぶやきはレス一覧に含まれない", async () => {
     const { owner, thread } = await setupWorld();
-    const kome = await owner.client.post<{ kome: { kind: string; body: string } }>(`/v1/threads/${thread.threadId}/kome`, {
+    const tsubuyaki = await owner.client.post<{ tsubuyaki: { kind: string; body: string } }>(`/v1/threads/${thread.threadId}/tsubuyaki`, {
       body: "流れるコメント",
     });
-    expect(kome.status).toBe(201);
-    if (kome.body.ok) expect(kome.body.data.kome.kind).toBe("kome");
+    expect(tsubuyaki.status).toBe(201);
+    if (tsubuyaki.body.ok) expect(tsubuyaki.body.data.tsubuyaki.kind).toBe("tsubuyaki");
 
     const posts = await owner.client.get<{ posts: Array<{ kind: string }> }>(`/v1/threads/${thread.threadId}?r=1-10`);
     if (posts.body.ok) expect(posts.body.data.posts.every((post) => post.kind === "post")).toBe(true);
+  });
+
+  it("旧パス /kome は 404 で、DB には 'kome' を保存し外には 'tsubuyaki' と出す", async () => {
+    const { owner, thread } = await setupWorld();
+    const created = await owner.client.post<{ tsubuyaki: { id: number; kind: string } }>(
+      `/v1/threads/${thread.threadId}/tsubuyaki`,
+      { body: "DB の値は変えない" },
+    );
+    expect(created.status).toBe(201);
+    const postId = created.body.ok ? created.body.data.tsubuyaki.id : 0;
+    if (created.body.ok) expect(created.body.data.tsubuyaki.kind).toBe("tsubuyaki");
+
+    const row = await env.DB.prepare("SELECT kind FROM posts WHERE id = ?").bind(postId).first<{ kind: string }>();
+    expect(row?.kind).toBe("kome");
+
+    const legacyThreadPath = await owner.client.post(`/v1/threads/${thread.threadId}/kome`, { body: "旧パス" });
+    expect(legacyThreadPath.status).toBe(404);
+    const legacyPostsPath = await owner.client.post(`/v1/posts/kome`, { threadId: thread.threadId, body: "旧パス" });
+    expect(legacyPostsPath.status).toBe(404);
   });
 });
 

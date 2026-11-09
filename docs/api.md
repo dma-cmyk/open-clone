@@ -65,16 +65,17 @@
 |---|---|---|
 | post | 30s | 3 |
 | threadCreate | 300s | 2 |
-| kome | 10s | 5 |
+| tsubuyaki | 10s | 5 |
 | login | 300s | 10 |
 | register | 86400s | 5 |
 | report | 300s | 5 |
 | upload | 86400s | 50 |
 | aiAction | 60s | 30 |
 | pluginAi | 60s | 10 |
+| pluginAuthor | 60s | 30 |
 | postIp | 300s | 40 |
 | threadCreateIp | 300s | 12 |
-| komeIp | 60s | 30 |
+| tsubuyakiIp | 60s | 30 |
 | uploadIp | 86400s | 100 |
 | readCompat | 60s | 180 |
 | readSearch | 60s | 30 |
@@ -246,7 +247,7 @@
 | POST | `/:id/sync` | `requireAuth` | `plugins.ts` | 1075 |
 | GET | `/:id` | — | `posts.ts` | 46 |
 | POST | `/` | — | `posts.ts` | 68 |
-| POST | `/kome` | — | `posts.ts` | 96 |
+| POST | `/tsubuyaki` | — | `posts.ts` | 96 |
 | POST | `/:id/like` | — | `posts.ts` | 126 |
 | GET | `/:id/like` | — | `posts.ts` | 159 |
 | POST | `/:id/hide` | `requireAuth` | `posts.ts` | 176 |
@@ -271,7 +272,7 @@
 | GET | `/:id` | — | `threads.ts` | 58 |
 | GET | `/:id/posts` | — | `threads.ts` | 86 |
 | POST | `/:id/posts` | — | `threads.ts` | 110 |
-| POST | `/:id/kome` | — | `threads.ts` | 135 |
+| POST | `/:id/tsubuyaki` | — | `threads.ts` | 135 |
 | PATCH | `/:id` | `requireAuth` | `threads.ts` | 164 |
 | DELETE | `/:id` | `requireAuth` | `threads.ts` | 190 |
 | GET | `/:id/range` | — | `threads.ts` | 206 |
@@ -323,7 +324,7 @@
 | `/v1/admin/*` | site settings, suspensions, audit, owner setup | WP6 |
 | `/v1/boards/*` | 一覧, 作成, 詳細, 設定, スタッフ任免 | WP1 |
 | `/v1/threads/*` | 一覧, 作成, レス取得 ?since, 実況 | WP1 |
-| `/v1/posts/*` | 作成, kome, 削除/非表示, 投票, 安価 | WP1 |
+| `/v1/posts/*` | 作成, つぶやき, 削除/非表示, 投票, 安価 | WP1 |
 | `/v1/search/*` | スレタイ/全文/ID/画像検索 | WP1 |
 | `/v1/ranking/*`, `/v1/headline/*` | ランキング / ヘッドライン | WP1 |
 | `/v1/reports/*` | 通報作成, 一覧, 処理 | WP1 |
@@ -4433,7 +4434,7 @@
           "default": true,
           "type": "boolean"
         },
-        "kome": {
+        "tsubuyaki": {
           "default": true,
           "type": "boolean"
         },
@@ -4574,7 +4575,7 @@
       "default": true,
       "type": "boolean"
     },
-    "kome": {
+    "tsubuyaki": {
       "default": true,
       "type": "boolean"
     },
@@ -4937,7 +4938,7 @@
           "default": true,
           "type": "boolean"
         },
-        "kome": {
+        "tsubuyaki": {
           "default": true,
           "type": "boolean"
         },
@@ -5138,7 +5139,7 @@
           "default": true,
           "type": "boolean"
         },
-        "kome": {
+        "tsubuyaki": {
           "default": true,
           "type": "boolean"
         },
@@ -6081,6 +6082,3253 @@
 }
 ```
 
+### `packages/shared/src/schemas/plugin-authoring.ts`
+
+#### `authoringAddVersionOutputSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "pluginId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "riskScore": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "allowed",
+        "reasons",
+        "riskScore"
+      ],
+      "additionalProperties": false
+    },
+    "warnings": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 500
+      }
+    }
+  },
+  "required": [
+    "ok",
+    "pluginId",
+    "version",
+    "checks",
+    "warnings"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringAddVersionSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pluginId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "manifest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,40}$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "scope": {
+          "minItems": 1,
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "board",
+              "site"
+            ]
+          }
+        },
+        "permissions": {
+          "default": [],
+          "maxItems": 12,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "ui:slot",
+              "data:read:thread",
+              "data:read:board",
+              "data:write:post",
+              "storage:shared",
+              "net:fetch",
+              "upload:start",
+              "github:gist",
+              "github:repo",
+              "events:subscribe",
+              "notify",
+              "ai:complete"
+            ]
+          }
+        },
+        "connectAllowlist": {
+          "default": [],
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "entry": {
+          "default": "plugin.js",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]{1,100}$"
+        },
+        "slots": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "thread-head",
+              "thread-post-inline",
+              "thread-post-footer",
+              "post-form-after",
+              "board-head",
+              "sidebar",
+              "plugin-page",
+              "site-header",
+              "site-top",
+              "board-top",
+              "board-sidebar",
+              "thread-top",
+              "thread-nav",
+              "post-form-extra",
+              "thread-bottom",
+              "board-manage",
+              "post-actions"
+            ]
+          }
+        },
+        "hooks": {
+          "default": [],
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "beforePost",
+              "onPostRendered"
+            ]
+          }
+        },
+        "render": {
+          "type": "object",
+          "properties": {
+            "post": {
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "flags": {
+                    "default": "g",
+                    "type": "string",
+                    "maxLength": 6,
+                    "pattern": "^[gimsu]*$"
+                  },
+                  "template": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "kind": {
+                    "default": "text",
+                    "type": "string",
+                    "enum": [
+                      "spoiler",
+                      "dice",
+                      "link",
+                      "image",
+                      "text"
+                    ]
+                  }
+                },
+                "required": [
+                  "pattern",
+                  "template"
+                ]
+              }
+            }
+          }
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "license": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "homepage": {
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "summary",
+        "scope"
+      ]
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "changelog": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "templateId": {
+      "type": "string",
+      "enum": [
+        "spoiler",
+        "ng-word-mask",
+        "keyword-deco",
+        "dice-button",
+        "counter",
+        "thread-info",
+        "quick-reply"
+      ]
+    }
+  },
+  "required": [
+    "pluginId",
+    "code"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringBaseManifestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "scope": {
+      "minItems": 1,
+      "maxItems": 3,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "personal",
+          "board",
+          "site"
+        ]
+      }
+    },
+    "permissions": {
+      "maxItems": 12,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "ui:slot",
+          "data:read:thread",
+          "data:read:board",
+          "data:write:post",
+          "storage:shared",
+          "net:fetch",
+          "upload:start",
+          "github:gist",
+          "github:repo",
+          "events:subscribe",
+          "notify",
+          "ai:complete"
+        ]
+      }
+    },
+    "slots": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "thread-head",
+          "thread-post-inline",
+          "thread-post-footer",
+          "post-form-after",
+          "board-head",
+          "sidebar",
+          "plugin-page",
+          "site-header",
+          "site-top",
+          "board-top",
+          "board-sidebar",
+          "thread-top",
+          "thread-nav",
+          "post-form-extra",
+          "thread-bottom",
+          "board-manage",
+          "post-actions"
+        ]
+      }
+    },
+    "hooks": {
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "beforePost",
+          "onPostRendered"
+        ]
+      }
+    },
+    "entry": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._/-]{1,100}$"
+    },
+    "author": {
+      "type": "string",
+      "maxLength": 60
+    },
+    "license": {
+      "type": "string",
+      "maxLength": 30
+    },
+    "homepage": {
+      "type": "string",
+      "maxLength": 300
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+#### `authoringCheckOutputSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "riskScore": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "allowed",
+        "reasons",
+        "riskScore"
+      ],
+      "additionalProperties": false
+    },
+    "warnings": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 500
+      }
+    }
+  },
+  "required": [
+    "ok",
+    "checks",
+    "warnings"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringCheckSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "manifest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,40}$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "scope": {
+          "minItems": 1,
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "board",
+              "site"
+            ]
+          }
+        },
+        "permissions": {
+          "default": [],
+          "maxItems": 12,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "ui:slot",
+              "data:read:thread",
+              "data:read:board",
+              "data:write:post",
+              "storage:shared",
+              "net:fetch",
+              "upload:start",
+              "github:gist",
+              "github:repo",
+              "events:subscribe",
+              "notify",
+              "ai:complete"
+            ]
+          }
+        },
+        "connectAllowlist": {
+          "default": [],
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "entry": {
+          "default": "plugin.js",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]{1,100}$"
+        },
+        "slots": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "thread-head",
+              "thread-post-inline",
+              "thread-post-footer",
+              "post-form-after",
+              "board-head",
+              "sidebar",
+              "plugin-page",
+              "site-header",
+              "site-top",
+              "board-top",
+              "board-sidebar",
+              "thread-top",
+              "thread-nav",
+              "post-form-extra",
+              "thread-bottom",
+              "board-manage",
+              "post-actions"
+            ]
+          }
+        },
+        "hooks": {
+          "default": [],
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "beforePost",
+              "onPostRendered"
+            ]
+          }
+        },
+        "render": {
+          "type": "object",
+          "properties": {
+            "post": {
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "flags": {
+                    "default": "g",
+                    "type": "string",
+                    "maxLength": 6,
+                    "pattern": "^[gimsu]*$"
+                  },
+                  "template": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "kind": {
+                    "default": "text",
+                    "type": "string",
+                    "enum": [
+                      "spoiler",
+                      "dice",
+                      "link",
+                      "image",
+                      "text"
+                    ]
+                  }
+                },
+                "required": [
+                  "pattern",
+                  "template"
+                ]
+              }
+            }
+          }
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "license": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "homepage": {
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "summary",
+        "scope"
+      ]
+    }
+  },
+  "required": [
+    "code"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringCodeSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "minLength": 1
+}
+```
+
+#### `authoringCreateDraftOutputSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "pluginId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{2,40}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "riskScore": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "allowed",
+        "reasons",
+        "riskScore"
+      ],
+      "additionalProperties": false
+    },
+    "warnings": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 500
+      }
+    }
+  },
+  "required": [
+    "ok",
+    "pluginId",
+    "name",
+    "version",
+    "checks",
+    "warnings"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringCreateDraftSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "manifest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,40}$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "scope": {
+          "minItems": 1,
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "board",
+              "site"
+            ]
+          }
+        },
+        "permissions": {
+          "default": [],
+          "maxItems": 12,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "ui:slot",
+              "data:read:thread",
+              "data:read:board",
+              "data:write:post",
+              "storage:shared",
+              "net:fetch",
+              "upload:start",
+              "github:gist",
+              "github:repo",
+              "events:subscribe",
+              "notify",
+              "ai:complete"
+            ]
+          }
+        },
+        "connectAllowlist": {
+          "default": [],
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "entry": {
+          "default": "plugin.js",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]{1,100}$"
+        },
+        "slots": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "thread-head",
+              "thread-post-inline",
+              "thread-post-footer",
+              "post-form-after",
+              "board-head",
+              "sidebar",
+              "plugin-page",
+              "site-header",
+              "site-top",
+              "board-top",
+              "board-sidebar",
+              "thread-top",
+              "thread-nav",
+              "post-form-extra",
+              "thread-bottom",
+              "board-manage",
+              "post-actions"
+            ]
+          }
+        },
+        "hooks": {
+          "default": [],
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "beforePost",
+              "onPostRendered"
+            ]
+          }
+        },
+        "render": {
+          "type": "object",
+          "properties": {
+            "post": {
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "flags": {
+                    "default": "g",
+                    "type": "string",
+                    "maxLength": 6,
+                    "pattern": "^[gimsu]*$"
+                  },
+                  "template": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "kind": {
+                    "default": "text",
+                    "type": "string",
+                    "enum": [
+                      "spoiler",
+                      "dice",
+                      "link",
+                      "image",
+                      "text"
+                    ]
+                  }
+                },
+                "required": [
+                  "pattern",
+                  "template"
+                ]
+              }
+            }
+          }
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "license": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "homepage": {
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "summary",
+        "scope"
+      ]
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "changelog": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "visibility": {
+      "default": "private",
+      "type": "string",
+      "enum": [
+        "private",
+        "unlisted"
+      ]
+    },
+    "templateId": {
+      "type": "string",
+      "enum": [
+        "spoiler",
+        "ng-word-mask",
+        "keyword-deco",
+        "dice-button",
+        "counter",
+        "thread-info",
+        "quick-reply"
+      ]
+    }
+  },
+  "required": [
+    "manifest",
+    "code"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringErrorSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": false
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "details": {}
+  },
+  "required": [
+    "ok",
+    "code",
+    "message"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringGetOutputSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "plugin": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,40}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "pending",
+            "published",
+            "rejected",
+            "disabled"
+          ]
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "private",
+            "unlisted",
+            "public"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "updatedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "manifest": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{2,40}$"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 20000
+            },
+            "scope": {
+              "minItems": 1,
+              "maxItems": 3,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "personal",
+                  "board",
+                  "site"
+                ]
+              }
+            },
+            "permissions": {
+              "default": [],
+              "maxItems": 12,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "ui:slot",
+                  "data:read:thread",
+                  "data:read:board",
+                  "data:write:post",
+                  "storage:shared",
+                  "net:fetch",
+                  "upload:start",
+                  "github:gist",
+                  "github:repo",
+                  "events:subscribe",
+                  "notify",
+                  "ai:complete"
+                ]
+              }
+            },
+            "connectAllowlist": {
+              "default": [],
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "entry": {
+              "default": "plugin.js",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._/-]{1,100}$"
+            },
+            "slots": {
+              "default": [],
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "thread-head",
+                  "thread-post-inline",
+                  "thread-post-footer",
+                  "post-form-after",
+                  "board-head",
+                  "sidebar",
+                  "plugin-page",
+                  "site-header",
+                  "site-top",
+                  "board-top",
+                  "board-sidebar",
+                  "thread-top",
+                  "thread-nav",
+                  "post-form-extra",
+                  "thread-bottom",
+                  "board-manage",
+                  "post-actions"
+                ]
+              }
+            },
+            "hooks": {
+              "default": [],
+              "maxItems": 4,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "beforePost",
+                  "onPostRendered"
+                ]
+              }
+            },
+            "render": {
+              "type": "object",
+              "properties": {
+                "post": {
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "pattern": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "flags": {
+                        "default": "g",
+                        "type": "string",
+                        "maxLength": 6,
+                        "pattern": "^[gimsu]*$"
+                      },
+                      "template": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                      },
+                      "kind": {
+                        "default": "text",
+                        "type": "string",
+                        "enum": [
+                          "spoiler",
+                          "dice",
+                          "link",
+                          "image",
+                          "text"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "pattern",
+                      "template"
+                    ]
+                  }
+                }
+              }
+            },
+            "author": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "license": {
+              "type": "string",
+              "maxLength": 30
+            },
+            "homepage": {
+              "type": "string",
+              "maxLength": 300
+            }
+          },
+          "required": [
+            "name",
+            "version",
+            "summary",
+            "scope"
+          ]
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "status",
+        "visibility",
+        "manifest"
+      ],
+      "additionalProperties": false
+    },
+    "versions": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending",
+              "published",
+              "rejected",
+              "disabled"
+            ]
+          },
+          "changelog": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "version",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reviews": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "board",
+              "site"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ]
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "ok",
+    "plugin",
+    "versions",
+    "reviews"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringGetSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pluginId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    }
+  },
+  "required": [
+    "pluginId"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringInstallSelfOutputSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "pluginId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "scope": {
+      "type": "string",
+      "const": "personal"
+    },
+    "installed": {
+      "type": "boolean"
+    },
+    "uninstalled": {
+      "type": "boolean"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "pinned": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok",
+    "pluginId",
+    "scope",
+    "installed",
+    "uninstalled",
+    "pinned"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringInstallSelfSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pluginId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "pinned": {
+      "default": false,
+      "type": "boolean"
+    },
+    "uninstall": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "pluginId"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringListOutputSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "plugins": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{2,40}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending",
+              "published",
+              "rejected",
+              "disabled"
+            ]
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "private",
+              "unlisted",
+              "public"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+          },
+          "updatedAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "visibility"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "nextCursor": {
+      "type": "string",
+      "maxLength": 300
+    }
+  },
+  "required": [
+    "ok",
+    "plugins"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringListSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "limit": {
+      "default": 30,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "cursor": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "pending",
+        "published",
+        "rejected",
+        "disabled"
+      ]
+    },
+    "q": {
+      "type": "string",
+      "maxLength": 100
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+#### `authoringListTemplatesInputSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+```
+
+#### `authoringListTemplatesOutputSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "templates": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "parameters": {
+            "minItems": 1,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "text",
+                    "number",
+                    "boolean",
+                    "select",
+                    "stringList"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "default": {},
+                "constraints": {
+                  "type": "object",
+                  "properties": {
+                    "minLength": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "maxLength": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "min": {
+                      "type": "number"
+                    },
+                    "max": {
+                      "type": "number"
+                    },
+                    "step": {
+                      "type": "number"
+                    },
+                    "integer": {
+                      "type": "boolean"
+                    },
+                    "options": {
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "maxItems": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "itemMaxLength": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "placeholder": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "slugPattern": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "pattern": {
+                      "type": "string",
+                      "maxLength": 200
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "key",
+                "label",
+                "type",
+                "required"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "baseManifest": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "string",
+                "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+              },
+              "summary": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "scope": {
+                "minItems": 1,
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "personal",
+                    "board",
+                    "site"
+                  ]
+                }
+              },
+              "permissions": {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "ui:slot",
+                    "data:read:thread",
+                    "data:read:board",
+                    "data:write:post",
+                    "storage:shared",
+                    "net:fetch",
+                    "upload:start",
+                    "github:gist",
+                    "github:repo",
+                    "events:subscribe",
+                    "notify",
+                    "ai:complete"
+                  ]
+                }
+              },
+              "slots": {
+                "maxItems": 8,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "thread-head",
+                    "thread-post-inline",
+                    "thread-post-footer",
+                    "post-form-after",
+                    "board-head",
+                    "sidebar",
+                    "plugin-page",
+                    "site-header",
+                    "site-top",
+                    "board-top",
+                    "board-sidebar",
+                    "thread-top",
+                    "thread-nav",
+                    "post-form-extra",
+                    "thread-bottom",
+                    "board-manage",
+                    "post-actions"
+                  ]
+                }
+              },
+              "hooks": {
+                "maxItems": 4,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "beforePost",
+                    "onPostRendered"
+                  ]
+                }
+              },
+              "entry": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._/-]{1,100}$"
+              },
+              "author": {
+                "type": "string",
+                "maxLength": 60
+              },
+              "license": {
+                "type": "string",
+                "maxLength": 30
+              },
+              "homepage": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "description",
+          "parameters",
+          "baseManifest"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "ok",
+    "templates"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringPluginSummarySchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{2,40}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "pending",
+        "published",
+        "rejected",
+        "disabled"
+      ]
+    },
+    "visibility": {
+      "type": "string",
+      "enum": [
+        "private",
+        "unlisted",
+        "public"
+      ]
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "updatedAt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "status",
+    "visibility"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringPreviewOutputSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "pluginId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "manifest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,40}$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "scope": {
+          "minItems": 1,
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "board",
+              "site"
+            ]
+          }
+        },
+        "permissions": {
+          "default": [],
+          "maxItems": 12,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "ui:slot",
+              "data:read:thread",
+              "data:read:board",
+              "data:write:post",
+              "storage:shared",
+              "net:fetch",
+              "upload:start",
+              "github:gist",
+              "github:repo",
+              "events:subscribe",
+              "notify",
+              "ai:complete"
+            ]
+          }
+        },
+        "connectAllowlist": {
+          "default": [],
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "entry": {
+          "default": "plugin.js",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]{1,100}$"
+        },
+        "slots": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "thread-head",
+              "thread-post-inline",
+              "thread-post-footer",
+              "post-form-after",
+              "board-head",
+              "sidebar",
+              "plugin-page",
+              "site-header",
+              "site-top",
+              "board-top",
+              "board-sidebar",
+              "thread-top",
+              "thread-nav",
+              "post-form-extra",
+              "thread-bottom",
+              "board-manage",
+              "post-actions"
+            ]
+          }
+        },
+        "hooks": {
+          "default": [],
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "beforePost",
+              "onPostRendered"
+            ]
+          }
+        },
+        "render": {
+          "type": "object",
+          "properties": {
+            "post": {
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "pattern": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "flags": {
+                    "default": "g",
+                    "type": "string",
+                    "maxLength": 6,
+                    "pattern": "^[gimsu]*$"
+                  },
+                  "template": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "kind": {
+                    "default": "text",
+                    "type": "string",
+                    "enum": [
+                      "spoiler",
+                      "dice",
+                      "link",
+                      "image",
+                      "text"
+                    ]
+                  }
+                },
+                "required": [
+                  "pattern",
+                  "template"
+                ]
+              }
+            }
+          }
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "license": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "homepage": {
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "summary",
+        "scope"
+      ]
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "riskScore": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "allowed",
+        "reasons",
+        "riskScore"
+      ],
+      "additionalProperties": false
+    },
+    "warnings": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    "regex": {
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "flags": {
+            "type": "string",
+            "maxLength": 6
+          },
+          "safe": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "pattern",
+          "flags",
+          "safe"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "versions": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending",
+              "published",
+              "rejected",
+              "disabled"
+            ]
+          },
+          "changelog": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "version",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reviews": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "board",
+              "site"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ]
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "previewUrl": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    }
+  },
+  "required": [
+    "ok",
+    "pluginId",
+    "manifest",
+    "checks",
+    "warnings",
+    "regex",
+    "versions",
+    "reviews",
+    "previewUrl"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringPreviewSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pluginId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    }
+  },
+  "required": [
+    "pluginId"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringPublishOutputSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "pluginId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "pending",
+        "published",
+        "rejected",
+        "disabled"
+      ]
+    },
+    "needsReview": {
+      "type": "boolean"
+    },
+    "reviewId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "riskScore": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "allowed",
+        "reasons",
+        "riskScore"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "ok",
+    "pluginId",
+    "status",
+    "needsReview",
+    "checks"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringPublishSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pluginId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "scopes": {
+      "minItems": 1,
+      "maxItems": 3,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "personal",
+          "board",
+          "site"
+        ]
+      }
+    },
+    "visibility": {
+      "default": "public",
+      "type": "string",
+      "enum": [
+        "private",
+        "unlisted",
+        "public"
+      ]
+    }
+  },
+  "required": [
+    "pluginId",
+    "scopes"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringRenderSafetySchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pattern": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "flags": {
+      "type": "string",
+      "maxLength": 6
+    },
+    "safe": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 500
+    }
+  },
+  "required": [
+    "pattern",
+    "flags",
+    "safe"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringReviewSummarySchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "scope": {
+      "type": "string",
+      "enum": [
+        "board",
+        "site"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ]
+    },
+    "createdAt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "id",
+    "scope",
+    "status"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringStaticCheckResultSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "allowed": {
+      "type": "boolean"
+    },
+    "reasons": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 300
+      }
+    },
+    "riskScore": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    }
+  },
+  "required": [
+    "allowed",
+    "reasons",
+    "riskScore"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringTemplateIdSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "spoiler",
+    "ng-word-mask",
+    "keyword-deco",
+    "dice-button",
+    "counter",
+    "thread-info",
+    "quick-reply"
+  ]
+}
+```
+
+#### `authoringTemplateInfoSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "parameters": {
+      "minItems": 1,
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "string",
+              "text",
+              "number",
+              "boolean",
+              "select",
+              "stringList"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "default": {},
+          "constraints": {
+            "type": "object",
+            "properties": {
+              "minLength": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "maxLength": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              },
+              "step": {
+                "type": "number"
+              },
+              "integer": {
+                "type": "boolean"
+              },
+              "options": {
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "label"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "maxItems": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "itemMaxLength": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "placeholder": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "slugPattern": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "pattern": {
+                "type": "string",
+                "maxLength": 200
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "type",
+          "required"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "baseManifest": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "scope": {
+          "minItems": 1,
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "board",
+              "site"
+            ]
+          }
+        },
+        "permissions": {
+          "maxItems": 12,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "ui:slot",
+              "data:read:thread",
+              "data:read:board",
+              "data:write:post",
+              "storage:shared",
+              "net:fetch",
+              "upload:start",
+              "github:gist",
+              "github:repo",
+              "events:subscribe",
+              "notify",
+              "ai:complete"
+            ]
+          }
+        },
+        "slots": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "thread-head",
+              "thread-post-inline",
+              "thread-post-footer",
+              "post-form-after",
+              "board-head",
+              "sidebar",
+              "plugin-page",
+              "site-header",
+              "site-top",
+              "board-top",
+              "board-sidebar",
+              "thread-top",
+              "thread-nav",
+              "post-form-extra",
+              "thread-bottom",
+              "board-manage",
+              "post-actions"
+            ]
+          }
+        },
+        "hooks": {
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "beforePost",
+              "onPostRendered"
+            ]
+          }
+        },
+        "entry": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]{1,100}$"
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "license": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "homepage": {
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "id",
+    "label",
+    "description",
+    "parameters",
+    "baseManifest"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringTemplateParameterConstraintsSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "minLength": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "maxLength": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "min": {
+      "type": "number"
+    },
+    "max": {
+      "type": "number"
+    },
+    "step": {
+      "type": "number"
+    },
+    "integer": {
+      "type": "boolean"
+    },
+    "options": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "maxItems": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "itemMaxLength": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "placeholder": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "slugPattern": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "pattern": {
+      "type": "string",
+      "maxLength": 200
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+#### `authoringTemplateParameterSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "string",
+        "text",
+        "number",
+        "boolean",
+        "select",
+        "stringList"
+      ]
+    },
+    "required": {
+      "type": "boolean"
+    },
+    "default": {},
+    "constraints": {
+      "type": "object",
+      "properties": {
+        "minLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "step": {
+          "type": "number"
+        },
+        "integer": {
+          "type": "boolean"
+        },
+        "options": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": [
+              "value",
+              "label"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "itemMaxLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "placeholder": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "slugPattern": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "pattern": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "key",
+    "label",
+    "type",
+    "required"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `authoringTemplateParameterTypeSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "string",
+    "text",
+    "number",
+    "boolean",
+    "select",
+    "stringList"
+  ]
+}
+```
+
+#### `authoringVersionSummarySchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "pending",
+        "published",
+        "rejected",
+        "disabled"
+      ]
+    },
+    "changelog": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "createdAt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "version",
+    "status"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `pluginAuthorTokenCreateResponseSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "prefix": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "revoked"
+      ]
+    },
+    "createdAt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "expiresAt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "id",
+    "token",
+    "prefix",
+    "name",
+    "status",
+    "createdAt",
+    "expiresAt"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `pluginAuthorTokenCreateSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+#### `pluginAuthorTokenListResponseSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "items": {
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "prefix": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "revoked"
+            ]
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "expiresAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lastUsedAt": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "expired": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "prefix",
+          "name",
+          "status",
+          "createdAt",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "items"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `pluginAuthorTokenRevokeAllResponseSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "revoked": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    }
+  },
+  "required": [
+    "ok",
+    "revoked"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `pluginAuthorTokenRevokeResponseSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    }
+  },
+  "required": [
+    "ok",
+    "id"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `pluginAuthorTokenStatusSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "active",
+    "revoked"
+  ]
+}
+```
+
+#### `pluginAuthorTokenSummarySchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "prefix": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "revoked"
+      ]
+    },
+    "createdAt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "expiresAt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "lastUsedAt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "expired": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "prefix",
+    "name",
+    "status",
+    "createdAt",
+    "expiresAt"
+  ],
+  "additionalProperties": false
+}
+```
+
 ### `packages/shared/src/schemas/plugin.ts`
 
 #### `pluginActiveQuerySchema`
@@ -6367,6 +9615,18 @@
         "private",
         "unlisted",
         "public"
+      ]
+    },
+    "templateId": {
+      "type": "string",
+      "enum": [
+        "spoiler",
+        "ng-word-mask",
+        "keyword-deco",
+        "dice-button",
+        "counter",
+        "thread-info",
+        "quick-reply"
       ]
     }
   },
@@ -7902,38 +11162,6 @@
 }
 ```
 
-#### `komeRequestSchema`
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "body": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 400
-    },
-    "name": {
-      "type": "string",
-      "maxLength": 64
-    },
-    "parentPostId": {
-      "type": "integer",
-      "exclusiveMinimum": 0,
-      "maximum": 9007199254740991
-    },
-    "turnstileToken": {
-      "type": "string",
-      "maxLength": 4096
-    }
-  },
-  "required": [
-    "body"
-  ]
-}
-```
-
 #### `pollResultSchema`
 
 ```json
@@ -8070,7 +11298,7 @@
   "type": "string",
   "enum": [
     "post",
-    "kome"
+    "tsubuyaki"
   ]
 }
 ```
@@ -8106,7 +11334,7 @@
       "type": "string",
       "enum": [
         "post",
-        "kome"
+        "tsubuyaki"
       ]
     },
     "name": {
@@ -8301,6 +11529,38 @@
 }
 ```
 
+#### `tsubuyakiRequestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "parentPostId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "turnstileToken": {
+      "type": "string",
+      "maxLength": 4096
+    }
+  },
+  "required": [
+    "body"
+  ]
+}
+```
+
 #### `votePollRequestSchema`
 
 ```json
@@ -8321,198 +11581,6 @@
 ```
 
 ### `packages/shared/src/schemas/realtime.ts`
-
-#### `komeCreatedEventSchema`
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "type": {
-      "type": "string",
-      "const": "kome.created"
-    },
-    "channel": {
-      "type": "string",
-      "pattern": "^(board|thread):\\d+$"
-    },
-    "seq": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 9007199254740991
-    },
-    "at": {
-      "type": "integer",
-      "minimum": -9007199254740991,
-      "maximum": 9007199254740991
-    },
-    "data": {
-      "type": "object",
-      "properties": {
-        "post": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991
-            },
-            "threadId": {
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991
-            },
-            "boardId": {
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991
-            },
-            "num": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "kind": {
-              "type": "string",
-              "enum": [
-                "post",
-                "kome"
-              ]
-            },
-            "name": {
-              "type": "string"
-            },
-            "mail": {
-              "type": "string"
-            },
-            "trip": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "cap": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "body": {
-              "type": "string"
-            },
-            "createdAt": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            "idHash": {
-              "type": "string"
-            },
-            "sage": {
-              "type": "boolean"
-            },
-            "isOp": {
-              "type": "boolean"
-            },
-            "isSub": {
-              "type": "boolean"
-            },
-            "attachments": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string"
-                  },
-                  "url": {
-                    "type": "string"
-                  },
-                  "contentType": {
-                    "default": "application/octet-stream",
-                    "type": "string"
-                  },
-                  "size": {
-                    "default": 0,
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "name": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "url"
-                ]
-              }
-            },
-            "likeCount": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "liked": {
-              "type": "boolean"
-            },
-            "backlinks": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              }
-            },
-            "hidden": {
-              "type": "boolean"
-            },
-            "aiAgentId": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "required": [
-            "id",
-            "threadId",
-            "boardId",
-            "num",
-            "kind",
-            "name",
-            "mail",
-            "trip",
-            "cap",
-            "body",
-            "createdAt",
-            "idHash",
-            "sage",
-            "isOp",
-            "isSub",
-            "attachments",
-            "likeCount",
-            "liked",
-            "backlinks",
-            "hidden",
-            "aiAgentId"
-          ]
-        }
-      },
-      "required": [
-        "post"
-      ]
-    }
-  },
-  "required": [
-    "type",
-    "channel",
-    "seq",
-    "at",
-    "data"
-  ]
-}
-```
 
 #### `postCreatedEventSchema`
 
@@ -8569,7 +11637,7 @@
               "type": "string",
               "enum": [
                 "post",
-                "kome"
+                "tsubuyaki"
               ]
             },
             "name": {
@@ -8756,7 +11824,7 @@
         "post.updated",
         "post.hidden",
         "post.deleted",
-        "kome.created",
+        "tsubuyaki.created",
         "thread.created",
         "thread.updated",
         "board.updated",
@@ -8801,7 +11869,7 @@
     "post.updated",
     "post.hidden",
     "post.deleted",
-    "kome.created",
+    "tsubuyaki.created",
     "thread.created",
     "thread.updated",
     "board.updated",
@@ -8966,6 +12034,198 @@
       },
       "required": [
         "thread"
+      ]
+    }
+  },
+  "required": [
+    "type",
+    "channel",
+    "seq",
+    "at",
+    "data"
+  ]
+}
+```
+
+#### `tsubuyakiCreatedEventSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "tsubuyaki.created"
+    },
+    "channel": {
+      "type": "string",
+      "pattern": "^(board|thread):\\d+$"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "at": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "post": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "threadId": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "boardId": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "num": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "post",
+                "tsubuyaki"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "mail": {
+              "type": "string"
+            },
+            "trip": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "cap": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "body": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "idHash": {
+              "type": "string"
+            },
+            "sage": {
+              "type": "boolean"
+            },
+            "isOp": {
+              "type": "boolean"
+            },
+            "isSub": {
+              "type": "boolean"
+            },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "contentType": {
+                    "default": "application/octet-stream",
+                    "type": "string"
+                  },
+                  "size": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "url"
+                ]
+              }
+            },
+            "likeCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "liked": {
+              "type": "boolean"
+            },
+            "backlinks": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "hidden": {
+              "type": "boolean"
+            },
+            "aiAgentId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "threadId",
+            "boardId",
+            "num",
+            "kind",
+            "name",
+            "mail",
+            "trip",
+            "cap",
+            "body",
+            "createdAt",
+            "idHash",
+            "sage",
+            "isOp",
+            "isSub",
+            "attachments",
+            "likeCount",
+            "liked",
+            "backlinks",
+            "hidden",
+            "aiAgentId"
+          ]
+        }
+      },
+      "required": [
+        "post"
       ]
     }
   },

@@ -1,6 +1,6 @@
 "use client";
 
-// 個人設定（NG 3段階・表示・新着・kome・履歴）。localStorage 永続。
+// 個人設定（NG 3段階・表示・新着・つぶやき・履歴）。localStorage 永続。
 import { useState } from "react";
 import {
   addNgEntry,
@@ -51,7 +51,7 @@ function NgSection() {
           ))}
         </div>
         <p className="oc-note">
-          NG はこの端末にのみ保存されます。サーバーには送信されません（open2ch と同じ方式）。特殊 NG: :url / :image / :kome / :ai
+          NG はこの端末にのみ保存されます。サーバーには送信されません（open2ch と同じ方式）。特殊 NG: :url / :image / :tsubuyaki / :ai
         </p>
 
         {NG_LISTS.map((list) => (
@@ -118,7 +118,7 @@ export function SettingsView() {
             tabs={[
               { value: "ng", label: "NG" },
               { value: "display", label: "表示" },
-              { value: "behavior", label: "新着・実況・kome" },
+              { value: "behavior", label: "新着・実況・つぶやき" },
               { value: "history", label: "履歴・ブクマ" },
             ]}
             active={tab}
@@ -182,7 +182,7 @@ export function SettingsView() {
 
           {tab === "behavior" ? (
             <section className="oc-settings-section">
-              <h2>新着・実況・kome</h2>
+              <h2>新着・実況・つぶやき</h2>
               <div className="oc-surface oc-stack">
                 <label className="oc-check">
                   <input
@@ -217,12 +217,12 @@ export function SettingsView() {
                 <label className="oc-check">
                   <input
                     type="checkbox"
-                    checked={settings.behavior.kome}
+                    checked={settings.behavior.tsubuyaki}
                     onChange={(event) =>
-                      settingsStore.update({ behavior: { ...settings.behavior, kome: event.target.checked } })
+                      settingsStore.update({ behavior: { ...settings.behavior, tsubuyaki: event.target.checked } })
                     }
                   />
-                  スレを開いたとき kome を表示する
+                  スレを開いたとき つぶやき を表示する
                 </label>
                 <label className="oc-check">
                   <input
@@ -236,47 +236,47 @@ export function SettingsView() {
                 </label>
                 <div className="oc-grid-2 oc-mt">
                   <label className="oc-field">
-                    <span className="oc-label">kome 文字サイズ: {settings.kome.size}px</span>
+                    <span className="oc-label">つぶやき 文字サイズ: {settings.tsubuyaki.size}px</span>
                     <input
                       type="range"
                       min={14}
                       max={40}
-                      value={settings.kome.size}
+                      value={settings.tsubuyaki.size}
                       onChange={(event) =>
-                        settingsStore.update({ kome: { ...settings.kome, size: Number(event.target.value) } })
+                        settingsStore.update({ tsubuyaki: { ...settings.tsubuyaki, size: Number(event.target.value) } })
                       }
                     />
                   </label>
                   <label className="oc-field">
-                    <span className="oc-label">kome 速度: {settings.kome.speed}</span>
+                    <span className="oc-label">つぶやき 速度: {settings.tsubuyaki.speed}</span>
                     <input
                       type="range"
                       min={1}
                       max={10}
-                      value={settings.kome.speed}
+                      value={settings.tsubuyaki.speed}
                       onChange={(event) =>
-                        settingsStore.update({ kome: { ...settings.kome, speed: Number(event.target.value) } })
+                        settingsStore.update({ tsubuyaki: { ...settings.tsubuyaki, speed: Number(event.target.value) } })
                       }
                     />
                   </label>
                   <label className="oc-field">
-                    <span className="oc-label">kome 不透明度: {settings.kome.opacity.toFixed(2)}</span>
+                    <span className="oc-label">つぶやき 不透明度: {settings.tsubuyaki.opacity.toFixed(2)}</span>
                     <input
                       type="range"
                       min={20}
                       max={100}
-                      value={settings.kome.opacity * 100}
+                      value={settings.tsubuyaki.opacity * 100}
                       onChange={(event) =>
-                        settingsStore.update({ kome: { ...settings.kome, opacity: Number(event.target.value) / 100 } })
+                        settingsStore.update({ tsubuyaki: { ...settings.tsubuyaki, opacity: Number(event.target.value) / 100 } })
                       }
                     />
                   </label>
                   <label className="oc-field">
-                    <span className="oc-label">kome 文字色</span>
+                    <span className="oc-label">つぶやき 文字色</span>
                     <input
                       type="color"
-                      value={settings.kome.color}
-                      onChange={(event) => settingsStore.update({ kome: { ...settings.kome, color: event.target.value } })}
+                      value={settings.tsubuyaki.color}
+                      onChange={(event) => settingsStore.update({ tsubuyaki: { ...settings.tsubuyaki, color: event.target.value } })}
                     />
                   </label>
                 </div>

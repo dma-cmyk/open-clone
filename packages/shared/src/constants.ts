@@ -15,9 +15,9 @@ export const BOARD_CREATE_LIMIT_PER_ACCOUNT = 5;
 export const DISPLAY_ID_LENGTH = 4;
 /** トリップ桁数（2ch 互換 10 桁） */
 export const TRIP_LENGTH = 10;
-/** kome の本文上限 */
-export const KOME_MAX_BYTES = 100 * 3; // 100 文字（UTF-8 安全側バイト数で判定する実装に委ねる）
-export const KOME_MAX_CHARS = 100;
+/** つぶやきの本文上限 */
+export const TSUBUYAKI_MAX_BYTES = 100 * 3; // 100 文字（UTF-8 安全側バイト数で判定する実装に委ねる）
+export const TSUBUYAKI_MAX_CHARS = 100;
 /** 投票の選択肢上限 */
 export const POLL_MAX_OPTIONS = 10;
 /** ハッシュタグ: 1レス最大個数・最長 */
@@ -128,7 +128,7 @@ export const RT_RING_BUFFER_SIZE = 100;
 export const RATE_LIMITS = {
   post: { windowSeconds: 30, max: 3 },
   threadCreate: { windowSeconds: 300, max: 2 },
-  kome: { windowSeconds: 10, max: 5 },
+  tsubuyaki: { windowSeconds: 10, max: 5 },
   login: { windowSeconds: 300, max: 10 },
   register: { windowSeconds: 86_400, max: 5 },
   report: { windowSeconds: 300, max: 5 },
@@ -142,12 +142,12 @@ export const RATE_LIMITS = {
    * IP 単位の併用窓（Cookie を保存しないクライアントでも有効。H-3）。
    * pipeline では匿名（accountId なし）のみに適用する。ログイン済みは account/device で
    * 追跡・停止できるため、家庭・社内 NAT の正規利用を巻き込まない。
-   * 匿名 1 IP あたり投稿 40/5分（≒11.5k/日）・スレ作成 12/5分・kome 30/分を上限とする。
+   * 匿名 1 IP あたり投稿 40/5分（≒11.5k/日）・スレ作成 12/5分・つぶやき 30/分を上限とする。
    * Cookie を毎回ランダムにしても IP 窓で頭打ちになる。
    */
   postIp: { windowSeconds: 300, max: 40 },
   threadCreateIp: { windowSeconds: 300, max: 12 },
-  komeIp: { windowSeconds: 60, max: 30 },
+  tsubuyakiIp: { windowSeconds: 60, max: 30 },
   uploadIp: { windowSeconds: 86_400, max: 100 },
   /**
    * 読み取り系の IP 窓。専ブラの通常運用を妨げない値:
