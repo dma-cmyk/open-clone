@@ -91,6 +91,224 @@ function truncate(value: string, max = 120): string {
 }
 
 /**
+ * 文字列・テンプレート・コメント・正規表現リテラルの外側にある
+ * Unicode エスケープ（`\uXXXX` / `\u{...}`）の位置を返す（M-2）。
+ *
+ * JavaScript の識別子は `\uXXXX` 表記を許すため、`\u0065val` は `eval` と同じ意味になる。
+ * テキスト走査の RULES は表記の違いを区別できないので、字句の文脈を見て
+ * 「識別子の位置」にあるエスケープだけを拒否する。文字列・テンプレート内の
+ * JSON データ（`jsonLiteral` が生成する `\u0065val` など）は許可する。
+ *
+ * パーサーは使わない小さな走査で、次の状態だけを追う:
+ * - code: 通常のコード。`${...}` の中はここに戻る
+ * - template: テンプレートリテラルの生テキスト
+ * 正規表現リテラルか除算かは直前の有意なトークンで判定する（取り違えても
+ * 誤検出側に倒れるよう、式を終えるトークンの後は除算とみなす）。
+ */
+function findIdentifierUnicodeEscapes(code: string): number[] {
+  const hits: number[] = [];
+  const len = code.length;
+  type Frame = { kind: "code"; braceDepth: number } | { kind: "template" };
+  const stack: Frame[] = [{ kind: "code", braceDepth: 0 }];
+  // "value" = 式を終えるトークン（識別子・数値・文字列・`)` `]` `}`）。
+  // "operator" = それ以外（演算子・`(`・`,`・キーワード）。
+  let previous: "none" | "value" | "operator" = "none";
+  let i = 0;
+
+  const REGEX_PRECEDING_KEYWORDS: Record<string, true> = {
+    return: true,
+    typeof: true,
+    instanceof: true,
+    in: true,
+    of: true,
+    new: true,
+    delete: true,
+    void: true,
+    throw: true,
+    case: true,
+    do: true,
+    else: true,
+    yield: true,
+    await: true,
+  };
+
+  const skipString = (start: number): number => {
+    const quote = code[start]!;
+    let j = start + 1;
+    while (j < len) {
+      const ch = code[j]!;
+      if (ch === "\\") {
+        j += 2;
+        continue;
+      }
+      if (ch === quote) return j + 1;
+      if (ch === "\n") return j;
+      j++;
+    }
+    return j;
+  };
+
+  const skipRegex = (start: number): number => {
+    let j = start + 1;
+    let inClass = false;
+    while (j < len) {
+      const ch = code[j]!;
+      if (ch === "\\") {
+        j += 2;
+        continue;
+      }
+      if (ch === "[") {
+        inClass = true;
+      } else if (ch === "]") {
+        inClass = false;
+      } else if (ch === "/" && !inClass) {
+        j++;
+        while (j < len && /[A-Za-z]/.test(code[j]!)) j++;
+        return j;
+      } else if (ch === "\n") {
+        return j;
+      }
+      j++;
+    }
+    return j;
+  };
+
+  while (i < len) {
+    const frame = stack[stack.length - 1]!;
+    const ch = code[i]!;
+
+    if (frame.kind === "template") {
+      if (ch === "\\") {
+        i += 2;
+        continue;
+      }
+      if (ch === "`") {
+        stack.pop();
+        previous = "value";
+        i++;
+        continue;
+      }
+      if (ch === "$" && code[i + 1] === "{") {
+        stack.push({ kind: "code", braceDepth: 0 });
+        previous = "operator";
+        i += 2;
+        continue;
+      }
+      i++;
+      continue;
+    }
+
+    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r" || ch === "\f" || ch === "\v") {
+      i++;
+      continue;
+    }
+    if (ch === "/" && code[i + 1] === "/") {
+      const end = code.indexOf("\n", i + 2);
+      i = end === -1 ? len : end;
+      continue;
+    }
+    if (ch === "/" && code[i + 1] === "*") {
+      const end = code.indexOf("*/", i + 2);
+      i = end === -1 ? len : end + 2;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      i = skipString(i);
+      previous = "value";
+      continue;
+    }
+    if (ch === "`") {
+      stack.push({ kind: "template" });
+      previous = "value";
+      i++;
+      continue;
+    }
+    if (ch === "/") {
+      if (previous === "none" || previous === "operator") {
+        i = skipRegex(i);
+        previous = "value";
+      } else {
+        previous = "operator";
+        i++;
+      }
+      continue;
+    }
+    if (ch === "\\") {
+      if (code[i + 1] === "u") hits.push(i);
+      if (code[i + 1] === "u" && code[i + 2] === "{") {
+        const end = code.indexOf("}", i + 3);
+        i = end === -1 ? len : end + 1;
+      } else if (code[i + 1] === "u") {
+        i = Math.min(len, i + 6);
+      } else if (code[i + 1] === "x") {
+        i = Math.min(len, i + 4);
+      } else {
+        i = Math.min(len, i + 2);
+      }
+      previous = "value";
+      continue;
+    }
+    if (ch === "{") {
+      frame.braceDepth++;
+      previous = "operator";
+      i++;
+      continue;
+    }
+    if (ch === "}") {
+      if (frame.braceDepth === 0 && stack.length > 1) {
+        stack.pop();
+        previous = "operator";
+      } else {
+        frame.braceDepth = Math.max(0, frame.braceDepth - 1);
+        previous = "value";
+      }
+      i++;
+      continue;
+    }
+    if (ch === ")") {
+      previous = "value";
+      i++;
+      continue;
+    }
+    if (ch === "]") {
+      previous = "value";
+      i++;
+      continue;
+    }
+    if (ch === "+" || ch === "-") {
+      if (code[i + 1] === ch && previous === "value") {
+        // 後置の ++ / -- は式を終える。続く `/` は除算として扱う。
+        previous = "value";
+        i += 2;
+      } else {
+        previous = "operator";
+        i++;
+      }
+      continue;
+    }
+    if (/[A-Za-z_$]/.test(ch)) {
+      let j = i + 1;
+      while (j < len && /[A-Za-z0-9_$]/.test(code[j]!)) j++;
+      const word = code.slice(i, j);
+      previous = REGEX_PRECEDING_KEYWORDS[word] ? "operator" : "value";
+      i = j;
+      continue;
+    }
+    if (/[0-9]/.test(ch)) {
+      let j = i + 1;
+      while (j < len && /[0-9A-Za-z_.]/.test(code[j]!)) j++;
+      previous = "value";
+      i = j;
+      continue;
+    }
+    previous = "operator";
+    i++;
+  }
+
+  return hits;
+}
+
+/**
  * プラグインコードの静的検査。
  * - `allowed=false` は公開不可（reject ルール該当 or サイズ超過 or 空）
  * - `riskScore` は 0–100（高いほど審査で要注意）
@@ -124,6 +342,22 @@ export async function runStaticChecks(code: string, manifest?: PluginManifest | 
     rejected = true;
     riskScore = 100;
   }
+
+  // 識別子の位置の Unicode エスケープは、RULES のテキスト走査をすり抜けたまま
+  // 禁止 API（`eval` 等）を呼べるため、字句を見て拒否する（M-2）。
+  const unicodeEscapeLines = [
+    ...new Set(findIdentifierUnicodeEscapes(code).map((index) => lineOf(code, index))),
+  ];
+  for (const line of unicodeEscapeLines.slice(0, 10)) {
+    reasons.push(
+      `禁止: 識別子の位置で Unicode エスケープ（\\uXXXX / \\u{...}）を使うことはできません（${line}行目付近）`,
+    );
+    riskScore += 35;
+  }
+  if (unicodeEscapeLines.length > 10) {
+    reasons.push(`禁止: 識別子の位置の Unicode エスケープがほかに ${unicodeEscapeLines.length - 10} 行あります`);
+  }
+  if (unicodeEscapeLines.length > 0) rejected = true;
 
   for (const rule of RULES) {
     const match = rule.pattern.exec(code);

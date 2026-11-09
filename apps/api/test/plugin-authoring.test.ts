@@ -20,7 +20,7 @@ import {
 import { grantStepUp } from "../src/services/account/step-up";
 import { assertAuthorRate, assertDraftLimit, consumeAuthorUsage } from "../src/services/plugin-authoring/limits";
 import { prunePluginAuthorData } from "../src/services/plugin-authoring/audit";
-import { authenticatePluginToken } from "../src/services/plugin-authoring/tokens";
+import { authenticatePluginToken, createPluginToken } from "../src/services/plugin-authoring/tokens";
 
 interface Envelope<T> {
   ok: boolean;
@@ -107,6 +107,48 @@ describe("プラグイン作成トークン REST（/v1/me/plugin-tokens）", () 
     expect(response.status).toBe(409);
     const body = await json<Envelope<unknown>>(response);
     expect(body.code).toBe("CONFLICT");
+  });
+
+  it("上限付近からの同時発行でも有効なトークンは 5 本を超えない（M-1）", async () => {
+    const { accountId } = await makeAccountWithSession();
+    for (let index = 0; index < PLUGIN_TOKEN_MAX_PER_ACCOUNT - 1; index++) {
+      await makePluginToken(accountId, { name: `seed-${index}` });
+    }
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 3 }, (_, index) => createPluginToken(env, accountId, `burst-${index}`)),
+    );
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    for (const result of results) {
+      if (result.status === "rejected") expect(result.reason).toMatchObject({ status: 409 });
+    }
+
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM plugin_author_tokens WHERE account_id = ? AND status = 'active' AND expires_at > ?",
+    )
+      .bind(accountId, Math.floor(Date.now() / 1000))
+      .first<{ count: number }>();
+    expect(count?.count).toBe(PLUGIN_TOKEN_MAX_PER_ACCOUNT);
+  });
+
+  it("10 本の同時発行でも有効なトークンは 5 本を超えない（M-1）", async () => {
+    const { accountId } = await makeAccountWithSession();
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, (_, index) => createPluginToken(env, accountId, `bulk-${index}`)),
+    );
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(
+      PLUGIN_TOKEN_MAX_PER_ACCOUNT,
+    );
+    for (const result of results) {
+      if (result.status === "rejected") expect(result.reason).toMatchObject({ status: 409 });
+    }
+
+    const count = await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM plugin_author_tokens WHERE account_id = ? AND status = 'active' AND expires_at > ?",
+    )
+      .bind(accountId, Math.floor(Date.now() / 1000))
+      .first<{ count: number }>();
+    expect(count?.count).toBe(PLUGIN_TOKEN_MAX_PER_ACCOUNT);
   });
 
   it("期限切れのトークンは同時本数に数えない", async () => {

@@ -215,6 +215,14 @@ export async function getPluginRow(db: D1Database, idOrName: string): Promise<Pl
     .first<PluginRow>();
 }
 
+/** ID だけで引く（名前へのフォールバックをしない）。トークン経路の入力を ID に限定する。 */
+export async function getPluginRowById(db: D1Database, id: string): Promise<PluginRow | null> {
+  return db
+    .prepare(`${PLUGIN_SELECT} WHERE p.id = ?`)
+    .bind(id)
+    .first<PluginRow>();
+}
+
 export async function listVersions(
   db: D1Database,
   pluginId: string,

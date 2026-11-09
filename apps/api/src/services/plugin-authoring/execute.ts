@@ -41,7 +41,7 @@ import {
   addVersion,
   createPlugin,
   findInstall,
-  getPluginRow,
+  getPluginRowById,
   getVersionRow,
   installPlugin,
   listPlugins,
@@ -87,7 +87,8 @@ function annotateChangelog(changelog: string | undefined, templateId?: string): 
 
 /** トークン所有者のプラグインだけを返す。他人のもの・存在しないものは同じ 404。 */
 async function loadOwnedPlugin(env: Env, token: AuthenticatedPluginToken, pluginId: string): Promise<PluginRow> {
-  const plugin = await getPluginRow(env.DB, pluginId);
+  // トークン経路は ID だけを受け付ける（名前で引けると仕様表記が揺らぐ。L-1）。
+  const plugin = await getPluginRowById(env.DB, pluginId);
   if (!plugin || plugin.owner_account_id !== token.accountId) {
     throw ApiError.notFound("プラグインが見つかりません");
   }

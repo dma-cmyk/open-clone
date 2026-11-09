@@ -51,11 +51,15 @@ export function PluginPreview(props: PluginPreviewProps) {
     setStatus("running");
     setError(null);
     let cancelled = false;
+    const minHeight = current.minHeight ?? 64;
     const iframe = document.createElement("iframe");
     iframe.setAttribute("sandbox", PLUGIN_IFRAME_SANDBOX);
     iframe.setAttribute("referrerpolicy", "no-referrer");
     iframe.setAttribute("title", "プラグイン プレビュー");
-    iframe.style.cssText = "width:100%;border:0;display:block;height:0;background:transparent;overflow:hidden;";
+    // 中身がボタン 1 つだけの slot（定型レス等）でも、resize が来る前から見えるよう
+    // iframe 自体にも最低の高さを持たせる（UI Low-1）。容器側の minHeight だけでは
+    // iframe が height:0 のまま中身が見えない。
+    iframe.style.cssText = `width:100%;border:0;display:block;height:${minHeight}px;background:transparent;overflow:hidden;`;
     container.appendChild(iframe);
 
     const bridge = createPluginBridge({
@@ -73,8 +77,8 @@ export function PluginPreview(props: PluginPreviewProps) {
       },
       handlers: {
         onResize(value) {
-          iframe.style.height = `${Math.max(0, value)}px`;
-          setHeight(Math.max(current.minHeight ?? 64, value));
+          iframe.style.height = `${Math.max(minHeight, value)}px`;
+          setHeight(Math.max(minHeight, value));
         },
         onNotify(message, level) {
           current.onNotify?.(message, level);

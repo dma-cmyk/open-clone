@@ -409,6 +409,28 @@ describe("MCP /mcp-plugin のセキュリティ", () => {
     }
   });
 
+  it("トークン経路はプラグイン名ではなく ID だけを受け付ける（L-1）", async () => {
+    const { client } = await setup();
+    const name = uniqueName("name-only");
+    try {
+      const created = await client.callTool({
+        name: "authoring.create_draft",
+        arguments: { manifest: manifestFor(name), code: "register({});" },
+      });
+      const pluginId = payload<{ pluginId: string }>(created).pluginId;
+
+      for (const tool of ["authoring.get", "authoring.preview"] as const) {
+        const byId = await client.callTool({ name: tool, arguments: { pluginId } });
+        expect(byId.isError, tool).toBeFalsy();
+        const byName = await client.callTool({ name: tool, arguments: { pluginId: name } });
+        expect(byName.isError, tool).toBe(true);
+        expect(payload<{ code: string }>(byName).code, tool).toBe("NOT_FOUND");
+      }
+    } finally {
+      await client.close();
+    }
+  });
+
   it("日次上限に達すると 429（RATE_LIMITED）で監査に rate_limited が残る", async () => {
     const { client, accountId } = await setup();
     const now = Math.floor(Date.now() / 1000);

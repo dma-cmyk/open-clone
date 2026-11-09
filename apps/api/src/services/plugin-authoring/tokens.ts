@@ -63,17 +63,6 @@ export function tokenDisplayPrefix(token: string): string {
   return token.slice(0, PLUGIN_TOKEN_PREFIX.length + PLUGIN_TOKEN_PREFIX_DISPLAY_CHARS);
 }
 
-/** 同時有効本数（期限切れは数えない）。 */
-async function countActiveTokens(env: Env, accountId: string, now: number): Promise<number> {
-  const row = await env.DB.prepare(
-    `SELECT COUNT(*) AS count FROM plugin_author_tokens
-     WHERE account_id = ? AND status = 'active' AND expires_at > ?`,
-  )
-    .bind(accountId, now)
-    .first<{ count: number }>();
-  return row?.count ?? 0;
-}
-
 export interface CreatedPluginToken {
   row: PluginAuthorTokenRow;
   token: string;
@@ -86,14 +75,6 @@ export async function createPluginToken(
   name?: string,
 ): Promise<CreatedPluginToken> {
   const now = Math.floor(Date.now() / 1000);
-  if ((await countActiveTokens(env, accountId, now)) >= PLUGIN_TOKEN_MAX_PER_ACCOUNT) {
-    throw new ApiError(
-      409,
-      ErrorCode.CONFLICT,
-      `有効なトークンは ${PLUGIN_TOKEN_MAX_PER_ACCOUNT} 本までです。不要なトークンを失効してから発行してください`,
-    );
-  }
-
   const token = generatePluginToken();
   const row: PluginAuthorTokenRow = {
     id: ulid(),
@@ -107,8 +88,17 @@ export async function createPluginToken(
     last_used_at: null,
   };
 
-  await env.DB.prepare(
-    `INSERT INTO plugin_author_tokens (${TOKEN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  // 上限判定と INSERT を 1 ステートメントにする。COUNT → INSERT の 2 文だと
+  // 同時発行のリクエストがどれも同じ COUNT を見て上限を超える（M-1）。
+  // SQLite/D1 は 1 ステートメントを直列化するため、条件付き INSERT なら
+  // 有効本数が上限に達した後の行は挿入されない。
+  const result = await env.DB.prepare(
+    `INSERT INTO plugin_author_tokens (${TOKEN_COLUMNS})
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+     WHERE (
+       SELECT COUNT(*) FROM plugin_author_tokens
+       WHERE account_id = ? AND status = 'active' AND expires_at > ?
+     ) < ?`,
   )
     .bind(
       row.id,
@@ -120,8 +110,19 @@ export async function createPluginToken(
       row.expires_at,
       row.created_at,
       row.last_used_at,
+      accountId,
+      now,
+      PLUGIN_TOKEN_MAX_PER_ACCOUNT,
     )
     .run();
+
+  if ((result.meta.changes ?? 0) === 0) {
+    throw new ApiError(
+      409,
+      ErrorCode.CONFLICT,
+      `有効なトークンは ${PLUGIN_TOKEN_MAX_PER_ACCOUNT} 本までです。不要なトークンを失効してから発行してください`,
+    );
+  }
 
   return { row, token };
 }

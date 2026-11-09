@@ -176,6 +176,42 @@ test.describe("テンプレートから作る", () => {
     }
   });
 
+  test("定型レス: プレビューの sandbox iframe に最低の高さがある（UI Low-1）", async ({
+    page,
+    context,
+  }) => {
+    await loginAsTestUser(context);
+    await openTemplate(page, "quick-reply", "定型レスボタン");
+    await page.getByLabel("投稿する本文").fill("定型レス E2E");
+
+    const checked = waitForPost(page, /\/api\/v1\/plugins\/preview-check$/);
+    await page.getByRole("button", { name: "プレビュー" }).click();
+    expect((await checked).status()).toBe(200);
+
+    const frame = page.locator('iframe[title="プラグイン プレビュー"]');
+    await expect(frame).toBeVisible();
+    await expect(frame.contentFrame().getByRole("button", { name: /定型レス/ })).toBeVisible();
+    const box = await frame.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(40);
+  });
+
+  test("必須項目が空なら手動編集へ遷移せず、保存時と同じエラーを出す（UI Low-2）", async ({
+    page,
+    context,
+  }) => {
+    await loginAsTestUser(context);
+    await openTemplate(page, "spoiler", "ネタバレ伏せ");
+    await page.getByLabel("プラグイン名").fill("");
+    await page.getByRole("button", { name: "コードを見る・手で編集する" }).click();
+
+    await expect(page).toHaveURL(/\/plugins\/templates/);
+    await expect(page.getByText("設定: ネタバレ伏せ", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("名前は英小文字・数字・ハイフンで、3〜41 文字（英小文字で開始）にしてください"),
+    ).toBeVisible();
+    expect(await page.evaluate(() => window.sessionStorage.getItem("oc.templateDraft"))).toBeNull();
+  });
+
   test("コードを見る・手で編集する: 入力済みの内容をエディタへ引き継ぐ（決定 7）", async ({
     page,
     context,
