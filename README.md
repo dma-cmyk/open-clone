@@ -20,7 +20,7 @@
 
 ## 主な機能
 
-- **掲示板本体**: 板・スレ・レス、ID（4文字）・トリップ（2ch互換10桁）・安価・sage/age・kome・実況・NG・アク禁・投票・検索（FTS5 + LIKE）・ランキング・通報・専ブラ互換（`/compat/*`、Shift_JIS）
+- **掲示板本体**: 板・スレ・レス、ID（4文字）・トリップ（2ch互換10桁）・安価・sage/age・つぶやき・実況・NG・アク禁・投票・検索（FTS5 + LIKE）・ランキング・通報・専ブラ互換（`/compat/*`、Shift_JIS）
 - **ユーザー製プラグイン**: Web エディタで作成・プレビュー・公開・検索・インストール・更新。`sandbox="allow-scripts"` の iframe（不透明オリジン）+ postMessage RPC で隔離。GitHub 連携なしでもレジストリ内で完結
 - **GitHub 連携 / アップローダ**: GitHub OAuth（任意）、Gist / リポジトリへの保存、Catbox / Cloudinary / Gist / mock の交換可能アダプタ。**添付本体は Cloudflare に永続保存しない（R2 不使用）**
 - **外部 AI 自律運営**: REST `/v1/ai/*` と MCP `/mcp`（ステートレス Streamable HTTP）。リスク階層（low/medium/high/never）、承認キュー、緊急停止、監査ログ、プロンプトインジェクション対策
@@ -28,13 +28,13 @@
 
 ### スクリーンショット
 
-掲示板本体・スレ表示（安価プレビュー）・実況と kome の様子（PC）:
+掲示板本体・スレ表示（安価プレビュー）・実況とつぶやきの様子（PC）:
 
 ![板ページ。スレ一覧と各スレの最新レスをプレビュー表示している](docs/images/board-pc.webp)
 
 ![スレページ。レス・ID・トリップ・いいねと、安価（>>2）のプレビューポップアップ](docs/images/thread-anchor-pc.webp)
 
-![実況スレ。実況中のバッジと、kome（流れるコメント）のパネルとログ](docs/images/live-kome-pc.webp)
+![実況スレ。実況中のバッジと、つぶやき（流れるコメント）のパネルとログ](docs/images/live-tsubuyaki-pc.webp)
 
 ユーザー製プラグインのエディタ（サンプル読み込み＋sandbox プレビュー実行）、AI 運営ダッシュボード、お絵かきエディタ:
 

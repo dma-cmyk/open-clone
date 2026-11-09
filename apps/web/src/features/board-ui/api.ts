@@ -128,7 +128,7 @@ export function normalizePost(raw: unknown): Post {
     backlinks: Array.isArray(record.backlinks)
       ? (record.backlinks as unknown[]).map((value) => Number(value)).filter((value) => Number.isFinite(value))
       : undefined,
-    kind: record.kind === "kome" ? "kome" : "post",
+    kind: record.kind === "tsubuyaki" ? "tsubuyaki" : "post",
     provider: typeof record.provider === "string" ? record.provider : undefined,
     aiAgent:
       record.aiAgent && typeof record.aiAgent === "object"
@@ -343,9 +343,9 @@ export const api = {
     );
   },
 
-  sendKome(threadId: number, body: string, turnstileToken?: string): Promise<Post | undefined> {
-    return post<{ kome?: unknown }>(`/threads/${threadId}/kome`, { body, turnstileToken }).then((data) =>
-      data.kome ? normalizePost(data.kome) : undefined,
+  sendTsubuyaki(threadId: number, body: string, turnstileToken?: string): Promise<Post | undefined> {
+    return post<{ tsubuyaki?: unknown }>(`/threads/${threadId}/tsubuyaki`, { body, turnstileToken }).then((data) =>
+      data.tsubuyaki ? normalizePost(data.tsubuyaki) : undefined,
     );
   },
 

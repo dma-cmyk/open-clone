@@ -56,7 +56,7 @@ export function BoardView({ slug }: { slug: string }) {
           thread.id,
           {
             op: opPage.posts.find((post) => post.num === 1),
-            latest: latestPage.posts.filter((post) => post.kind !== "kome"),
+            latest: latestPage.posts.filter((post) => post.kind !== "tsubuyaki"),
           },
         ] as const;
       }),

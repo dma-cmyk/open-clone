@@ -1,7 +1,7 @@
 "use client";
 
-// kome（流れるコメント）オーバーレイ。DESIGN §6.2。
-// データは WS の kome.created と初期取得分。NG はローカル設定を適用する。
+// つぶやき（流れるコメント）オーバーレイ。DESIGN §6.2。
+// データは WS の tsubuyaki.created と初期取得分。NG はローカル設定を適用する。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { matchNg, settingsStore } from "./settings";
@@ -17,7 +17,7 @@ interface Flowing {
   color: string;
 }
 
-export function KomeOverlay({
+export function TsubuyakiOverlay({
   threadId,
   open,
   onClose,
@@ -98,9 +98,9 @@ export function KomeOverlay({
         key: `${post.id}-${now}-${index}`,
         text: post.body,
         top: 8 + Math.random() * 72,
-        duration: Math.max(4, 14 - settings.kome.speed) + Math.random() * 2,
-        size: settings.kome.size,
-        color: settings.kome.color,
+        duration: Math.max(4, 14 - settings.tsubuyaki.speed) + Math.random() * 2,
+        size: settings.tsubuyaki.size,
+        color: settings.tsubuyaki.color,
       }));
     setFlowing((prev) => [...prev, ...spawn]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -112,19 +112,19 @@ export function KomeOverlay({
     const text = draft.trim();
     if (!text) return;
     if (text.length > 100) {
-      setError("kome は 100 文字までです");
+      setError("つぶやきは 100 文字までです");
       return;
     }
     setSending(true);
     setError(null);
     try {
-      const post = await api.sendKome(threadId, text, token || undefined);
+      const post = await api.sendTsubuyaki(threadId, text, token || undefined);
       setDraft("");
       setToken("");
       setResetKey((value) => value + 1);
       onSent?.(post);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "kome の送信に失敗しました");
+      setError(cause instanceof Error ? cause.message : "つぶやきの送信に失敗しました");
     } finally {
       setSending(false);
     }
@@ -132,17 +132,17 @@ export function KomeOverlay({
 
   return (
     <>
-      <div className="oc-kome-layer" aria-hidden="true">
+      <div className="oc-tsubuyaki-layer" aria-hidden="true">
         {flowing.map((item) => (
           <span
             key={item.key}
-            className="oc-kome-item"
+            className="oc-tsubuyaki-item"
             style={{
               top: `${item.top}%`,
               fontSize: item.size,
               color: item.color,
               animationDuration: `${item.duration}s`,
-              opacity: settings.kome.opacity,
+              opacity: settings.tsubuyaki.opacity,
             }}
             onAnimationEnd={() => setFlowing((prev) => prev.filter((other) => other.key !== item.key))}
           >
@@ -150,9 +150,9 @@ export function KomeOverlay({
           </span>
         ))}
       </div>
-      <div className="oc-kome-panel" role="complementary" aria-label="kome">
-        <div className="oc-kome-panel-head">
-          <strong>kome</strong>
+      <div className="oc-tsubuyaki-panel" role="complementary" aria-label="つぶやき">
+        <div className="oc-tsubuyaki-panel-head">
+          <strong>つぶやき</strong>
           <span style={{ opacity: 0.75 }}>{enabled ? "100文字まで / Enterで送信" : "実況中は無効です"}</span>
           <span style={{ flex: 1 }} />
           <button type="button" className="oc-btn oc-btn-sm" onClick={onClose}>
@@ -169,10 +169,10 @@ export function KomeOverlay({
           <input
             value={draft}
             maxLength={100}
-            placeholder="kome を入力…"
+            placeholder="つぶやきを入力…"
             onChange={(event) => setDraft(event.target.value)}
             disabled={!enabled || sending}
-            aria-label="kome 本文"
+            aria-label="つぶやき本文"
           />
           <button type="submit" className="oc-btn oc-btn-sm" disabled={!enabled || sending}>
             送信
@@ -184,8 +184,8 @@ export function KomeOverlay({
             <TurnstileWidget onToken={onToken} resetKey={resetKey} compact />
           </div>
         ) : null}
-        <div className="oc-kome-log">
-          {log.length === 0 ? <div>まだ kome はありません</div> : null}
+        <div className="oc-tsubuyaki-log">
+          {log.length === 0 ? <div>まだつぶやきはありません</div> : null}
           {log.map((post) => (
             <div key={post.id}>
               <span style={{ color: "#9fdf9f" }}>{post.name || "名無し"}</span>: {post.body}

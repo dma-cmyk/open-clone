@@ -1,9 +1,9 @@
-// スレッド API（一覧 / 詳細 / 範囲指定レス取得 / レス投稿 / kome / 状態変更）。
+// スレッド API（一覧 / 詳細 / 範囲指定レス取得 / レス投稿 / つぶやき / 状態変更）。
 
 import { Hono } from "hono";
 import {
   ApiError,
-  komeRequestSchema,
+  tsubuyakiRequestSchema,
   ok,
   parsePostRange,
   threadListQuerySchema,
@@ -13,7 +13,7 @@ import type { AppEnv } from "../lib/env";
 import { getReqCtx } from "../lib/context";
 import { assertReadRateLimit } from "../lib/do";
 import { requireAuth } from "../lib/middleware/auth";
-import { createKomeInternal, createPostInternal } from "../lib/pipeline";
+import { createTsubuyakiInternal, createPostInternal } from "../lib/pipeline";
 import { parsePostCreateBody } from "../lib/post-input";
 import {
   assertThreadActive,
@@ -131,19 +131,19 @@ app.post("/:id/posts", async (c) => {
   return c.json(ok({ post: result.post, thread: { postCount: result.threadPostCount } }), 201);
 });
 
-/** kome（コメント流し）。 */
-app.post("/:id/kome", async (c) => {
+/** つぶやき（コメント流し）。 */
+app.post("/:id/tsubuyaki", async (c) => {
   const db = c.env.DB;
   const thread = await assertThreadActive(await getThreadRow(db, parseThreadId(c.req.param("id"))));
   const reqCtx = getReqCtx(c);
   const raw = (await c.req.json()) as Record<string, unknown>;
-  const body = komeRequestSchema.parse(raw);
+  const body = tsubuyakiRequestSchema.parse(raw);
   // 通常投稿と同じ受け渡し: body の turnstileToken / cf-turnstile-response / ヘッダの順。
   const turnstileToken =
     body.turnstileToken ??
     (typeof raw["cf-turnstile-response"] === "string" ? raw["cf-turnstile-response"] : undefined) ??
     c.req.header("x-turnstile-token");
-  const result = await createKomeInternal(
+  const result = await createTsubuyakiInternal(
     {
       boardId: thread.board_id,
       threadId: thread.id,
@@ -157,7 +157,7 @@ app.post("/:id/kome", async (c) => {
     },
     { env: c.env, ctx: c.executionCtx },
   );
-  return c.json(ok({ kome: result.post }), 201);
+  return c.json(ok({ tsubuyaki: result.post }), 201);
 });
 
 /** スレ状態（ピン留め・close）変更と削除。板スタッフまたはスレ主。 */

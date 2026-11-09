@@ -1,10 +1,10 @@
-// レス API（投稿 / kome / 評価 / 非表示・削除 / 投票）。
+// レス API（投稿 / つぶやき / 評価 / 非表示・削除 / 投票）。
 
 import { Hono } from "hono";
 import {
   ApiError,
   ErrorCode,
-  komeRequestSchema,
+  tsubuyakiRequestSchema,
   ok,
   reactionKindSchema,
   votePollRequestSchema,
@@ -13,7 +13,7 @@ import {
 import type { AppEnv } from "../lib/env";
 import { getReqCtx } from "../lib/context";
 import { requireAuth } from "../lib/middleware/auth";
-import { createKomeInternal, createPostInternal } from "../lib/pipeline";
+import { createTsubuyakiInternal, createPostInternal } from "../lib/pipeline";
 import { parsePostCreateBody } from "../lib/post-input";
 import {
   POST_COLUMNS,
@@ -92,20 +92,20 @@ app.post("/", async (c) => {
   return c.json(ok({ post: result.post, thread: { postCount: result.threadPostCount } }), 201);
 });
 
-/** kome（threadId をボディで受ける）。 */
-app.post("/kome", async (c) => {
+/** つぶやき（threadId をボディで受ける）。 */
+app.post("/tsubuyaki", async (c) => {
   const db = c.env.DB;
   const reqCtx = getReqCtx(c);
   const raw = (await c.req.json()) as Record<string, unknown>;
   const threadId = Number(raw["threadId"]);
   if (!Number.isInteger(threadId) || threadId <= 0) throw ApiError.validation("threadId が必要です");
   const thread = await assertThreadActive(await getThreadRow(db, threadId));
-  const body = komeRequestSchema.parse(raw);
+  const body = tsubuyakiRequestSchema.parse(raw);
   const turnstileToken =
     body.turnstileToken ??
     (typeof raw["cf-turnstile-response"] === "string" ? raw["cf-turnstile-response"] : undefined) ??
     c.req.header("x-turnstile-token");
-  const result = await createKomeInternal(
+  const result = await createTsubuyakiInternal(
     {
       boardId: thread.board_id,
       threadId: thread.id,
@@ -119,7 +119,7 @@ app.post("/kome", async (c) => {
     },
     { env: c.env, ctx: c.executionCtx },
   );
-  return c.json(ok({ kome: result.post }), 201);
+  return c.json(ok({ tsubuyaki: result.post }), 201);
 });
 
 /** 評価（いいね）のトグル。端末単位で 1 人 1 回。 */

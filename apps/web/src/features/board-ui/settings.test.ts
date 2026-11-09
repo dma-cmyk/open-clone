@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, matchNg, matchNgThread, type NgConfig } from "./settings";
+import { DEFAULT_SETTINGS, matchNg, matchNgThread, migrateLegacySettings, type NgConfig } from "./settings";
 import type { Post } from "./types";
 
 const basePost: Post = {
@@ -54,5 +54,50 @@ describe("matchNgThread", () => {
   it("スレタイの部分一致", () => {
     expect(matchNgThread("【宣伝】稼げる副業", ng({ threads: ["宣伝"] }))).toBe("宣伝");
     expect(matchNgThread("普通のスレ", ng({ threads: ["宣伝"] }))).toBeNull();
+  });
+});
+describe("migrateLegacySettings", () => {
+  it("旧名 kome の端末設定を tsubuyaki へ移し、旧キーを残さない", () => {
+    const migrated = migrateLegacySettings({
+      behavior: { autoScroll: false, kome: true },
+      kome: { size: 30, speed: 5, opacity: 0.5, color: "#ff0000" },
+      ng: { words: [":kome", "spam"] },
+    }) as {
+      behavior: Record<string, unknown>;
+      tsubuyaki: Record<string, unknown>;
+      ng: { words: string[] };
+    };
+    expect(migrated.behavior).toEqual({ autoScroll: false, tsubuyaki: true });
+    expect("kome" in migrated.behavior).toBe(false);
+    expect(migrated.tsubuyaki).toEqual({ size: 30, speed: 5, opacity: 0.5, color: "#ff0000" });
+    expect("kome" in migrated).toBe(false);
+    expect(migrated.ng.words).toEqual([":tsubuyaki", "spam"]);
+  });
+
+  it("新しいキーが既にあれば優先し、:kome の重複を作らない", () => {
+    const migrated = migrateLegacySettings({
+      behavior: { kome: false, tsubuyaki: true },
+      kome: { size: 30 },
+      tsubuyaki: { size: 18 },
+      ng: { words: [":tsubuyaki", ":kome"] },
+    }) as {
+      behavior: Record<string, unknown>;
+      tsubuyaki: Record<string, unknown>;
+      ng: { words: string[] };
+    };
+    expect(migrated.behavior.tsubuyaki).toBe(true);
+    expect(migrated.tsubuyaki).toEqual({ size: 18 });
+    expect(migrated.ng.words).toEqual([":tsubuyaki"]);
+  });
+
+  it("旧キーが無い保存値はそのまま返す（不要な書き戻しをしない）", () => {
+    const stored = { display: { fontSize: 16 }, behavior: { autoScroll: true } };
+    expect(migrateLegacySettings(stored)).toBe(stored);
+  });
+
+  it("既定値は新しい名前だけを持つ", () => {
+    expect(DEFAULT_SETTINGS.behavior.tsubuyaki).toBe(false);
+    expect(DEFAULT_SETTINGS.tsubuyaki.size).toBe(22);
+    expect("kome" in DEFAULT_SETTINGS).toBe(false);
   });
 });

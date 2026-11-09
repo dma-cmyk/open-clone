@@ -117,7 +117,7 @@
 | ドメイン(WP) | テーブル | 要点 |
 |---|---|---|
 | 基盤 (WP0) | `accounts`(id, name, email UNIQUE NULL可, password_hash, role: owner/special_admin/user, status, created_at), `sessions`(token_hash PK, account_id, expires_at, ua), `site_config`(key PK, value JSON), `audit_log`(id, actor_type, actor_id, action, target, detail JSON, created_at) | ロール列は WP0 が所有。以降のWPは**自分のテーブルのみ作成**、共有テーブルへ列追加せず拡張テーブルで対応 |
-| 掲示板 (WP1) | `boards`(id, slug UNIQUE, name, category, description, rules_md, design JSON, owner_account_id, settings JSON: cooldown/turnstile/wordfilter/live/mode, last_post_at, created_at), `board_staff`(board_id, account_id, level: admin/deputy/moderator, by, UNIQUE(board,account)), `threads`(id, board_id, title, title_flags JSON(!no_id/!sage/!max/!timer等), owner_device_hash, live INT, last_post_at, post_count, max_posts, bump_at, pinned, status), `thread_subs`(thread_id, device_hash/account_id — 副主), `thread_state`(thread_id PK, JSON: aku/ngk/nopic/jien/add_count/cap…), `posts`(id, thread_id, board_id, num, name, mail, trip, cap, post_id_hash(表示ID), body, device_hash, ip_hash, ninja_lv, kind: post/kome, parent_post_id(kome/安価逆引用), attachments JSON, vote JSON(投票ank), created_at, hidden, deleted), `posts_fts`(FTS5 trigram, content=posts), `backlinks`(post_id, from_post_id), `tags`+`thread_tags`(ハッシュタグ), `polls`+`poll_votes`( ank 投票・1IP1票), `board_bans`(board_id NULL=全体, kind: ip/device/trip/range, value, expires_at, reason, by), `reports`(id, target_type: post/thread/plugin/account, target_id, reason, detail, status: open/triaged/resolved/dismissed, by_device, created_at), `counters`(scope, key, hour_bucket, n — ランキング/同時接続/人気検索語), `ranking_snapshots`(scope, kind: hour/day/total, data JSON, generated_at), `devices`(device_hash PK, ninja_count, ninja_lv, first_seen, last_seen — 忍法帖) | 表示IDは非保存でも再計算可能だが、検索性能のため `post_id_hash` を保存 |
+| 掲示板 (WP1) | `boards`(id, slug UNIQUE, name, category, description, rules_md, design JSON, owner_account_id, settings JSON: cooldown/turnstile/wordfilter/live/mode, last_post_at, created_at), `board_staff`(board_id, account_id, level: admin/deputy/moderator, by, UNIQUE(board,account)), `threads`(id, board_id, title, title_flags JSON(!no_id/!sage/!max/!timer等), owner_device_hash, live INT, last_post_at, post_count, max_posts, bump_at, pinned, status), `thread_subs`(thread_id, device_hash/account_id — 副主), `thread_state`(thread_id PK, JSON: aku/ngk/nopic/jien/add_count/cap…), `posts`(id, thread_id, board_id, num, name, mail, trip, cap, post_id_hash(表示ID), body, device_hash, ip_hash, ninja_lv, kind: post/kome(DB 内部値。外向けは tsubuyaki), parent_post_id(つぶやき/安価逆引用), attachments JSON, vote JSON(投票ank), created_at, hidden, deleted), `posts_fts`(FTS5 trigram, content=posts), `backlinks`(post_id, from_post_id), `tags`+`thread_tags`(ハッシュタグ), `polls`+`poll_votes`( ank 投票・1IP1票), `board_bans`(board_id NULL=全体, kind: ip/device/trip/range, value, expires_at, reason, by), `reports`(id, target_type: post/thread/plugin/account, target_id, reason, detail, status: open/triaged/resolved/dismissed, by_device, created_at), `counters`(scope, key, hour_bucket, n — ランキング/同時接続/人気検索語), `ranking_snapshots`(scope, kind: hour/day/total, data JSON, generated_at), `devices`(device_hash PK, ninja_count, ninja_lv, first_seen, last_seen — 忍法帖) | 表示IDは非保存でも再計算可能だが、検索性能のため `post_id_hash` を保存 |
 | プラグイン (WP3) | `plugins`(id, slug, name, summary, author_account_id, visibility: private/board/site, status: draft/pending/approved/rejected/disabled, source: d1/github_repo/gist, source_ref, install_count), `plugin_versions`(plugin_id, version, manifest JSON, code TEXT(≤512KB), changelog, created_at), `plugin_installs`(scope: personal/board/site, scope_id, plugin_id, version, config JSON), `plugin_state`(plugin_id, scope, scope_id, key, value — 板/サイト共有状態、容量上限64KB/scope), `plugin_reviews`(plugin_version_id, reviewer_type, reviewer_id, verdict, note) | コードは D1 TEXT 保存（GitHubなしでも作成・共有可、要件対応）。512KB 上限は D1 の行/文字列上限 **2MB**（https://developers.cloudflare.com/d1/platform/limits/ ）内に収まる安全側の値。バインドパラメータで書込（SQL文長 100KB 制限に抵触しない） |
 | 添付/GitHub (WP4) | `attachments`(id ULID, post_id NULL, uploader_account_id NULL, device_hash, adapter, external_url, content_type, size, meta JSON, created_at), `uploader_adapters`(id, kind, enabled, config JSON — APIキーは秘密変数参照名のみ), `github_links`(account_id, github_user, token_enc(AES-GCM), scopes, created_at), `github_ops_log`(id, account_id, op, ref, created_at) | **ファイル本体は保存しない。URL とメタデータのみ** |
 | AI運営 (WP5) | `ai_agents`(id, name, key_hash, owner_type: site/board/account, owner_id, allowed_boards JSON, risk_cap: low/medium/high, status: active/suspended, rate JSON, created_by), `ai_policies`(agent_id NULL=既定, action, mode: auto/queue/deny, board_id NULL), `ai_queue`(id, agent_id, action, params JSON, risk, status: pending/approved/rejected/executed/expired, requested_by, decided_by, decision_note, expires_at, idempotency_key UNIQUE, created_at), `ai_audit`(id, agent_id, action, params_digest, result, risk, mode, approval_id NULL, created_at), `webhooks`(id, owner_type, owner_id, url, events JSON, secret_ref, active), `webhook_deliveries`(id, webhook_id, event, status, attempts, last_error) | 監査ログは全 AI 呼び出しに必須 |
@@ -174,7 +174,7 @@ owner (サイト所有者)
 | 操作 | owner | special_admin | board_admin | deputy | moderator | account | anon | ai_agent |
 |---|---|---|---|---|---|---|---|---|
 | 閲覧・検索 | ◎ | ◎ | ◎ | ◎ | ◎ | ◎ | ◎ | ◎(read権限時) |
-| 投稿・スレ作成・kome・実況 | ◎ | ◎ | ◎ | ◎ | ◎ | ◎ | ◎(Turnstile+レート) | △(risk_cap内、AI attribution 付) |
+| 投稿・スレ作成・つぶやき・実況 | ◎ | ◎ | ◎ | ◎ | ◎ | ◎ | ◎(Turnstile+レート) | △(risk_cap内、AI attribution 付) |
 | 板作成 | ◎ | ◎ | — | — | — | ◎(1人N板まで、既定5) | × | × |
 | 板設定/ルール/デザイン編集 | ◎ | ◎(全板) | ◎(自板) | △(adminが許可した項目) | × | × | × | △high(自板担当のみ) |
 | 板削除・移転 | ◎ | ◎ | △(自板、冷却期間+確認) | × | × | × | × | ×(queue必須/high) |
@@ -244,7 +244,7 @@ owner (サイト所有者)
 | スレ主自治コマンド | `!aku`(アク禁)・`!kaijo`(解除)・`!sub`(副主任命/解雇)・`!cap`(キャップ`▲文字列`)・`!reset`・`!nopic`・`!ngk`(コテ禁)・`!jien`・`!add`(>>1追記,50回)。**主/副の権限差・主へのアク禁不可等は open2ch.md §3.5 準拠**。実装: `threads.owner_device_hash`・`thread_subs`(副主)・`thread_state`(JSON: aku/ngk/nopic/jien/add回数) | 必須(aku/sub/cap)/推奨(他) |
 | スレタイコマンド/モード | `!no_id`・`!sage`・`!oekaki`・`!maxNNN`(10-999)・`!timer`(1h消滅)・将棋/オセロ/3文字/漢字等の遊びモードは**板作成時のモード選択=スレ設定 JSON**として土台のみ提供し、盤面系は公式プラグイン(WP3 サンプル)で実装 | 必須(一部)/任意(遊び) |
 | 実況 | スレ設定 `live=1`（板設定で実況板指定可）。自動追尾・逆順・前レス取得・スコアボードは WP2。実況中は AA/コテ/アイコン/画像無効（open2ch.md §3.9、板設定で緩和可） | 推奨 |
-| kome | §6.2 下段参照 | 推奨 |
+| つぶやき | §6.2 下段参照 | 推奨 |
 | 画像・動画・テキスト添付 | §9。投稿は `attachment_ids` を参照し WP1 が WP4 の `attachToPost()` で紐付け。画像一覧(`/b/<slug>/t/<id>?r=images`相当)・アップロード履歴50件（open2ch 準拠） | 必須 |
 | お絵かき | Canvas エディタ（WP2、500px・490×490上限・パラパラ/ドット絵は任意）→ PNG 化 → §9 経由。コラボ描画（投稿画像ベースの追記）はプラグイン余地 | 推奨 |
 | 投票 | `[ank:10m:A,B,C]` 記法（10秒〜30日・最大10項目・**1 IP 1票**・結果リアルタイム）。`polls`/`poll_votes` は WP1 マイグレーション帯に定義 | 推奨 |
@@ -260,7 +260,7 @@ owner (サイト所有者)
 | 配信系（nama/ぬとらじ/おんきゃす/koe） | **移植しない**（帯域・保存先制約、open2ch.md §4.3）。外部配信サービスへのリンク投稿で代替。koe(音声30秒) は Catbox アダプタで技術的には可能なため**板設定で有効化できるプラグイン**として提供（WP3 サンプル） | 任意 |
 | 将棋/オセロ/Tex/短冊/ネタバレ/投げ銭/地図 | 本体には入れず、公式プラグイン（WP3 サンプル）またはユーザープラグインに委譲。ネタバレ `\|\|文字\|\|` は描画レンダラの小機能として WP2 に含める | 任意 |
 
-**kome 詳細**: `posts(kind='kome', parent_post_id)`（100字上限、open2ch 準拠）。Enter 即送信、WS の専用イベント `kome.created` で弾幕表示（流れる文字・LINEモード・位置/サイズ・背景色）は WP2 のオーバーレイ。NG(×)・一括クリアは端末ローカル。読み上げは Web Speech API（クライアントのみ・任意設定）。
+**つぶやき詳細**: `posts(kind='kome'（DB 内部値）, parent_post_id)`（100字上限、open2ch 準拠）。Enter 即送信、WS の専用イベント `tsubuyaki.created` で弾幕表示（流れる文字・LINEモード・位置/サイズ・背景色）は WP2 のオーバーレイ。NG(×)・一括クリアは端末ローカル。読み上げは Web Speech API（クライアントのみ・任意設定）。
 
 ### 6.3 書き込みパイプライン（投稿経路の統一処理順）
 
@@ -271,7 +271,7 @@ owner (サイト所有者)
      → ⑧アンカー解決+backlinks ⑨添付紐付け(attachToPost) ⑩D1 batch 書込(posts+threads更新+counters+fts)
      → ⑪RealtimeHub.publish(waitUntil) ⑫通報AI/watch へのイベント(webhook)
 ```
-①〜⑨は `apps/api/src/lib/pipeline.ts` が担い、kome/スレ作成/投票も同一パイプラインの別設定で通す。rows_written ≤12/投稿 を §12 で検証。
+①〜⑨は `apps/api/src/lib/pipeline.ts` が担い、つぶやき/スレ作成/投票も同一パイプラインの別設定で通す。rows_written ≤12/投稿 を §12 で検証。
 
 ### 6.4 SEO / 初期表示
 
@@ -457,7 +457,7 @@ AI → POST /v1/ai/queue (または high action の直接呼出が自動でキ�
 - Free プランで利用可能なのは SQLite-backed DO のみ（要件・公式仕様とも一致）。KV-backed は使用しない。
 - クラス `RealtimeHub`（WP1）。チャンネル = `board:<id>` / `thread:<id>`。1 DO = 1 チャンネル。
 - **Hibernation API 必須**（`ctx.acceptWebSocket(ws, [tags])`、`setWebSocketAutoResponse` で ping 自動応答）→ アイドル DO は duration 課金ゼロ、Free の 13,000 GB-s/日内に収める。
-- 発火: 投稿/スレ作成/kome/削除/非表示/板設定変更などの書込成功後、Worker が `env.REALTIME.get(idFromName(channel)).publish(event)`（`waitUntil` 内）。DO は tags 指定の接続へ broadcast。
+- 発火: 投稿/スレ作成/つぶやき/削除/非表示/板設定変更などの書込成功後、Worker が `env.REALTIME.get(idFromName(channel)).publish(event)`（`waitUntil` 内）。DO は tags 指定の接続へ broadcast。
 - **DO SQLite には直近 N 件（既定 100）のイベントをリングバッファ保持**し、再接続クライアントに差分を即返す（正本は D1、DO は揮発キャッシュ。services.md §3.3 推奨設計）。これにより再接続時の D1 再読込を節約。
 - イベントペイロード: 新着レスは**全文を含む**（クライアントの再取得を省略し D1 reads を節約）。型は `shared/src/schemas/realtime.ts`。
 - アプリ層 heartbeat は送らない（WS プロトコル ping/pong はランタイム処理で課金対象外）。
@@ -470,7 +470,7 @@ AI → POST /v1/ai/queue (または high action の直接呼出が自動でキ�
 
 ### 11.3 レート制限 DO
 
-- クラス `RateLimiter`（WP1、SQLite-backed）: `(scope, identity_hash, window)` カウンタ。投稿/kome/スレ作成/ログイン/登録/通報/AI action に適用。DO 1 リクエスト = 複数カウンタを batch 更新。TTL 掃除は alarm ではなく接続時の遅延削除（Free の alarm 課金・複雑性を回避）。
+- クラス `RateLimiter`（WP1、SQLite-backed）: `(scope, identity_hash, window)` カウンタ。投稿/つぶやき/スレ作成/ログイン/登録/通報/AI action に適用。DO 1 リクエスト = 複数カウンタを batch 更新。TTL 掃除は alarm ではなく接続時の遅延削除（Free の alarm 課金・複雑性を回避）。
 
 ---
 
@@ -517,7 +517,7 @@ AI → POST /v1/ai/queue (または high action の直接呼出が自動でキ�
 | 単体 | **vitest** | packages/*（スキーマ往復、ID/trip 生成、アンカーパーサ、政策エンジン行列、TOTP RFC6238 テストベクトル、SDK RPC） |
 | API 統合 | **@cloudflare/vitest-pool-workers**（miniflare ベース。D1 にマイグレーション実行、DO 実体、Turnstile/GitHub/外部アップローダは fetch スタブ） | 全 REST エンドポイントの権限マトリクス検証（5.4 の各行を 200/403 で assert）、レート制限、無料枠ガード（1投稿の rows_written ≤12 を D1 meta で assert） |
 | Web 単体 | vitest + @testing-library/react (jsdom) | 描画コンポーネント、NG/テーマ設定、プラグインホスト bridge の権限拒否 |
-| E2E | **Playwright**（wrangler dev + next dev + ローカル D1 の実スタック、GitHub Actions） | ドメイン別 spec（所有WPは WORKPACKAGES §4）: 投稿〜実況〜kome、板作成+スタッフ任免、プラグイン作成→実行→公開→導入、アップロード（テスト用アダプタ `mock` + スタブ外部サービス）、GitHub 連携（モックサーバ）、AI（REST+MCP クライアントから政策シナリオ）、特別管理人就任（TOTP 実入力）、**セキュリティ suite**（sandbox escape 試行、権限マトリクス、投稿内 injection 文字列→政策不変を assert） |
+| E2E | **Playwright**（wrangler dev + next dev + ローカル D1 の実スタック、GitHub Actions） | ドメイン別 spec（所有WPは WORKPACKAGES §4）: 投稿〜実況〜つぶやき、板作成+スタッフ任免、プラグイン作成→実行→公開→導入、アップロード（テスト用アダプタ `mock` + スタブ外部サービス）、GitHub 連携（モックサーバ）、AI（REST+MCP クライアントから政策シナリオ）、特別管理人就任（TOTP 実入力）、**セキュリティ suite**（sandbox escape 試行、権限マトリクス、投稿内 injection 文字列→政策不変を assert） |
 | CI | GitHub Actions（WP7） | PR: lint+typecheck+unit+統合+turbo cache、`wrangler deploy --dry-run`、`next build`。main: E2E（shard 並列、≤20分目標）、gitleaks、deploy（wrangler deploy + `d1 migrations apply` → Vercel 自動） |
 | カバレッジ | vitest coverage | `packages/shared`・政策エンジン・認証は lines 80%、その他 70% を下限ゲート |
 

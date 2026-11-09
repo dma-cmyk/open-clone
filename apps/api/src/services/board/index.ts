@@ -1,5 +1,5 @@
 // 板・投稿の内部サービス（CONTRACTS §12）。
-// 投稿・スレ作成・kome は `lib/pipeline.ts` を AI 運営（WP5）とルートが直接呼ぶ。
+// 投稿・スレ作成・つぶやきは `lib/pipeline.ts` を AI 運営（WP5）とルートが直接呼ぶ。
 // ここには管理操作（非表示・削除）だけを公開し、契約文書と実装を一致させる。
 
 import { ApiError } from "shared";

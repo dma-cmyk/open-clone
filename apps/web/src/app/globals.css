@@ -1025,15 +1025,15 @@ hr {
   color: #666;
 }
 
-/* kome overlay */
-.oc-kome-layer {
+/* つぶやき overlay */
+.oc-tsubuyaki-layer {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 70;
   overflow: hidden;
 }
-.oc-kome-item {
+.oc-tsubuyaki-item {
   position: absolute;
   white-space: nowrap;
   font-weight: 700;
@@ -1042,12 +1042,12 @@ hr {
     0 0 3px #fff,
     1px 1px 0 #fff,
     -1px -1px 0 #fff;
-  animation-name: oc-kome-flow;
+  animation-name: oc-tsubuyaki-flow;
   animation-timing-function: linear;
   animation-fill-mode: forwards;
   will-change: transform;
 }
-@keyframes oc-kome-flow {
+@keyframes oc-tsubuyaki-flow {
   from {
     transform: translateX(100vw);
   }
@@ -1055,7 +1055,7 @@ hr {
     transform: translateX(-130%);
   }
 }
-.oc-kome-panel {
+.oc-tsubuyaki-panel {
   position: fixed;
   right: 10px;
   bottom: 10px;
@@ -1067,14 +1067,14 @@ hr {
   padding: 8px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
-.oc-kome-panel-head {
+.oc-tsubuyaki-panel-head {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   margin-bottom: 5px;
 }
-.oc-kome-panel input {
+.oc-tsubuyaki-panel input {
   flex: 1;
   padding: 4px 6px;
   border-radius: 3px;
@@ -1083,7 +1083,7 @@ hr {
   color: #111;
   background: #fff;
 }
-.oc-kome-log {
+.oc-tsubuyaki-log {
   max-height: 140px;
   overflow: auto;
   font-size: 12px;
@@ -1091,7 +1091,7 @@ hr {
   margin-top: 6px;
   padding-top: 5px;
 }
-.oc-kome-log div {
+.oc-tsubuyaki-log div {
   opacity: 0.9;
   white-space: pre-wrap;
 }
@@ -1346,7 +1346,7 @@ hr {
 
 /* reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  .oc-kome-item {
+  .oc-tsubuyaki-item {
     animation-duration: 12s !important;
   }
   * {
@@ -2132,7 +2132,7 @@ body {
 /* モーダル/ポップアップも角丸なし */
 .oc-modal,
 .oc-anchor-pop,
-.oc-kome-panel {
+.oc-tsubuyaki-panel {
   border-radius: 0;
 }
 .oc-modal {

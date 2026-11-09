@@ -19,7 +19,7 @@ interface PostFormProps {
   threadId?: number;
   threadTitle?: string;
   onPosted: (result: { post?: Post; threadId?: number }) => void;
-  onOpenKome?: () => void;
+  onOpenTsubuyaki?: () => void;
   disabled?: boolean;
   disabledReason?: string;
   /** 板設定の Turnstile 方針。ログイン済みなら anonymous では表示しない。 */
@@ -33,7 +33,7 @@ export function PostForm({
   threadId,
   threadTitle,
   onPosted,
-  onOpenKome,
+  onOpenTsubuyaki,
   disabled,
   disabledReason,
   turnstile = "anonymous",
@@ -280,9 +280,9 @@ export function PostForm({
             <input type="checkbox" checked={sage} onChange={(event) => setSage(event.target.checked)} disabled={disabled} />
             sage
           </label>
-          {onOpenKome ? (
-            <button type="button" className="oc-icon-btn" onClick={onOpenKome} title="kome（流れるコメント）を開く">
-              💬 kome
+          {onOpenTsubuyaki ? (
+            <button type="button" className="oc-icon-btn" onClick={onOpenTsubuyaki} title="つぶやき（流れるコメント）を開く">
+              💬 つぶやき
             </button>
           ) : null}
           {mode === "post" ? (

@@ -135,8 +135,8 @@ const BOARDS = [
       {
         title: "実況：週末のオンライン大会をみんなで見る !live",
         name: "観戦者",
-        body: "今夜の大会をみんなで見ながら話すスレ。\n感想は kome にも書いていこう。",
-        kome: [
+        body: "今夜の大会をみんなで見ながら話すスレ。\n感想は つぶやき にも書いていこう。",
+        tsubuyaki: [
           { name: "観戦者", body: "始まった" },
           { name: "名無しさん", body: "初戦から接戦で面白い" },
           { name: "通りすがり", body: "この展開は読めなかった" },
@@ -150,7 +150,7 @@ const BOARDS = [
           { name: "名無しさん", body: "初戦から接戦で面白い。" },
           { name: "通りすがり", body: "この展開は読めなかった。" },
           { name: "名無しさん", body: "今のプレーは何度も見返したい。", likes: 2 },
-          { name: "観戦者", body: "kome が流れてくるの便利だ。" },
+          { name: "観戦者", body: "つぶやきが流れてくるの便利だ。" },
         ],
       },
     ],
@@ -301,8 +301,8 @@ async function main() {
         lastPostId = posted.post?.id;
         if (lastPostId && reply.likes) await likeCount(lastPostId, reply.likes);
       }
-      for (const comment of thread.kome ?? []) {
-        await call("POST", `/v1/threads/${threadId}/kome`, {
+      for (const comment of thread.tsubuyaki ?? []) {
+        await call("POST", `/v1/threads/${threadId}/tsubuyaki`, {
           body: { name: comment.name, body: comment.body },
         });
       }

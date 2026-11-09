@@ -28,7 +28,7 @@ export function ManageBoardSettings({
     cooldownSeconds: board.settings?.cooldownSeconds ?? 0,
     live: Boolean(board.settings?.live),
     allowImages: board.settings?.allowImages !== false,
-    kome: board.settings?.kome !== false,
+    tsubuyaki: board.settings?.tsubuyaki !== false,
     noId: Boolean(board.settings?.noId),
     maxPosts: board.settings?.maxPosts ?? 1000,
   });
@@ -51,7 +51,7 @@ export function ManageBoardSettings({
       cooldownSeconds: board.settings?.cooldownSeconds ?? 0,
       live: Boolean(board.settings?.live),
       allowImages: board.settings?.allowImages !== false,
-      kome: board.settings?.kome !== false,
+      tsubuyaki: board.settings?.tsubuyaki !== false,
       noId: Boolean(board.settings?.noId),
       maxPosts: board.settings?.maxPosts ?? 1000,
     });
@@ -150,8 +150,8 @@ export function ManageBoardSettings({
             画像投稿を許可
           </label>
           <label className="oc-check">
-            <input type="checkbox" checked={settings.kome} onChange={(event) => setSettings({ ...settings, kome: event.target.checked })} />
-            kome を許可
+            <input type="checkbox" checked={settings.tsubuyaki} onChange={(event) => setSettings({ ...settings, tsubuyaki: event.target.checked })} />
+            つぶやきを許可
           </label>
           <label className="oc-check">
             <input type="checkbox" checked={settings.noId} onChange={(event) => setSettings({ ...settings, noId: event.target.checked })} />
@@ -177,7 +177,7 @@ export function ManageBoardSettings({
                   cooldownSeconds: settings.cooldownSeconds,
                   live: settings.live,
                   allowImages: settings.allowImages,
-                  kome: settings.kome,
+                  tsubuyaki: settings.tsubuyaki,
                   noId: settings.noId,
                   maxPosts: settings.maxPosts,
                   ngWords: ngWords

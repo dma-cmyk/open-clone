@@ -5,7 +5,7 @@
 import {
   ApiError,
   ErrorCode,
-  KOME_MAX_CHARS,
+  TSUBUYAKI_MAX_CHARS,
   POST_BODY_MAX_BYTES,
   effectiveMaxPosts,
   parseBodyCommands,
@@ -117,7 +117,7 @@ export interface CreateThreadResult {
   writeStats: SqlWriteStats;
 }
 
-export interface CreateKomeInput {
+export interface CreateTsubuyakiInput {
   boardId: number;
   threadId: number;
   body: string;
@@ -132,7 +132,7 @@ export interface CreateKomeInput {
   skipTurnstile?: boolean;
 }
 
-export interface CreateKomeResult {
+export interface CreateTsubuyakiResult {
   post: Post;
   writeStats: SqlWriteStats;
 }
@@ -167,7 +167,7 @@ async function assertWriteAllowed(params: {
   turnstileToken: string | undefined;
   skipGuards: boolean;
   skipTurnstile?: boolean;
-  rateScope: "post" | "threadCreate" | "kome";
+  rateScope: "post" | "threadCreate" | "tsubuyaki";
   now: number;
 }): Promise<void> {
   const { env, db, settings, identity, now } = params;
@@ -870,15 +870,15 @@ export async function createThreadInternal(input: CreateThreadInput, deps: Pipel
   return { thread, post, writeStats: sumStats(results) };
 }
 
-/** kome（コメント流し）。スレのレス番号・post_count を進めない。 */
-export async function createKomeInternal(input: CreateKomeInput, deps: PipelineDeps): Promise<CreateKomeResult> {
+/** つぶやき（コメント流し）。スレのレス番号・post_count を進めない。 */
+export async function createTsubuyakiInternal(input: CreateTsubuyakiInput, deps: PipelineDeps): Promise<CreateTsubuyakiResult> {
   const { env } = deps;
   const db = env.DB;
   const now = Math.floor(Date.now() / 1000);
 
   const board = await assertBoardActive(await getBoardRow(db, input.boardId));
   const settings = boardSettingsOf(board);
-  if (!settings.kome) throw ApiError.forbidden("この板では kome が無効です");
+  if (!settings.tsubuyaki) throw ApiError.forbidden("この板では つぶやき が無効です");
   const thread = await assertThreadActive(await getThreadRow(db, input.threadId));
   if (thread.board_id !== board.id) throw ApiError.validation("スレッドが板に属していません");
 
@@ -897,7 +897,7 @@ export async function createKomeInternal(input: CreateKomeInput, deps: PipelineD
     turnstileToken: input.turnstileToken,
     skipGuards: input.skipGuards === true,
     skipTurnstile: input.skipTurnstile === true,
-    rateScope: "kome",
+    rateScope: "tsubuyaki",
     now,
   });
 
@@ -908,8 +908,8 @@ export async function createKomeInternal(input: CreateKomeInput, deps: PipelineD
 
   const body = input.body.replace(/\r\n?/g, "\n").trim();
   if (body.length === 0) throw ApiError.validation("コメントが空です");
-  if (Array.from(body).length > KOME_MAX_CHARS) {
-    throw ApiError.validation(`kome は ${KOME_MAX_CHARS} 文字までです`);
+  if (Array.from(body).length > TSUBUYAKI_MAX_CHARS) {
+    throw ApiError.validation(`つぶやきは ${TSUBUYAKI_MAX_CHARS} 文字までです`);
   }
   const masked = applyNgWords(settings, body);
   if (masked.hit && settings.ngWordAction === "reject") throw ApiError.validation("NGワードが含まれています");
@@ -918,7 +918,9 @@ export async function createKomeInternal(input: CreateKomeInput, deps: PipelineD
   const { name: rawName } = parseTripName(parsedName.name);
   const name = decorateName(rawName, 1, parsedName.commands);
 
-  const komeStatement = db
+  // DB の posts.kind は本番 D1 のテーブル作り直しを避けるため 'kome' のまま保存する
+  // （CHECK 制約と既存 migration を変えない）。外向けの PostKind は 'tsubuyaki'。
+  const tsubuyakiStatement = db
     .prepare(
       `INSERT INTO posts
          (thread_id, board_id, num, title, name, mail, trip, cap, body, sage, post_id_hash, device_hash, ip_hash, ninja_lv, kind, parent_post_id, attachments, hashtags, ai_agent_id, created_at)
@@ -937,16 +939,16 @@ export async function createKomeInternal(input: CreateKomeInput, deps: PipelineD
       input.aiAgentId ?? null,
       now,
     );
-  const results = await batch(db, [komeStatement]);
+  const results = await batch(db, [tsubuyakiStatement]);
   const postId = Number((results[0]?.results?.[0] as { id?: number } | undefined)?.id);
-  if (!Number.isInteger(postId) || postId <= 0) throw new Error("kome の ID を取得できませんでした");
+  if (!Number.isInteger(postId) || postId <= 0) throw new Error("つぶやきの ID を取得できませんでした");
 
   const post: Post = {
     id: postId,
     threadId: thread.id,
     boardId: board.id,
     num: 0,
-    kind: "kome",
+    kind: "tsubuyaki",
     name,
     mail: "",
     trip: null,
@@ -965,6 +967,6 @@ export async function createKomeInternal(input: CreateKomeInput, deps: PipelineD
     aiAgentId: input.aiAgentId ?? null,
   };
 
-  await publishToThreadAndBoard(env, deps.ctx, thread.id, board.id, "kome.created", { post });
+  await publishToThreadAndBoard(env, deps.ctx, thread.id, board.id, "tsubuyaki.created", { post });
   return { post, writeStats: sumStats(results) };
 }

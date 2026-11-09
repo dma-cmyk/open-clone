@@ -1,9 +1,9 @@
 // レス（posts / post_reactions / polls）の契約スキーマ。
 
 import { z } from "zod";
-import { KOME_MAX_CHARS, POLL_MAX_OPTIONS } from "../constants";
+import { TSUBUYAKI_MAX_CHARS, POLL_MAX_OPTIONS } from "../constants";
 
-export const postKindSchema = z.enum(["post", "kome"]);
+export const postKindSchema = z.enum(["post", "tsubuyaki"]);
 export type PostKind = z.infer<typeof postKindSchema>;
 
 export const attachmentSummarySchema = z.object({
@@ -52,14 +52,14 @@ export const createPostRequestSchema = z.object({
 });
 export type CreatePostRequest = z.infer<typeof createPostRequestSchema>;
 
-export const komeRequestSchema = z.object({
-  body: z.string().min(1).max(KOME_MAX_CHARS * 4),
+export const tsubuyakiRequestSchema = z.object({
+  body: z.string().min(1).max(TSUBUYAKI_MAX_CHARS * 4),
   name: z.string().max(64).optional(),
   parentPostId: z.number().int().positive().optional(),
   /** 未ログイン時の Turnstile トークン（通常投稿と同じ受け渡し）。 */
   turnstileToken: z.string().max(4096).optional(),
 });
-export type KomeRequest = z.infer<typeof komeRequestSchema>;
+export type TsubuyakiRequest = z.infer<typeof tsubuyakiRequestSchema>;
 
 export const reactionKindSchema = z.enum(["like", "good", "bad"]);
 export type ReactionKind = z.infer<typeof reactionKindSchema>;

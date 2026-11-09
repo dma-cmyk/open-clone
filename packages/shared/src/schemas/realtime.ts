@@ -16,7 +16,7 @@ export const REALTIME_EVENT_TYPES = [
   "post.updated",
   "post.hidden",
   "post.deleted",
-  "kome.created",
+  "tsubuyaki.created",
   "thread.created",
   "thread.updated",
   "board.updated",
@@ -42,8 +42,8 @@ export const postCreatedEventSchema = realtimeEventSchema.extend({
   data: z.object({ post: postSchema, thread: threadSummarySchema.pick({ id: true, postCount: true, lastPostAt: true }) }),
 });
 
-export const komeCreatedEventSchema = realtimeEventSchema.extend({
-  type: z.literal("kome.created"),
+export const tsubuyakiCreatedEventSchema = realtimeEventSchema.extend({
+  type: z.literal("tsubuyaki.created"),
   data: z.object({ post: postSchema }),
 });
 
