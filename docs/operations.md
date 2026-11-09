@@ -19,8 +19,12 @@ curl -fsS https://<web-domain>/api/v1/health   # rewrites 経由
 
 ### 1.2 使用量（無料枠）
 
+管理画面（`/admin/usage`）と同じデータを API から取得できます。アカウント数・セッション数・
+監査イベント数は匿名に公開しないため（報告書 24 L-2）、**owner または特別管理人のセッション**
+が必要です（未認証は 401、一般ユーザーは 403）。
+
 ```sh
-curl -fsS https://<api-domain>/v1/meta/usage
+curl -fsS -b 'oc_sess=<admin-session-cookie>' https://<api-domain>/v1/meta/usage
 ```
 
 返却されるのは `freeTierBudget`（Free 枠の定数）と `d1.counts`（accounts / sessions / audit_log の件数）のみです。

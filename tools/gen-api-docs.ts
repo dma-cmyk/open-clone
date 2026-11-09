@@ -111,7 +111,7 @@ interface RouteEntry {
 }
 
 const MIDDLEWARE_PATTERN =
-  /\b(requireAuth|requireOwner|requireAdmin|requireRole|requireBoardStaff|requireAction|requireTurnstile|optionalAuth)\b/g;
+  /\b(requireAuth|requireOwner|requireOwnerActive|requireAdmin|requireAdminActive|requireRole|requireBoardStaff|requireAction|requireTurnstile|optionalAuth)\b/g;
 
 function extractRoutes(): RouteEntry[] {
   const routes: RouteEntry[] = [];

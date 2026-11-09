@@ -78,6 +78,14 @@ export const INVITE_TOTP_FAILURE_WINDOW_SECONDS = 15 * 60;
 export const INVITE_PREPARE_MAX_PER_KEY = 5;
 export const INVITE_PREPARE_MAX_PER_IP = 10;
 
+/**
+ * 所有者ブートストラップ（`POST /v1/admin/owner/setup`）の誤キー試行上限（IP 単位・15 分窓）。
+ * 正しいキーでの初回セットアップは 1 回で通るため妨げない（誤キーだけを数える）。
+ * L-1（報告書 24）。
+ */
+export const OWNER_SETUP_MAX_FAILURES = 5;
+export const OWNER_SETUP_FAILURE_WINDOW_SECONDS = 15 * 60;
+
 // --- リアルタイム ---
 /** WS ticket の有効秒数・単回使用 */
 export const RT_TICKET_TTL_SECONDS = 30;

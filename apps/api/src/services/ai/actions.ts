@@ -17,6 +17,7 @@ import {
   getPluginRow,
   getVersionRow,
   installPlugin,
+  parseManifest,
   type ReviewRow,
 } from "../plugins/registry";
 import { runStaticChecks } from "../plugins/static-checks";
@@ -118,7 +119,7 @@ async function approvePluginReview(
   if (input.decision === "approve") {
     const version = await getVersionRow(env.DB, input.pluginId, review.version);
     if (!version) throw ApiError.notFound("プラグインの版が見つかりません");
-    const checks = await runStaticChecks(version.code);
+    const checks = await runStaticChecks(version.code, parseManifest(version.manifest_json));
     if (!checks.allowed) {
       throw ApiError.forbidden(`静的検査で拒否されました: ${checks.reasons.join(" / ")}`);
     }

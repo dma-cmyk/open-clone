@@ -128,7 +128,7 @@ export function PostRow({
         {post.idHash ? (
           <>
             <span className="oc-post-id">
-              {"  "}
+              {" "}
               ID:
               <button
                 type="button"
@@ -151,7 +151,7 @@ export function PostRow({
             </button>
           </>
         ) : (
-          <span className="oc-post-id oc-muted">ID:???</span>
+          <span className="oc-post-id oc-muted">{" "}ID:???</span>
         )}
         {post.aiAgent ? (
           <span className="oc-badge oc-badge-gray" title="AI 管理者による投稿">

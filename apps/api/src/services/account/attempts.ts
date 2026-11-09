@@ -11,7 +11,9 @@ export type AttemptKind =
   /** 就任キー accept の TOTP 失敗（キー単位・IP 単位の総当たり対策 / H-1） */
   | "invite_failed"
   /** prepare-totp の発行（無制限発行の抑止 / H-1） */
-  | "invite_prepare";
+  | "invite_prepare"
+  /** 所有者ブートストラップの誤キー（IP 単位の総当たり抑止 / L-1） */
+  | "owner_setup_failed";
 
 export async function attemptKey(ipHash: string, identifier: string): Promise<string> {
   return sha256Hex(`${ipHash}|${identifier.trim().toLowerCase()}`);

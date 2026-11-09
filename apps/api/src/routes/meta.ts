@@ -3,6 +3,7 @@
 import { Hono } from "hono";
 import { ok } from "shared";
 import type { AppEnv } from "../lib/env";
+import { requireAdminActive } from "../services/account/guards";
 
 const app = new Hono<AppEnv>();
 
@@ -18,7 +19,9 @@ app.get("/health", (c) => {
   );
 });
 
-app.get("/usage", async (c) => {
+// アカウント数・セッション数・監査イベント数は匿名に公開しない（L-2）。
+// 管理画面（/admin/usage）だけが使うため管理者セッションを要求する。
+app.get("/usage", requireAdminActive, async (c) => {
   // D1 のテーブル存在を前提としない簡易集計。
   const counts: Record<string, number> = {};
   for (const table of ["accounts", "sessions", "audit_log"] as const) {

@@ -1645,6 +1645,9 @@ body {
 .oc-chip-active {
   background: #ccffcc;
   border-color: #666;
+  /* 選択中のチップは白文字だと薄緑地で読めない（コントラスト約 1.2:1）。
+     濃緑 #173d1f は #ccffcc に対して約 10.9:1（AA 以上）。 */
+  color: #173d1f;
   font-weight: 700;
 }
 .oc-badge {
@@ -2171,6 +2174,9 @@ body {
 
 .oc-post-id {
   margin-left: 0;
+  /* flex コンテナ内では先頭の空白が折り畳まれるため、open2ch と同じ
+     「日時 ID:xxxx」の間隔を保つには空白を保持する（dat 出力の書式は別実装で不変）。 */
+  white-space: pre;
 }
 .oc-turnstile {
   margin-top: 3px;
@@ -2322,10 +2328,12 @@ body {
   display: none;
 }
 
-/* 低: タグチップは基本定義（#DDD・角丸 3px）を使用。選択中のみ緑。 */
+/* 低: タグチップは基本定義（#DDD・角丸 3px）を使用。選択中のみ緑。
+   文字色は薄緑地 #ccffcc に対して 4.5:1 以上（約 10.9:1）の濃緑にする。 */
 .oc-chip-active {
   background: #ccffcc;
   border-color: #228811;
+  color: #173d1f;
 }
 
 /* 低: サイドバー見出しは黒太字・訪問済み紫 */

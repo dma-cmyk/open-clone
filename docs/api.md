@@ -92,22 +92,21 @@
 | GET | `/me/sessions` | `requireAuth` | `accounts.ts` | 100 |
 | DELETE | `/me/sessions/:id` | `requireAuth` | `accounts.ts` | 118 |
 | POST | `/me/sessions/revoke-others` | `requireAuth` | `accounts.ts` | 139 |
-| GET | `/owner/setup/status` | — | `admin.ts` | 51 |
-| POST | `/owner/setup` | — | `admin.ts` | 55 |
-| GET | `/overview` | — | `admin.ts` | 82 |
-| GET | `/users` | — | `admin.ts` | 110 |
-| GET | `/users/:id` | — | `admin.ts` | 173 |
-| GET | `/suspensions` | — | `admin.ts` | 201 |
-| POST | `/suspensions` | — | `admin.ts` | 211 |
-| POST | `/suspensions/:id/lift` | — | `admin.ts` | 226 |
-| DELETE | `/suspensions/:id` | — | `admin.ts` | 241 |
-| GET | `/audit` | — | `admin.ts` | 258 |
-| GET | `/site-config` | — | `admin.ts` | 325 |
-| PUT | `/site-config` | — | `admin.ts` | 329 |
-| GET | `/special-admins` | — | `admin.ts` | 346 |
-| POST | `/special-admins/:id/stop` | — | `admin.ts` | 360 |
-| POST | `/special-admins/:id/restore` | — | `admin.ts` | 379 |
-| POST | `/special-admins/:id/totp-reset` | — | `admin.ts` | 396 |
+| POST | `/owner/setup` | — | `admin.ts` | 57 |
+| GET | `/overview` | `requireAdminActive` | `admin.ts` | 109 |
+| GET | `/users` | `requireAdminActive` | `admin.ts` | 137 |
+| GET | `/users/:id` | `requireAdminActive` | `admin.ts` | 200 |
+| GET | `/suspensions` | `requireAdminActive` | `admin.ts` | 228 |
+| POST | `/suspensions` | `requireAdminActive` | `admin.ts` | 238 |
+| POST | `/suspensions/:id/lift` | `requireAdminActive` | `admin.ts` | 253 |
+| DELETE | `/suspensions/:id` | `requireAdminActive` | `admin.ts` | 268 |
+| GET | `/audit` | `requireAdminActive` | `admin.ts` | 285 |
+| GET | `/site-config` | `requireAdminActive`, `requireOwnerActive` | `admin.ts` | 352 |
+| PUT | `/site-config` | `requireOwnerActive` | `admin.ts` | 356 |
+| GET | `/special-admins` | `requireOwnerActive` | `admin.ts` | 373 |
+| POST | `/special-admins/:id/stop` | `requireOwnerActive` | `admin.ts` | 387 |
+| POST | `/special-admins/:id/restore` | `requireOwnerActive` | `admin.ts` | 406 |
+| POST | `/special-admins/:id/totp-reset` | `requireOwnerActive` | `admin.ts` | 423 |
 | POST | `/complete` | — | `ai.ts` | 195 |
 | GET | `/me` | — | `ai.ts` | 209 |
 | POST | `/act` | — | `ai.ts` | 220 |
@@ -203,16 +202,16 @@
 | PUT | `/repo/:owner/:repo/content` | `requireAuth` | `github-files.ts` | 139 |
 | DELETE | `/repo/:owner/:repo/content` | `requireAuth` | `github-files.ts` | 156 |
 | POST | `/github` | — | `github-files.ts` | 174 |
-| POST | `/` | — | `invites.ts` | 60 |
-| GET | `/` | — | `invites.ts` | 97 |
-| POST | `/:id/revoke` | — | `invites.ts` | 108 |
+| POST | `/` | `requireOwnerActive` | `invites.ts` | 60 |
+| GET | `/` | `requireOwnerActive` | `invites.ts` | 97 |
+| POST | `/:id/revoke` | `requireOwnerActive` | `invites.ts` | 108 |
 | GET | `/inspect` | — | `invites.ts` | 125 |
 | POST | `/prepare-totp` | — | `invites.ts` | 132 |
 | POST | `/accept` | `requireTurnstile` | `invites.ts` | 174 |
 | ALL | `/` | — | `mcp.ts` | 112 |
 | ALL | `/legacy` | — | `mcp.ts` | 113 |
-| GET | `/health` | — | `meta.ts` | 9 |
-| GET | `/usage` | — | `meta.ts` | 21 |
+| GET | `/health` | — | `meta.ts` | 10 |
+| GET | `/usage` | `requireAdminActive` | `meta.ts` | 24 |
 | POST | `/fetch` | — | `plugin-net.ts` | 24 |
 | GET | `/log` | `requireRole` | `plugin-net.ts` | 105 |
 | GET | `/mine` | `requireAuth` | `plugins.ts` | 166 |
@@ -1327,23 +1326,6 @@
     "account",
     "expiresAt",
     "recoveryCodes"
-  ]
-}
-```
-
-#### `ownerSetupStatusSchema`
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "ownerExists": {
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "ownerExists"
   ]
 }
 ```

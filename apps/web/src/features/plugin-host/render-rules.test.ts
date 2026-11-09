@@ -1,8 +1,13 @@
 // 宣言的レンダー規則の分割（React 描画用）の回帰テスト。
 // 文字列 HTML ではなく構造を返すことで、安価・URL・AA の描画と XSS 安全（テキストノード）を両立する。
 
-import { describe, expect, it } from "vitest";
-import { splitPostRenderRules } from "./render-rules";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  applyPostRenderRules,
+  resetRenderRuleGuardsForTest,
+  setRenderRuleTimeBudgetForTest,
+  splitPostRenderRules,
+} from "./render-rules";
 
 const spoiler = {
   pattern: "\\[spoiler\\]([\\s\\S]*?)\\[/spoiler\\]",
@@ -62,5 +67,48 @@ describe("splitPostRenderRules", () => {
     const rule = { pattern: "(?=a)", flags: "g", template: "!", kind: "text" as const };
     const segments = splitPostRenderRules("aa", [rule]);
     expect(segments.filter((segment) => segment.type === "rule")).toHaveLength(2);
+  });
+});
+describe("ReDoS 対策（報告書 24 M-1）", () => {
+  afterEach(() => resetRenderRuleGuardsForTest());
+
+  it("危険な正規表現（(a+)+b）は実行せず、31 文字の入力でも即座に本文を返す", () => {
+    const rule = { pattern: "(a+)+b", flags: "g", template: "$1", kind: "text" as const };
+    const text = `${"a".repeat(30)}!`;
+    const started = performance.now();
+    const segments = splitPostRenderRules(text, [rule]);
+    const elapsed = performance.now() - started;
+    // 未対策なら 31 文字で数十秒かかる（実測 64,044ms）。静的判定で即時拒否される。
+    expect(elapsed).toBeLessThan(100);
+    expect(segments).toEqual([{ type: "text", text }]);
+  });
+
+  it("HTML 文字列版（applyPostRenderRules）も危険な規則を実行しない", () => {
+    const rule = { pattern: "(a+)+b", flags: "g", template: "$1", kind: "text" as const };
+    const text = `${"a".repeat(30)}!`;
+    const result = applyPostRenderRules(text, [rule]);
+    expect(result.matched).toBe(false);
+    expect(result.html).toBe(text);
+  });
+
+  it("実行時間の上限を超えた規則は諦め、以降も無効化する", () => {
+    setRenderRuleTimeBudgetForTest(-1);
+    const rule = { pattern: "a", flags: "g", template: "!", kind: "text" as const };
+    expect(splitPostRenderRules("aaa", [rule])).toEqual([{ type: "text", text: "aaa" }]);
+    // 無効化済みなので、上限を戻しても実行されない。
+    setRenderRuleTimeBudgetForTest(50);
+    expect(splitPostRenderRules("aaa", [rule])).toEqual([{ type: "text", text: "aaa" }]);
+  });
+
+  it("マッチ数が上限（500）を超える規則は適用しない", () => {
+    const rule = { pattern: "a", flags: "g", template: "!", kind: "text" as const };
+    const text = "a".repeat(600);
+    expect(splitPostRenderRules(text, [rule])).toEqual([{ type: "text", text }]);
+  });
+
+  it("本文が上限（10,000 文字）を超える場合は規則を適用しない", () => {
+    const rule = { pattern: "a", flags: "g", template: "!", kind: "text" as const };
+    const text = "a".repeat(10_001);
+    expect(splitPostRenderRules(text, [rule])).toEqual([{ type: "text", text }]);
   });
 });

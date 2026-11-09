@@ -17,14 +17,15 @@ const stopReasonDetails = z.object({ reason: z.string() });
 describe("特別管理人 就任フロー", () => {
   it("ブートストラップ→招待→就任→TOTP ログイン→リカバリー→停止/復旧→TOTP リセットと再招待", async () => {
     // --- 所有者ブートストラップ ---
-    const statusBefore = await call<{ ownerExists: boolean }>("GET", "/v1/admin/owner/setup/status");
-    expect(statusBefore.data?.ownerExists).toBe(false);
+    // 所有者の有無は未認証で公開しない（報告書 24 L-3）。status は廃止され 404。
+    const statusBefore = await call("GET", "/v1/admin/owner/setup/status");
+    expect(statusBefore.status).toBe(404);
 
     const owner = await bootstrapOwner("owner-root@example.com");
     expect(owner.recoveryCodes).toHaveLength(10);
 
-    const statusAfter = await call<{ ownerExists: boolean }>("GET", "/v1/admin/owner/setup/status");
-    expect(statusAfter.data?.ownerExists).toBe(true);
+    const statusAfter = await call("GET", "/v1/admin/owner/setup/status");
+    expect(statusAfter.status).toBe(404);
 
     const secondBootstrap = await call("POST", "/v1/admin/owner/setup", {
       body: {

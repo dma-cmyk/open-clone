@@ -290,7 +290,7 @@ app.get("/reviews", requireRole("owner", "special_admin"), async (c) => {
 
 app.post("/preview-check", requireAuth, async (c) => {
   const body = pluginPreviewCheckSchema.parse(await c.req.json());
-  const checks = await runStaticChecks(body.code);
+  const checks = await runStaticChecks(body.code, body.manifest);
   const warnings = body.manifest ? manifestPermissionWarnings(body.manifest, body.code) : [];
   return c.json(ok({ checks, warnings }));
 });
@@ -439,7 +439,7 @@ function compareVersionStrings(a: string, b: string): number {
 app.post("", requireAuth, async (c) => {
   const body = pluginCreateSchema.parse(await c.req.json());
   const actor = pluginActorFrom(getReqCtx(c));
-  const checks = await runStaticChecks(body.code);
+  const checks = await runStaticChecks(body.code, body.manifest);
   const warnings = manifestPermissionWarnings(body.manifest, body.code);
 
   const created = await createPlugin(c.env.DB, {
@@ -544,7 +544,7 @@ app.post("/:id/versions", requireAuth, async (c) => {
     throw ApiError.validation("manifest.name は変更できません");
   }
 
-  const checks = await runStaticChecks(body.code);
+  const checks = await runStaticChecks(body.code, body.manifest ?? parseManifest(plugin.manifest_json));
   const warnings = manifestPermissionWarnings(body.manifest ?? parseManifest(plugin.manifest_json), body.code);
 
   const result = await addVersion(c.env.DB, plugin, {
@@ -576,7 +576,7 @@ app.post("/:id/publish", requireAuth, async (c) => {
   const versionRow = await getVersionRow(c.env.DB, plugin.id, plugin.latest_version);
   if (!versionRow) throw ApiError.notFound("最新バージョンが見つかりません");
 
-  const checks = await runStaticChecks(versionRow.code);
+  const checks = await runStaticChecks(versionRow.code, parseManifest(versionRow.manifest_json));
   const result = await publishPlugin(c.env.DB, plugin, {
     scopes: body.scopes,
     visibility: body.visibility,

@@ -8,6 +8,8 @@ import {
   likeContains,
   likePrefix,
   ok,
+  OWNER_SETUP_FAILURE_WINDOW_SECONDS,
+  OWNER_SETUP_MAX_FAILURES,
   ownerBootstrapRequestSchema,
   siteSettingsUpdateSchema,
   specialAdminStopRequestSchema,
@@ -17,6 +19,7 @@ import type { AppEnv } from "../lib/env";
 import { getReqCtx } from "../lib/context";
 import { writeAudit } from "../lib/audit";
 import { bootstrapOwner, ownerExists } from "../services/account/bootstrap";
+import { attemptKey, countAttemptsSince, recordAttempt } from "../services/account/attempts";
 import { grantStepUp, requireStepUp } from "../services/account/step-up";
 import { requireAdminActive, requireOwnerActive } from "../services/account/guards";
 import { createSession, countActiveSessions, revokeAllSessions } from "../services/account/session";
@@ -48,14 +51,38 @@ const app = new Hono<AppEnv>();
 
 // --- 所有者ブートストラップ --------------------------------------------
 
-app.get("/owner/setup/status", async (c) => {
-  return c.json(ok({ ownerExists: await ownerExists(c.env.DB) }));
-});
+// 所有者の有無は未認証で公開しない（L-3）。セットアップ画面は POST の 409
+// OWNER_SETUP_CLOSED で「設定済み」を判定する。誤キーは所有者の有無に関わらず 403。
 
 app.post("/owner/setup", async (c) => {
   const body = ownerBootstrapRequestSchema.parse(await c.req.json());
   const db = c.env.DB;
-  const result = await bootstrapOwner(db, c.env, body);
+
+  // L-1: 誤キー試行の IP 窓。正しいキーの初回セットアップは 1 回で通るため妨げない。
+  const ctx = getReqCtx(c);
+  const now = Math.floor(Date.now() / 1000);
+  const ipKey = await attemptKey(ctx.device.ipHash, "owner-setup");
+  const failures = await countAttemptsSince(
+    db,
+    ["owner_setup_failed"],
+    ipKey,
+    now - OWNER_SETUP_FAILURE_WINDOW_SECONDS,
+  );
+  if (failures >= OWNER_SETUP_MAX_FAILURES) {
+    throw ApiError.rateLimited(
+      "セットアップキーの試行回数が多すぎます。しばらく待ってから再試行してください",
+    );
+  }
+
+  let result: Awaited<ReturnType<typeof bootstrapOwner>>;
+  try {
+    result = await bootstrapOwner(db, c.env, body);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 403) {
+      await recordAttempt(db, "owner_setup_failed", ipKey);
+    }
+    throw error;
+  }
   const session = await createSession(db, result.accountId, c.req.header("user-agent") ?? null);
   await grantStepUp(db, session.tokenHash, result.accountId);
   setSessionCookie(c, session.token);

@@ -88,6 +88,14 @@ test.describe("core: 板作成から安価まで", () => {
     await createThreadViaUi(page, threadTitle);
     await expect(page).toHaveURL(new RegExp(`/b/${slug}/t/\\d+`));
 
+    // UI: レス見出しは open2ch と同じく「時刻 ID:xxxx」の間に空白がある。
+    // innerText は flex item の境界に改行を入れるため、textContent で空白そのものを見る。
+    const headerText = await page
+      .locator("#p1 .oc-post-header")
+      .first()
+      .evaluate((element) => element.textContent ?? "");
+    expect(headerText).toMatch(/\d{2}:\d{2}:\d{2} ID:/);
+
     // 2 レス目を投稿
     const replyBody = `2げっと e2e-${Date.now()}`;
     await expandPostForm(page);

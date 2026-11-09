@@ -20,6 +20,7 @@ const PROTECTED: ProtectedEndpoint[] = [
   { method: "GET", path: "/v1/admin/invites" },
   { method: "POST", path: "/v1/admin/invites" },
   { method: "GET", path: "/v1/admin/audit" },
+  { method: "GET", path: "/v1/meta/usage" },
   { method: "GET", path: "/v1/admin/suspensions" },
   { method: "GET", path: "/v1/ai/agents" },
   { method: "POST", path: "/v1/ai/agents" },
@@ -44,15 +45,6 @@ test.describe("未認証アクセス", () => {
   test("公開: GET /v1/health は認証不要", async ({ request }) => {
     const response = await request.get(`${API_BASE}/v1/health`);
     expect(response.status()).toBe(200);
-  });
-
-  test("公開: GET /v1/meta/usage は認証不要", async ({ request }) => {
-    const response = await request.get(`${API_BASE}/v1/meta/usage`);
-    if (await skipIfUnimplemented(response)) return;
-    expect(response.status()).toBe(200);
-    const body = await readEnvelope<{ freeTierBudget: unknown }>(response);
-    expect(body?.ok).toBe(true);
-    if (body?.ok) expect(body.data.freeTierBudget).toBeTruthy();
   });
 
   test("公開: GET /v1/boards は未認証で一覧を返す", async ({ request }) => {

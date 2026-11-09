@@ -9,6 +9,31 @@ test.describe("smoke", () => {
     await expect(page.getByRole("heading", { level: 1 })).toContainText("おーぷんクローン");
   });
 
+  test("選択中のカテゴリチップはコントラスト 4.5:1 以上で読める", async ({ page }) => {
+    await page.goto("/");
+    const chip = page.locator(".oc-chip-active").first();
+    await expect(chip).toBeVisible({ timeout: 15_000 });
+    const { color, background } = await chip.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { color: style.color, background: style.backgroundColor };
+    });
+    const parse = (value: string): [number, number, number] => {
+      const match = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(value);
+      if (!match) throw new Error(`色を解釈できません: ${value}`);
+      return [Number(match[1]), Number(match[2]), Number(match[3])];
+    };
+    const luminance = (rgb: [number, number, number]): number => {
+      const [r, g, b] = rgb.map((v) => {
+        const c = v / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      }) as [number, number, number];
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const [lighter, darker] = [luminance(parse(color)), luminance(parse(background))].sort((a, b) => b - a);
+    const ratio = (lighter! + 0.05) / (darker! + 0.05);
+    expect(ratio, `color=${color} background=${background}`).toBeGreaterThanOrEqual(4.5);
+  });
+
   test("API health（直接）", async ({ request }) => {
     const response = await request.get(`${API_BASE}/v1/health`);
     expect(response.status()).toBe(200);

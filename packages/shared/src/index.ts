@@ -12,6 +12,7 @@ export * from "./lib/totp";
 export * from "./lib/des";
 export * from "./lib/like";
 export * from "./lib/shiftjis";
+export * from "./lib/regex-safety";
 export * from "./schemas/common";
 export * from "./schemas/account";
 export * from "./schemas/permission";

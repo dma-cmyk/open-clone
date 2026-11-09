@@ -90,8 +90,7 @@ export type InviteAcceptResult = z.infer<typeof inviteAcceptResultSchema>;
 
 // --- 所有者ブートストラップ --------------------------------------------
 
-export const ownerSetupStatusSchema = z.object({ ownerExists: z.boolean() });
-export type OwnerSetupStatus = z.infer<typeof ownerSetupStatusSchema>;
+// 所有者の有無は未認証で公開しない（報告書 24 L-3）。status 用スキーマは廃止した。
 
 export const ownerBootstrapRequestSchema = z.object({
   bootstrapKey: z.string().min(1),

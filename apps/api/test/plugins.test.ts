@@ -15,8 +15,10 @@ import {
   type PluginNetFetchResult,
   type PluginReportInfo,
   type PluginReviewInfo,
+  type PluginManifest,
   type PluginStaticCheckResult,
 } from "shared";
+import { runStaticChecks } from "../src/services/plugins/static-checks";
 import { network } from "./network";
 
 const ORIGIN = "http://localhost:3000";
@@ -837,5 +839,58 @@ describe("GitHub / Gist 連携", () => {
       body: { public: true },
     });
     expect([401, 403, 501, 502, 503]).toContain(exportResult.status);
+  });
+});
+describe("レンダー規則の ReDoS 対策（報告書 24 M-1）", () => {
+  const UNSAFE_RULE = { pattern: "(a+)+b", flags: "g", template: "$1", kind: "text" };
+  const SPOILER_RULE = {
+    pattern: "\\[spoiler\\]([\\s\\S]*?)\\[/spoiler\\]",
+    flags: "g",
+    template: "$1",
+    kind: "spoiler",
+  };
+
+  it("危険な正規表現を含む manifest は作成時に拒否される", async () => {
+    const dev = await seedAccount("user");
+    const result = await call("/v1/plugins", {
+      method: "POST",
+      cookie: dev.cookie,
+      body: {
+        manifest: manifest("redos-demo", {
+          permissions: [],
+          slots: [],
+          render: { post: [UNSAFE_RULE] },
+        }),
+        code: "register({});",
+        visibility: "private",
+      },
+    });
+    expect(result.status).toBe(400);
+    expect(result.json?.code).toBe("VALIDATION");
+    expect(JSON.stringify(result.json)).toContain("危険な正規表現");
+  });
+
+  it("静的検査（runStaticChecks）も manifest の危険な規則を拒否する", async () => {
+    const checks = await runStaticChecks("register({});", {
+      render: { post: [UNSAFE_RULE] },
+    } as unknown as PluginManifest);
+    expect(checks.allowed).toBe(false);
+    expect(checks.reasons.join("\n")).toContain("render.post[0]");
+  });
+
+  it("公式サンプル（spoiler）のレンダー規則は作成・公開できる", async () => {
+    const dev = await seedAccount("user");
+    const created = await createPlugin(dev.cookie, {
+      name: "spoiler-sample",
+      code: "register({});",
+      manifest: manifest("spoiler-sample", {
+        permissions: [],
+        slots: [],
+        render: { post: [SPOILER_RULE] },
+      }),
+    });
+    const published = await publish(dev.cookie, created.id, ["personal"]);
+    expect(published.status).toBe(200);
+    expect(published.data.status).toBe("published");
   });
 });

@@ -5,15 +5,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { buildOtpAuthUri, generateTotpSecret } from "shared";
-import { api, errorMessage } from "../../../../features/account/api";
+import { ApiRequestError, api, errorMessage } from "../../../../features/account/api";
 import { QrCode } from "../../../../features/account/qr";
 import { RecoveryCodes } from "../../../../features/account/recovery-codes";
-
-interface SetupStatus {
-  ownerExists: boolean;
-}
 
 interface BootstrapResult {
   account: { id: string; role: string };
@@ -22,7 +18,7 @@ interface BootstrapResult {
 
 export default function OwnerSetupPage() {
   const router = useRouter();
-  const [status, setStatus] = useState<SetupStatus | null>(null);
+  const [closed, setClosed] = useState(false);
   const [bootstrapKey, setBootstrapKey] = useState("");
   const [name, setName] = useState("サイト所有者");
   const [email, setEmail] = useState("");
@@ -34,12 +30,6 @@ export default function OwnerSetupPage() {
   const [result, setResult] = useState<BootstrapResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    api<SetupStatus>("GET", "/admin/owner/setup/status")
-      .then(setStatus)
-      .catch((err) => setError(errorMessage(err)));
-  }, []);
 
   const generateSecret = () => {
     const next = generateTotpSecret();
@@ -72,13 +62,19 @@ export default function OwnerSetupPage() {
       });
       setResult(data);
     } catch (err) {
-      setError(errorMessage(err));
+      // セットアップ済みかどうかは未認証で公開していない（L-3）。正しいキーでの
+      // 2 回目以降は 409 OWNER_SETUP_CLOSED が返るため、それで判定する。
+      if (err instanceof ApiRequestError && err.code === "OWNER_SETUP_CLOSED") {
+        setClosed(true);
+      } else {
+        setError(errorMessage(err));
+      }
     } finally {
       setBusy(false);
     }
   };
 
-  if (status?.ownerExists && !result) {
+  if (closed && !result) {
     return (
       <div className="oc-stack" style={{ maxWidth: 560 }}>
         <div className="oc-warn-box">サイト所有者は既に設定済みです。セットアップは一度だけ実行できます。</div>

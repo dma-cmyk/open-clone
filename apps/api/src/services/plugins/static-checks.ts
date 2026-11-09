@@ -2,7 +2,12 @@
 // WP5 の AI 審査（`runStaticChecks` 契約）と WP3 の公開申請・エディタのプレビュー検査が呼ぶ。
 // 検査は「sandbox 前提のコード品質・意図検出」であり、サンドボックスの安全性は iframe + bridge が担保する。
 
-import { PLUGIN_CODE_MAX_BYTES, type PluginStaticCheckResult } from "shared";
+import {
+  analyzeRegexPattern,
+  PLUGIN_CODE_MAX_BYTES,
+  type PluginManifest,
+  type PluginStaticCheckResult,
+} from "shared";
 
 export type StaticCheckResult = PluginStaticCheckResult;
 
@@ -63,8 +68,11 @@ function truncate(value: string, max = 120): string {
  * プラグインコードの静的検査。
  * - `allowed=false` は公開不可（reject ルール該当 or サイズ超過 or 空）
  * - `riskScore` は 0–100（高いほど審査で要注意）
+ *
+ * `manifest` を渡すと宣言的レンダー規則（`render.post`）も検査する。規則は閲覧者の
+ * ブラウザで実行されるため、破滅的バックトラックを起こす正規表現はここで拒否する（M-1）。
  */
-export async function runStaticChecks(code: string): Promise<StaticCheckResult> {
+export async function runStaticChecks(code: string, manifest?: PluginManifest | null): Promise<StaticCheckResult> {
   const reasons: string[] = [];
   let riskScore = 0;
   let rejected = false;
@@ -72,6 +80,15 @@ export async function runStaticChecks(code: string): Promise<StaticCheckResult> 
   if (!code || code.trim().length === 0) {
     return { allowed: false, reasons: ["コードが空です"], riskScore: 100 };
   }
+
+  const renderRules = manifest?.render?.post ?? [];
+  renderRules.forEach((rule, index) => {
+    const safety = analyzeRegexPattern(rule.pattern);
+    if (safety.safe) return;
+    reasons.push(`禁止: render.post[${index}] の正規表現が危険です（${safety.reason}）`);
+    riskScore += 40;
+    rejected = true;
+  });
 
   const bytes = new TextEncoder().encode(code).byteLength;
   if (bytes > PLUGIN_CODE_MAX_BYTES) {

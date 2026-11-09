@@ -1,6 +1,7 @@
 // サイト所有者の初期ブートストラップ。
 // デプロイ時に secret（OWNER_BOOTSTRAP_KEY）で指定したキーと、TOTP 登録が揃ったときだけ
-// 一度だけ owner を作成する。2 回目以降は 409 OWNER_SETUP_CLOSED。
+// 一度だけ owner を作成する。正しいキーでの 2 回目以降は 409 OWNER_SETUP_CLOSED。
+// 誤キーは所有者の有無に関わらず 403（未認証で「所有者未作成の窓」を観測できないようにする / L-3）。
 
 import {
   ApiError,
@@ -29,15 +30,16 @@ export async function bootstrapOwner(
   env: { OWNER_BOOTSTRAP_KEY?: string; ENC_KEY: string },
   input: OwnerBootstrapRequest,
 ): Promise<{ accountId: string; recoveryCodes: string[] }> {
-  if (await ownerExists(db)) {
-    throw new ApiError(409, ErrorCode.OWNER_SETUP_CLOSED, "サイト所有者は既に設定済みです");
-  }
+  // キー検証を所有者の有無より先に行う。誤キーの応答から ownerExists を推測させない（L-3）。
   const expectedKey = env.OWNER_BOOTSTRAP_KEY;
   if (!expectedKey) {
     throw new ApiError(500, ErrorCode.MISCONFIGURED, "OWNER_BOOTSTRAP_KEY が設定されていません");
   }
   if (!timingSafeEqual(input.bootstrapKey, expectedKey)) {
     throw ApiError.forbidden("セットアップキーが正しくありません");
+  }
+  if (await ownerExists(db)) {
+    throw new ApiError(409, ErrorCode.OWNER_SETUP_CLOSED, "サイト所有者は既に設定済みです");
   }
 
   const now = Math.floor(Date.now() / 1000);

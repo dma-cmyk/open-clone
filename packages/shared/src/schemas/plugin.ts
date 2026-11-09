@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import { PLUGIN_CODE_MAX_BYTES, PLUGIN_STATE_MAX_BYTES } from "../constants";
+import { analyzeRegexPattern } from "../lib/regex-safety";
 
 // ─── 列挙 ───────────────────────────────────────────────────────────
 
@@ -125,6 +126,17 @@ export const pluginPostRenderRuleSchema = z.object({
   template: z.string().min(1).max(2000),
   /** 変換後の表示種別（ホストの装飾用）。 */
   kind: z.enum(["spoiler", "dice", "link", "image", "text"]).default("text"),
+}).superRefine((rule, ctx) => {
+  // ReDoS 対策: 入れ子の量指定子・重なる選択肢の繰り返し・後方参照・過大な長さ/回数を拒否する。
+  // 判定は shared の analyzeRegexPattern（API と web で同一実装）。
+  const safety = analyzeRegexPattern(rule.pattern);
+  if (!safety.safe) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["pattern"],
+      message: `危険な正規表現は使用できません: ${safety.reason}`,
+    });
+  }
 });
 
 export type PluginPostRenderRule = z.infer<typeof pluginPostRenderRuleSchema>;

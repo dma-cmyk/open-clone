@@ -161,4 +161,31 @@ test.describe("プラグインのレンダー規則と本文描画", () => {
       await request.delete(`${API_BASE}/v1/plugins/${pluginId}`, { headers: userHeaders() });
     }
   });
+
+  test("危険な正規表現（(a+)+b）を含むレンダー規則は作成時に拒否される", async ({ request }) => {
+    const name = unique("redos").toLowerCase();
+    const response = await request.post(`${API_BASE}/v1/plugins`, {
+      headers: userHeaders(),
+      data: {
+        manifest: {
+          name,
+          version: "1.0.0",
+          summary: "ReDoS の回帰検証",
+          scope: ["personal"],
+          permissions: [],
+          connectAllowlist: [],
+          entry: "plugin.js",
+          slots: [],
+          hooks: [],
+          render: { post: [{ pattern: "(a+)+b", flags: "g", template: "$1", kind: "text" }] },
+        },
+        code: "register({});",
+        visibility: "private",
+        changelog: "e2e",
+      },
+    });
+    expect(response.status(), await response.text()).toBe(400);
+    const body = await readEnvelope<{ code?: string }>(response);
+    if (body && !body.ok) expect(body.code).toBe("VALIDATION");
+  });
 });
