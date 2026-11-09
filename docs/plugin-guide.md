@@ -19,6 +19,42 @@
 > 実際に受け付けるメソッドは `PLUGIN_RPC_PERMISSIONS`（shared）と
 > `apps/web/src/features/plugin-host/bridge.ts` を正としてください。
 
+## 0. テンプレートから作る（コードを書かない場合）
+
+コードを書かずにプラグインを作りたい場合は `/plugins/templates/` を使います。
+フォームに言葉や数字を入れるだけで、manifest と `plugin.js` が生成されます。
+
+```text
+/plugins/templates/  テンプレートを選ぶ → 入力 → プレビュー＋静的検査 → 自分用に導入して保存
+/plugins/new/        従来のエディタ（生成物をそのまま編集できる。?template=<id> / ?from=template）
+```
+
+- 生成は `packages/shared/src/plugin-templates-data.ts` の定義と
+  `generateFromTemplate()`（`packages/shared/src/schemas/plugin-authoring.ts`）が行います。
+  保存・公開・導入は通常のプラグインと同じ `POST /v1/plugins` / `/publish` / `/install` を通り、
+  テンプレート専用の API はありません。
+- 入力できるのは **単語・タグ・ラベル・数値** だけです。正規表現は書けません（生成器が入力から
+  パターンを組み立て、`analyzeRegexPattern` で安全性を自己検査します）。
+- render 系（ネタバレ伏せ・NG ワード表示置換・キーワード装飾）のプレビューは、スレ画面と
+  同じ Worker 実行経路でサンプルレス（該当・非該当・長文）を変換して表示します。
+  本文が 2,048 字を超えるレスには規則が適用されません（既知の制約 L-4）。
+- NG ワード表示置換は **表示だけ** を置き換えます。投稿内容は変更されず、投稿も止まりません。
+- 作成元は changelog の `[template:<id>]` として記録され、詳細画面に「作成元」として表示されます。
+- 生成物を手で編集したい場合は「コードを見る・手で編集する」で `/plugins/new/?from=template` へ
+  引き継げます（未保存の入力内容は sessionStorage の `oc.templateDraft` を 1 回だけ読みます）。
+
+初期テンプレート（7 件）:
+
+| id | 名前 | 種別 | 入力の例 |
+|---|---|---|---|
+| `spoiler` | ネタバレ伏せ | 表示ルール | 開始タグ `[sp]` / 終了タグ `[/sp]` |
+| `ng-word-mask` | NG ワード表示置換 | 表示ルール | 伏せたい単語（1 行 1 語） |
+| `keyword-deco` | キーワード装飾 | 表示ルール | 目立たせたい語・装飾スタイル |
+| `dice-button` | サイコロ／占いボタン | スロット | 面の数・振る個数・結果コメント |
+| `counter` | カウンタ | スロット | ラベル・初期値・増加量 |
+| `thread-info` | スレ情報表示 | スロット | 表示する項目（タイトル・レス数・板名） |
+| `quick-reply` | 定型レスボタン | スロット | ボタンの文字・投稿する本文 |
+
 ## 1. 実行モデル
 
 ```text
