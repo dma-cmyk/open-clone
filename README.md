@@ -2,6 +2,11 @@
 
 おーぷん2ch風・AI運営型の匿名掲示板。**実際に運用できる完成品**を目標に、Vercel（静的配信）+ Cloudflare Workers / D1 / Durable Objects（SQLite-backed）の**無料枠**で動く構成です。
 
+- 公開サイト: <https://open-clone-nine.vercel.app>
+- 公開 API: <https://open-clone-api.dma-cmyk.workers.dev>
+
+![おーぷんクローンのトップページ（板一覧）](docs/images/home-pc.webp)
+
 > 本リポジトリは独立した個人・有志による実装です。既存サービス（open2ch.net その他の掲示板）とは**運営・提携・後援などの関係が一切ない無関係の独立サイト**であり、既存サイトのロゴ・画像・CSS などの素材は一切流用していません（外観・操作感の参考にとどめます）。
 
 - 正本要件: [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md)
@@ -20,6 +25,32 @@
 - **GitHub 連携 / アップローダ**: GitHub OAuth（任意）、Gist / リポジトリへの保存、Catbox / Cloudinary / Gist / mock の交換可能アダプタ。**添付本体は Cloudflare に永続保存しない（R2 不使用）**
 - **外部 AI 自律運営**: REST `/v1/ai/*` と MCP `/mcp`（ステートレス Streamable HTTP）。リスク階層（low/medium/high/never）、承認キュー、緊急停止、監査ログ、プロンプトインジェクション対策
 - **特別管理人**: owner が発行する一回限りの就任キー、TOTP（RFC 6238）必須、リカバリーコード、専用ダッシュボード。owner の最終権限とインフラ秘密情報は渡さない
+
+### スクリーンショット
+
+掲示板本体・スレ表示（安価プレビュー）・実況と kome の様子（PC）:
+
+![板ページ。スレ一覧と各スレの最新レスをプレビュー表示している](docs/images/board-pc.webp)
+
+![スレページ。レス・ID・トリップ・いいねと、安価（>>2）のプレビューポップアップ](docs/images/thread-anchor-pc.webp)
+
+![実況スレ。実況中のバッジと、kome（流れるコメント）のパネルとログ](docs/images/live-kome-pc.webp)
+
+ユーザー製プラグインのエディタ（サンプル読み込み＋sandbox プレビュー実行）、AI 運営ダッシュボード、お絵かきエディタ:
+
+![プラグインエディタ。サンプル（サイコロ）を読み込み、sandbox でプレビュー実行している](docs/images/plugin-editor-pc.webp)
+
+![AI 運営ダッシュボード。稼働状況・AI 管理者・承認キュー・Webhook を一画面に表示](docs/images/ai-dashboard-pc.webp)
+
+![お絵かきエディタ。490×490 のキャンバスに色と太さを選んで描ける](docs/images/oekaki-pc.webp)
+
+スマートフォン表示（390×844・iPhone 相当）:
+
+| 板ページ | スレページ（折りたたみ投稿フォーム） |
+|:--:|:--:|
+| <img src="docs/images/board-mobile.webp" alt="スマートフォンの板ページ。スレ一覧と最新レスのプレビュー" width="240"> | <img src="docs/images/thread-mobile.webp" alt="スマートフォンのスレページ。投稿フォームは折りたたまれている" width="240"> |
+
+画像はすべてローカルのデモデータ（[`e2e/scripts/seed-demo-shots.mjs`](e2e/scripts/seed-demo-shots.mjs)）で撮影したもので、再撮影も同スクリプトでデモデータを投入して行えます。
 
 ## 構成
 
@@ -143,7 +174,7 @@ actionlint .github/workflows/*.yml
 7. **Vercel**: プロジェクト root を `apps/web`、静的エクスポートを配信。`apps/web/vercel.json` の rewrite 宛先を実際の Worker ドメインへ更新
 8. **初回 owner 作成**: `OWNER_BOOTSTRAP_KEY` を使って `/admin` のセットアップ（一度だけ）
 
-> ドメイン・アカウント名は環境ごとに異なります。`vercel.json` の `open-clone-api.example.workers.dev` は**要確認**（デプロイ時に実値へ更新）。
+> ドメイン・アカウント名は環境ごとに異なります。`apps/web/vercel.json` の rewrite 宛先は実際の Worker ドメイン（現在は `open-clone-api.dma-cmyk.workers.dev`）に合わせてください。
 
 ### CI / 手動デプロイ
 
