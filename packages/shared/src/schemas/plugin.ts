@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { PLUGIN_CODE_MAX_BYTES, PLUGIN_STATE_MAX_BYTES } from "../constants";
 import { analyzeRegexPattern } from "../lib/regex-safety";
+import { PLUGIN_TEMPLATE_IDS } from "../plugin-templates-data";
 
 // ─── 列挙 ───────────────────────────────────────────────────────────
 
@@ -338,6 +339,8 @@ export const pluginCreateSchema = z.object({
   code: codeSchema,
   changelog: z.string().max(2000).optional(),
   visibility: z.enum(PLUGIN_VISIBILITIES).default("private"),
+  /** ① テンプレート由来を示す任意メタ（既知のテンプレート id のみ）。 */
+  templateId: z.enum(PLUGIN_TEMPLATE_IDS).optional(),
 });
 export type PluginCreateInput = z.infer<typeof pluginCreateSchema>;
 

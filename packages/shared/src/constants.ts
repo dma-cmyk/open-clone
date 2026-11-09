@@ -37,6 +37,38 @@ export const PLUGIN_AI_OUTPUT_MAX_CHARS = 8000;
 /** 端末×プラグイン単位の日次上限（UTC 日）。 */
 export const PLUGIN_AI_DAILY_LIMIT = 100;
 
+// --- プラグイン作成支援（個人用トークン + テンプレート。報告書 28 §3.3/§5.2/§8.0） ---
+/** プラグイン作成トークンの接頭辞。`ocai_`（AI 運営）と相互に受け付けない。 */
+export const PLUGIN_TOKEN_PREFIX = "ocp_";
+/** トークンの有効日数（発行から固定。延長は再発行）。 */
+export const PLUGIN_TOKEN_TTL_DAYS = 90;
+/** 1 アカウントあたりの同時有効トークン数。 */
+export const PLUGIN_TOKEN_MAX_PER_ACCOUNT = 5;
+/** トークン名の最大文字数。 */
+export const PLUGIN_TOKEN_NAME_MAX_CHARS = 100;
+/** 一覧表示用 prefix に含める接頭辞以降の文字数（`ocp_` + 8 文字）。 */
+export const PLUGIN_TOKEN_PREFIX_DISPLAY_CHARS = 8;
+/** トークン経路の日次上限（UTC 日）。kind は下の PLUGIN_AUTHOR_USAGE_KINDS。 */
+export const PLUGIN_AUTHOR_DAILY_LIMITS = {
+  create: 10,
+  version: 60,
+  check: 120,
+  publish: 20,
+} as const;
+export type PluginAuthorUsageKind = keyof typeof PLUGIN_AUTHOR_DAILY_LIMITS;
+export const PLUGIN_AUTHOR_USAGE_KINDS = [
+  "create",
+  "version",
+  "check",
+  "publish",
+] as const satisfies readonly PluginAuthorUsageKind[];
+/** 本人が保有できる status='draft' のプラグイン数。 */
+export const PLUGIN_AUTHOR_DRAFT_LIMIT = 50;
+/** トークン経路で受け付けるコードの上限（既存 PLUGIN_CODE_MAX_BYTES より厳しい）。 */
+export const PLUGIN_AUTHOR_CODE_MAX_BYTES = 64 * 1024;
+/** テンプレート生成コードの上限（CI のユニットテストで保証する）。 */
+export const PLUGIN_AUTHOR_TEMPLATE_CODE_MAX_BYTES = 32 * 1024;
+
 // --- アップロード ---
 /** Worker プロキシ中継の実質上限（CF Free 受信ボディ 100MB 制限より安全側） */
 export const UPLOAD_PROXY_MAX_BYTES = 95 * 1024 * 1024;
@@ -104,6 +136,8 @@ export const RATE_LIMITS = {
   aiAction: { windowSeconds: 60, max: 30 },
   /** プラグイン AI 連携（端末×プラグイン）。日次上限は plugin_ai_usage で別途制御。 */
   pluginAi: { windowSeconds: 60, max: 10 },
+  /** プラグイン作成トークン（トークン単位）。日次上限は plugin_author_usage で別途制御。 */
+  pluginAuthor: { windowSeconds: 60, max: 30 },
   /**
    * IP 単位の併用窓（Cookie を保存しないクライアントでも有効。H-3）。
    * pipeline では匿名（accountId なし）のみに適用する。ログイン済みは account/device で
