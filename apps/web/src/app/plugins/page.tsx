@@ -105,8 +105,11 @@ export default function PluginsPage() {
       description="ユーザー製プラグインのレジストリ。作成・公開・検索・インストール・更新が GitHub 連携なしで完結します。"
       actions={
         <>
-          <a href="/plugins/new/" className="oc-btn oc-btn-primary">
-            プラグインを作成
+          <a href="/plugins/templates/" className="oc-btn oc-btn-primary">
+            テンプレートから作る
+          </a>
+          <a href="/plugins/new/" className="oc-btn">
+            コードを書いて作成
           </a>
           <a href="/plugins/review/" className="oc-btn">
             審査キュー
@@ -215,7 +218,12 @@ export default function PluginsPage() {
           {items.length === 0 && !loading ? (
             <p className="oc-muted oc-small">
               該当するプラグインがありません。
-              {tab === "mine" ? "「プラグインを作成」から最初のプラグインを作れます。" : null}
+              {tab === "mine" ? (
+                <>
+                  「<a href="/plugins/templates/">テンプレートから作る</a>」か「
+                  <a href="/plugins/new/">コードを直接書く</a>」から最初のプラグインを作れます。
+                </>
+              ) : null}
             </p>
           ) : (
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>

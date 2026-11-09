@@ -18,6 +18,7 @@ import {
   type PluginStaticCheckResult,
 } from "shared";
 import { PluginPreview, pluginApi } from "@/features/plugin-host";
+import { takeTemplateDraft } from "@/features/plugin-templates";
 import { PLUGIN_TEMPLATES } from "../_examples";
 import {
   Badge,
@@ -190,6 +191,38 @@ export default function PluginEditorPage() {
     setCheckResult(null);
     setCheckWarnings([]);
   }, []);
+
+  // テンプレートからの受け渡し（報告書 27 §4.6 / 29 決定 7）。
+  // - `?from=template`: /plugins/templates で入力済みの { manifest, code } を sessionStorage から 1 回読む
+  // - `?template=<id>`: 既定値から生成する（方式 A）
+  // 既存の編集（`?id=`）とは排他で、指定が無ければ何もしない（既存構造は維持）。
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("from") === "template") {
+      const draft = takeTemplateDraft();
+      if (!draft) {
+        setError("テンプレートの下書きが見つかりませんでした。テンプレートから作り直してください。");
+        return;
+      }
+      setName(draft.manifest.name);
+      setVersion(draft.manifest.version);
+      setSummary(draft.manifest.summary);
+      setDescription(draft.manifest.description ?? "");
+      setScopes(draft.manifest.scope);
+      setPermissions(draft.manifest.permissions);
+      setSlots(draft.manifest.slots);
+      setAllowlistText(draft.manifest.connectAllowlist.join("\n"));
+      setRenderText(JSON.stringify(draft.manifest.render?.post ?? [], null, 2));
+      setCode(draft.code);
+      setPreviewSlot(draft.manifest.slots[0] ?? "thread-post-inline");
+      setNotice("テンプレートの内容を読み込みました。編集して保存できます。");
+      return;
+    }
+    const templateId = params.get("template");
+    if (!templateId) return;
+    if (PLUGIN_TEMPLATES.some((template) => template.id === templateId)) applyTemplate(templateId);
+    else setError("指定されたテンプレートが見つかりません。");
+  }, [applyTemplate]);
 
   async function runCheck() {
     setError(null);

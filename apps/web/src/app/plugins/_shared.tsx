@@ -56,6 +56,9 @@ export function PluginShell(props: {
           <Link className="oc-btn oc-btn-sm" href="/plugins/">
             プラグイン一覧
           </Link>
+          <Link className="oc-btn oc-btn-sm" href="/plugins/templates/">
+            テンプレート
+          </Link>
           <Link className="oc-btn oc-btn-sm" href="/plugins/new/">
             新規作成
           </Link>
