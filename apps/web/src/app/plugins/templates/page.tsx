@@ -218,7 +218,9 @@ export default function PluginTemplatesPage() {
 
   function handoffToEditor() {
     if (!template) return;
-    const draft = generated ?? draftOnly();
+    // 保存（`save` → `prepare`）と同じ `draftOnly` を通す。必須項目が空なら
+    // 既定値で埋めて遷移せず、フォーム上に保存時と同じエラーを表示する（UI Low-2）。
+    const draft = draftOnly();
     if (!draft) return;
     const stored = saveTemplateDraft({
       templateId: template.id,

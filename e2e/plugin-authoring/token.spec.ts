@@ -11,7 +11,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
 import { ALLOWED_ORIGIN, API_BASE, WEB_BASE, apiUrl, readEnvelope } from "../helpers/api";
 import { fakeIp, unique } from "../helpers/ids";
-import { stableTotpCode } from "../account/totp";
+import { stableTotpCode, totpCode } from "../account/totp";
 
 const PASSWORD = "e2e-pass-1234";
 
@@ -21,6 +21,7 @@ interface AccountWithTotp {
   cookie: string;
   cookieValue: string;
   secret: string;
+  email: string;
 }
 
 function originHeaders(cookie?: string): Record<string, string> {
@@ -53,7 +54,34 @@ async function registerWithTotp(request: APIRequestContext): Promise<AccountWith
     data: { code: await stableTotpCode(secret) },
   });
   expect(enable.status(), await enable.text()).toBe(200);
-  return { cookie, cookieValue: cookieValue!, secret };
+  return { cookie, cookieValue: cookieValue!, secret, email };
+}
+
+/** TOTP ログインで別セッションを作る（step-up はそのセッションにだけ付与される）。 */
+async function loginWithTotp(request: APIRequestContext, account: AccountWithTotp): Promise<string> {
+  const response = await request.post(`${API_BASE}/v1/auth/login`, {
+    headers: { ...originHeaders(), "x-real-ip": fakeIp() },
+    data: { email: account.email, password: PASSWORD, totpCode: await stableTotpCode(account.secret) },
+  });
+  expect(response.status(), await response.text()).toBe(200);
+  const cookieValue = /oc_sess=([^;]+)/.exec(response.headers()["set-cookie"] ?? "")?.[1];
+  expect(cookieValue, "ログイン API のセッション Cookie").toBeTruthy();
+  return cookieValue!;
+}
+
+async function issueTokenWithCookie(
+  request: APIRequestContext,
+  cookie: string,
+  name: string,
+): Promise<string> {
+  const created = await request.post(`${API_BASE}/v1/me/plugin-tokens`, {
+    headers: originHeaders(cookie),
+    data: { name },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+  const body = await readEnvelope<{ token: string; prefix: string }>(created);
+  if (!body?.ok) throw new Error(`token issue failed: ${JSON.stringify(body)}`);
+  return body.data.token;
 }
 
 async function issueTokenViaApi(request: APIRequestContext, account: AccountWithTotp, name: string): Promise<string> {
@@ -62,14 +90,7 @@ async function issueTokenViaApi(request: APIRequestContext, account: AccountWith
     data: { code: await stableTotpCode(account.secret) },
   });
   expect(stepUp.status(), await stepUp.text()).toBe(200);
-  const created = await request.post(`${API_BASE}/v1/me/plugin-tokens`, {
-    headers: originHeaders(account.cookie),
-    data: { name },
-  });
-  expect(created.status(), await created.text()).toBe(201);
-  const body = await readEnvelope<{ token: string; prefix: string }>(created);
-  if (!body?.ok) throw new Error(`token issue failed: ${JSON.stringify(body)}`);
-  return body.data.token;
+  return issueTokenWithCookie(request, account.cookie, name);
 }
 
 async function setSessionCookie(context: BrowserContext, cookieValue: string): Promise<void> {
@@ -150,6 +171,45 @@ test("画面で発行: step-up → 平文は 1 回だけ → 一覧は prefix �
   await row.getByRole("button", { name: "失効" }).click();
   await expect(row.getByText("失効済み")).toBeVisible();
   await expect(page.getByText("「E2E 用トークン」を失効しました。")).toBeVisible();
+});
+
+test("全失効は step-up（TOTP 再認証）が無いと 403 STEP_UP_REQUIRED", async ({ request }) => {
+  // 登録・TOTP 有効化だけでは step-up は付与されない。
+  const account = await registerWithTotp(request);
+  const denied = await request.post(apiUrl("/v1/me/plugin-tokens/revoke-all"), {
+    headers: originHeaders(account.cookie),
+    data: {},
+  });
+  expect(denied.status(), await denied.text()).toBe(403);
+  const body = await readEnvelope(denied);
+  expect(body?.ok).toBe(false);
+  if (body && !body.ok) expect(body.code).toBe("STEP_UP_REQUIRED");
+});
+
+test("全失効は画面でも step-up（TOTP 再認証）を要求する", async ({ page, context, request }) => {
+  const account = await registerWithTotp(request);
+  // 別セッション（TOTP ログイン）でトークンを 1 本だけ用意する。step-up は
+  // ログインしたセッションにのみ付くため、画面側のセッションは未認証のまま。
+  const secondCookie = await loginWithTotp(request, account);
+  await issueTokenWithCookie(request, `oc_sess=${secondCookie}`, "UI 全失効用");
+
+  await setSessionCookie(context, account.cookieValue);
+  page.on("dialog", (dialog) => void dialog.accept());
+  await page.goto("/account/plugin-tokens/");
+  const row = page.locator("tr", { hasText: "UI 全失効用" });
+  await expect(row.getByText("有効")).toBeVisible();
+
+  await page.getByRole("button", { name: "すべて失効" }).click();
+  await expect(page.getByRole("dialog", { name: "TOTP 再認証" })).toBeVisible();
+  await expect(
+    page.getByText("この操作には TOTP コード（またはリカバリーコード）による再認証が必要です。"),
+  ).toBeVisible();
+
+  // ログインで使ったコードは使用済み（同一タイムステップの再使用は拒否）なので次の窓を使う。
+  await page.locator('[role="dialog"] input').fill(totpCode(account.secret, Date.now() + 30_000));
+  await page.getByRole("button", { name: "認証して実行" }).click();
+  await expect(page.getByText("1 本のトークンを失効しました。")).toBeVisible();
+  await expect(row.getByText("失効済み")).toBeVisible();
 });
 
 test("MCP ライフサイクル: 下書き作成 → 個人公開 → 個人導入 → 本人にだけ表示 → 失効後 401", async ({

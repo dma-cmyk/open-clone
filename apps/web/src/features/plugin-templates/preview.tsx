@@ -131,7 +131,7 @@ export function SlotTemplatePreview(props: {
       runId={props.runId}
       slot={slot}
       data={data}
-      minHeight={48}
+      minHeight={64}
     />
   );
 }
