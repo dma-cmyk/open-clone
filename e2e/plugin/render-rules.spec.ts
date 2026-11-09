@@ -163,8 +163,18 @@ test.describe("プラグインのレンダー規則と本文描画", () => {
   });
 
   test("危険な正規表現を含むレンダー規則は作成時に拒否される", async ({ request }) => {
-    // (a+)+b に加え、報告書 24 第2回 M-2 の「可変長を含む並びの繰り返し」も拒否する。
-    for (const pattern of ["(a+)+b", "(a+[ab])+x", "(\\w+a)+x", "(?:a+[b])+x", "(?=(a+[ab])+)"]) {
+    // (a+)+b に加え、第2回 M-2 の「可変長を含む並びの繰り返し」と、
+    // 第3回 M-3 の「繰り返すグループ本体の lookaround」も拒否する。
+    for (const pattern of [
+      "(a+)+b",
+      "(a+[ab])+x",
+      "(\\w+a)+x",
+      "(?:a+[b])+x",
+      "(?=(a+[ab])+)",
+      "((?=a+)a)+x",
+      "((?=\\w+)\\w)+x",
+      "((?=(a+))a)+x",
+    ]) {
       const name = unique("redos").toLowerCase();
       const response = await request.post(`${API_BASE}/v1/plugins`, {
         headers: userHeaders(),

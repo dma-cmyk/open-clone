@@ -235,35 +235,214 @@ function nullable(node: Node): boolean {
   }
 }
 
-/** 文字を消費しないノード（位置指定子・先読み/後読み）。 */
-function isZeroWidth(node: Node): boolean {
-  return (node.type === "atom" && node.atom === "anchor") || (node.type === "group" && node.kind === "lookaround");
+/** 固定回数の量指定子（`{n}` / `{n,n}`）か。 */
+function isFixedCount(quantifier: Quantifier): boolean {
+  return quantifier.max !== null && quantifier.min === quantifier.max;
 }
 
 /**
- * ノード（シーケンス）が可変長の要素で終わるか。
- * 例: `a+` → true、`(a+)` → true、`\.` → false、`(a|b)` → false。
+ * 繰り返されるグループの本体に置けない要素を探す（報告書 24 第3回 M-3）。
+ * - lookaround（先読み・後読み）は一切置けない（中に可変長を隠せるため）
+ * - `{n}` の固定回数以外の量指定子（`*`・`+`・`?`・`{n,}`・`{n,m}`）は一切置けない
+ * 入れ子の深さに関係なく本体全体を走査する。固定長の `(abc)+`・`(?:\d{2}:)+` は通る。
  */
-function endsWithVariable(node: Node): boolean {
+function findForbiddenInRepeatedBody(node: Node): string | null {
   switch (node.type) {
-    case "alt":
-      return node.options.some(endsWithVariable);
-    case "group":
-      return isVariable(node.quantifier) || endsWithVariable(node.body);
     case "atom":
-      return node.atom !== "anchor" && isVariable(node.quantifier);
-    case "seq": {
-      for (let i = node.items.length - 1; i >= 0; i -= 1) {
-        const item = node.items[i]!;
-        // 位置指定子・先読みは文字を消費しないので読み飛ばす。
-        if (isZeroWidth(item)) continue;
-        return endsWithVariable(item);
+      if (node.quantifier && !isFixedCount(node.quantifier)) {
+        return "繰り返すグループの本体に可変長の量指定子（*・+・?・{n,}・{n,m}）は使用できません";
       }
-      return false;
+      return null;
+    case "group": {
+      if (node.kind === "lookaround") {
+        return "繰り返すグループの本体に先読み・後読み（lookaround）は使用できません";
+      }
+      if (node.quantifier && !isFixedCount(node.quantifier)) {
+        return "繰り返すグループの本体に可変長の量指定子（*・+・?・{n,}・{n,m}）は使用できません";
+      }
+      return findForbiddenInRepeatedBody(node.body);
+    }
+    case "alt":
+    case "seq": {
+      const items = node.type === "alt" ? node.options : node.items;
+      for (const item of items) {
+        const reason = findForbiddenInRepeatedBody(item);
+        if (reason) return reason;
+      }
+      return null;
     }
   }
 }
 
+/** 先頭 1 文字の集合。判定できない場合は any（何とでも重なり得る）。 */
+interface FirstChars {
+  any: boolean;
+  chars: Set<string>;
+}
+
+const DIGIT_CHARS = "0123456789";
+const WORD_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+const SPACE_CHARS = " \t\n\r\f\v";
+
+function anyFirstChars(): FirstChars {
+  return { any: true, chars: new Set() };
+}
+
+function onlyChars(chars: Iterable<string>): FirstChars {
+  return { any: false, chars: new Set(chars) };
+}
+
+function unionInto(target: Set<string>, source: ReadonlySet<string>): void {
+  for (const char of source) target.add(char);
+}
+
+/** 文字クラス `[...]` の先頭 1 文字集合を保守的に求める（判定不能なら any）。 */
+function parseClassFirstChars(raw: string): FirstChars {
+  if (raw.startsWith("[^")) return anyFirstChars();
+  const inner = raw.slice(1, raw.endsWith("]") ? -1 : undefined);
+  const chars = new Set<string>();
+  let index = 0;
+  while (index < inner.length) {
+    const char = inner[index]!;
+    if (char === "\\") {
+      const next = inner[index + 1];
+      if (next === undefined) return anyFirstChars();
+      if (next === "d") {
+        unionInto(chars, new Set(DIGIT_CHARS));
+        index += 2;
+        continue;
+      }
+      if (next === "w") {
+        unionInto(chars, new Set(WORD_CHARS));
+        index += 2;
+        continue;
+      }
+      if (next === "s") {
+        unionInto(chars, new Set(SPACE_CHARS));
+        index += 2;
+        continue;
+      }
+      if (next === "t") {
+        chars.add("\t");
+        index += 2;
+        continue;
+      }
+      if (next === "n") {
+        chars.add("\n");
+        index += 2;
+        continue;
+      }
+      if (next === "r") {
+        chars.add("\r");
+        index += 2;
+        continue;
+      }
+      if (next === "f") {
+        chars.add("\f");
+        index += 2;
+        continue;
+      }
+      if (next === "v") {
+        chars.add("\v");
+        index += 2;
+        continue;
+      }
+      if (
+        next === "D" ||
+        next === "W" ||
+        next === "S" ||
+        next === "b" ||
+        next === "x" ||
+        next === "u" ||
+        next === "p" ||
+        next === "P" ||
+        next === "0"
+      ) {
+        return anyFirstChars();
+      }
+      chars.add(next);
+      index += 2;
+      continue;
+    }
+
+    const next = inner[index + 1];
+    const rangeEnd = inner[index + 2];
+    if (next === "-" && rangeEnd !== undefined && rangeEnd !== "]") {
+      const startCode = char.codePointAt(0)!;
+      const endCode = rangeEnd.codePointAt(0)!;
+      if (endCode < startCode || endCode - startCode > 128) return anyFirstChars();
+      for (let code = startCode; code <= endCode; code += 1) chars.add(String.fromCodePoint(code));
+      index += 3;
+      continue;
+    }
+
+    chars.add(char);
+    index += 1;
+  }
+  return onlyChars(chars);
+}
+
+/** ノードが最初に消費し得る 1 文字の集合。 */
+function firstCharsOf(node: Node): FirstChars {
+  switch (node.type) {
+    case "atom":
+      switch (node.atom) {
+        case "anchor":
+          return onlyChars([]);
+        case "backref":
+        case "dot":
+          return anyFirstChars();
+        case "shorthand": {
+          const shorthand = node.value[1];
+          if (shorthand === "d") return onlyChars(DIGIT_CHARS);
+          if (shorthand === "w") return onlyChars(WORD_CHARS);
+          if (shorthand === "s") return onlyChars(SPACE_CHARS);
+          return anyFirstChars();
+        }
+        case "class":
+          return parseClassFirstChars(node.value);
+        case "literal":
+          return node.value.length === 1 ? onlyChars(node.value) : anyFirstChars();
+      }
+    case "group":
+      return firstCharsOf(node.body);
+    case "alt": {
+      const chars = new Set<string>();
+      let any = false;
+      for (const option of node.options) {
+        const part = firstCharsOf(option);
+        if (part.any) any = true;
+        else unionInto(chars, part.chars);
+      }
+      return any ? anyFirstChars() : onlyChars(chars);
+    }
+    case "seq": {
+      const chars = new Set<string>();
+      let any = false;
+      for (const item of node.items) {
+        if (isZeroWidth(item)) continue;
+        const part = firstCharsOf(item);
+        if (part.any) any = true;
+        else unionInto(chars, part.chars);
+        if (!nullable(item)) break;
+      }
+      return any ? anyFirstChars() : onlyChars(chars);
+    }
+  }
+}
+
+function firstCharsOverlap(left: FirstChars, right: FirstChars): boolean {
+  if (left.any || right.any) return true;
+  for (const char of left.chars) {
+    if (right.chars.has(char)) return true;
+  }
+  return false;
+}
+
+/** 文字を消費しないノード（位置指定子・先読み/後読み）。 */
+function isZeroWidth(node: Node): boolean {
+  return (node.type === "atom" && node.atom === "anchor") || (node.type === "group" && node.kind === "lookaround");
+}
 
 /** 長さが固定でない（可変長の）要素か。 */
 function canVaryLength(node: Node): boolean {
@@ -280,24 +459,71 @@ function canVaryLength(node: Node): boolean {
   }
 }
 
+/**
+ * 同じ並びに可変長の要素が 2 つ以上あり、境界が曖昧でないか（第3回 M-3）。
+ * 例: `\w+[a-z]+`・`a+a+`・`.*\s*` は曖昧。`\d+\.\d+`・`\w+\s+\w+` は
+ * 間に「どちらとも重ならない」要素があるため境界が決まる（許可）。
+ */
+function hasAmbiguousVariableSequence(items: readonly Node[]): boolean {
+  const consuming = items.filter((item) => !isZeroWidth(item));
+  const variables: { index: number; first: FirstChars }[] = [];
+  consuming.forEach((item, index) => {
+    if (canVaryLength(item)) variables.push({ index, first: firstCharsOf(item) });
+  });
+
+  for (let i = 0; i < variables.length; i += 1) {
+    for (let j = i + 1; j < variables.length; j += 1) {
+      const left = variables[i]!;
+      const right = variables[j]!;
+      if (!firstCharsOverlap(left.first, right.first)) continue;
+      let separated = false;
+      for (let k = left.index + 1; k < right.index; k += 1) {
+        const between = consuming[k]!;
+        if (nullable(between)) continue;
+        const first = firstCharsOf(between);
+        if (!firstCharsOverlap(first, left.first) && !firstCharsOverlap(first, right.first)) {
+          separated = true;
+          break;
+        }
+      }
+      if (!separated) return true;
+    }
+  }
+  return false;
+}
+
 /** 量指定子の無い透過的なグループ・1 要素の並びを剥がして実体を見る。 */
-function unwrapSingle(node: Node): Node {
-  if (node.type === "seq" && node.items.length === 1) return unwrapSingle(node.items[0]!);
-  if (node.type === "group" && node.quantifier === null && node.kind !== "lookaround") return unwrapSingle(node.body);
+function unwrapTransparent(node: Node): Node {
+  if (node.type === "seq" && node.items.length === 1) return unwrapTransparent(node.items[0]!);
+  if (node.type === "group" && node.quantifier === null && node.kind !== "lookaround") {
+    return unwrapTransparent(node.body);
+  }
   return node;
 }
 
-/**
- * 繰り返されるグループの本体が「2 要素以上の並び」で、そのいずれかが可変長か。
- * `(a+[ab])+` のように、量指定子と重なり得る文字の並びが繰り返される形は
- * 破滅的バックトラックになる（固定長だけの `(abc)+` は許可する）。
- */
-function hasVariableInMultiElementSequence(node: Node): boolean {
-  const target = unwrapSingle(node);
-  if (target.type === "alt") return target.options.some(hasVariableInMultiElementSequence);
-  if (target.type !== "seq") return false;
-  const consuming = target.items.filter((item) => !isZeroWidth(item));
-  return consuming.length >= 2 && consuming.some(canVaryLength);
+/** 本体に固定回数以外の量指定子があれば理由を返す（lookaround 用）。 */
+function findVariableQuantifier(node: Node): string | null {
+  switch (node.type) {
+    case "atom":
+      return node.quantifier && !isFixedCount(node.quantifier)
+        ? "lookaround の本体に可変長の量指定子（*・+・?・{n,}・{n,m}）は使用できません"
+        : null;
+    case "group": {
+      if (node.quantifier && !isFixedCount(node.quantifier)) {
+        return "lookaround の本体に可変長の量指定子（*・+・?・{n,}・{n,m}）は使用できません";
+      }
+      return findVariableQuantifier(node.body);
+    }
+    case "alt":
+    case "seq": {
+      const items = node.type === "alt" ? node.options : node.items;
+      for (const item of items) {
+        const reason = findVariableQuantifier(item);
+        if (reason) return reason;
+      }
+      return null;
+    }
+  }
 }
 
 /** 選択肢の先頭から決定的に読めるトークン列（判定できない部分は null）。 */
@@ -382,6 +608,9 @@ function checkNode(node: Node): string | null {
         const reason = checkNode(item);
         if (reason) return reason;
       }
+      if (hasAmbiguousVariableSequence(node.items)) {
+        return "可変長の量指定子の並びが曖昧です（例: \\w+[a-z]+）";
+      }
       return null;
     }
     case "alt": {
@@ -398,18 +627,21 @@ function checkNode(node: Node): string | null {
     }
     case "group": {
       if (!checkRepeatBound(node.quantifier)) return `繰り返し回数が上限（${REGEX_MAX_REPEAT_BOUND}）を超えています`;
+      if (node.kind === "lookaround") {
+        // 可変長の lookaround は外側のバックトラックで繰り返し評価され得る（第3回 M-3）。
+        const reason = findVariableQuantifier(node.body);
+        if (reason) return reason;
+      }
       if (isRepeated(node.quantifier)) {
+        // 種類ごとの禁止（第3回 M-3）: 本体に lookaround と固定回数以外の量指定子を置けない。
+        const forbidden = findForbiddenInRepeatedBody(node.body);
+        if (forbidden) return forbidden;
         if (nullable(node.body)) {
           return "空文字に一致し得るグループの繰り返し（例: (a*)+）は使用できません";
         }
-        if (node.body.type === "alt" && overlappingAlternation(node.body.options)) {
+        const body = unwrapTransparent(node.body);
+        if (body.type === "alt" && overlappingAlternation(body.options)) {
           return "重なる選択肢の繰り返し（例: (a|aa)+）は使用できません";
-        }
-        if (endsWithVariable(node.body)) {
-          return "入れ子の量指定子（例: (a+)+）は使用できません";
-        }
-        if (hasVariableInMultiElementSequence(node.body)) {
-          return "可変長の要素を含む並びの繰り返し（例: (a+[ab])+）は使用できません";
         }
       }
       return checkNode(node.body);

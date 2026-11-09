@@ -878,9 +878,17 @@ describe("レンダー規則の ReDoS 対策（報告書 24 M-1）", () => {
     expect(checks.reasons.join("\n")).toContain("render.post[0]");
   });
 
-  it("可変長の要素を含む並びの繰り返しも schema と静的検査で拒否する（M-2）", async () => {
+  it("可変長の並び・先読みを含む繰り返しも schema と静的検査で拒否する（M-2/M-3）", async () => {
     const dev = await seedAccount("user");
-    for (const pattern of ["(a+[ab])+x", "(\\w+a)+x", "(?:a+[b])+x", "(?=(a+[ab])+)"]) {
+    for (const pattern of [
+      "(a+[ab])+x",
+      "(\\w+a)+x",
+      "(?:a+[b])+x",
+      "(?=(a+[ab])+)",
+      "((?=a+)a)+x",
+      "((?=\\w+)\\w)+x",
+      "((?=(a+))a)+x",
+    ]) {
       const result = await call("/v1/plugins", {
         method: "POST",
         cookie: dev.cookie,

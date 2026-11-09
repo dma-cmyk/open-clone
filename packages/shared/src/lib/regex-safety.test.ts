@@ -20,7 +20,7 @@ describe("analyzeRegexPattern", () => {
   });
 
   it("重なる選択肢の繰り返しを拒否する", () => {
-    for (const pattern of ["(a|aa)+", "(a|a)+", "(\\d|\\w)+", "(a|ab)*"]) {
+    for (const pattern of ["(a|aa)+", "(a|a)+", "(\\d|\\w)+", "(a|ab)*", "((a|aa))+", "((?:a|ab))+"]) {
       expect(analyzeRegexPattern(pattern).safe, pattern).toBe(false);
     }
   });
@@ -41,6 +41,43 @@ describe("analyzeRegexPattern", () => {
       const result = analyzeRegexPattern(pattern);
       expect(result.safe, pattern).toBe(false);
       expect(result.reason, pattern).toBeTruthy();
+    }
+  });
+
+  it("繰り返すグループ本体の lookaround を拒否する（報告書 24 第3回 M-3）", () => {
+    for (const pattern of ["((?=a+)a)+x", "((?=\\w+)\\w)+x", "((?=(a+))a)+x", "((?<=a)b)+", "((?!a)b)+"]) {
+      const result = analyzeRegexPattern(pattern);
+      expect(result.safe, pattern).toBe(false);
+      expect(result.reason, pattern).toContain("lookaround");
+    }
+    // 可変長の lookaround は繰り返しの外でも、外側のバックトラックで繰り返し評価され得る。
+    for (const pattern of ["(?=a+)", "(?=(a+))", "(?=a+[ab])", "(?<=\\w+)", "[a-z]{2,}.{2}(?=a+[ab])!"]) {
+      const result = analyzeRegexPattern(pattern);
+      expect(result.safe, pattern).toBe(false);
+      expect(result.reason, pattern).toContain("lookaround");
+    }
+  });
+
+  it("同じ並びの可変長量指定子が曖昧な形を拒否する（報告書 24 第3回 M-3）", () => {
+    for (const pattern of ["\\w+[a-z]+", "a+a+", ".*\\s*", "(?:\\w{2,}[a-z]{2,}(?:[ab]{2}))!", "\\w+a[ab]*"]) {
+      expect(analyzeRegexPattern(pattern).safe, pattern).toBe(false);
+    }
+    // 間がどちらの文字集合とも重ならない要素で区切られていれば許可する。
+    for (const pattern of ["\\d+\\.\\d+", "\\w+\\s+\\w+", "a+b+", "[a-z]+[0-9]+"]) {
+      const result = analyzeRegexPattern(pattern);
+      expect(result.safe, `${pattern}: ${result.reason ?? ""}`).toBe(true);
+    }
+  });
+
+  it("固定長だけの繰り返しは許可する", () => {
+    for (const pattern of ["(abc)+", "(?:\\d{2}:)+", "(a{2}b{3})+", "(?:ab){2,4}"]) {
+      const result = analyzeRegexPattern(pattern);
+      expect(result.safe, `${pattern}: ${result.reason ?? ""}`).toBe(true);
+    }
+    // 固定長の lookaround は許可する。
+    for (const pattern of ["(?=a)a", "(?<=\\w)x", "(?=a{2})a", "(?=a|ab)a"]) {
+      const result = analyzeRegexPattern(pattern);
+      expect(result.safe, `${pattern}: ${result.reason ?? ""}`).toBe(true);
     }
   });
 

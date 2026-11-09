@@ -91,9 +91,17 @@ describe("ReDoS 対策（報告書 24 M-1）", () => {
     expect(result.html).toBe(text);
   });
 
-  it("可変長の要素を含む並びの繰り返し（M-2）も実行せず即座に返す", () => {
+  it("可変長の並び・先読みを含む繰り返し（M-2/M-3）も実行せず即座に返す", () => {
     const text = `${"a".repeat(600)}!`;
-    for (const pattern of ["(a+[ab])+x", "(\\w+a)+x", "(?:a+[b])+x", "(?=(a+[ab])+)"]) {
+    for (const pattern of [
+      "(a+[ab])+x",
+      "(\\w+a)+x",
+      "(?:a+[b])+x",
+      "(?=(a+[ab])+)",
+      "((?=a+)a)+x",
+      "((?=\\w+)\\w)+x",
+      "((?=(a+))a)+x",
+    ]) {
       const rule = { pattern, flags: "g", template: "$1", kind: "text" as const };
       const started = performance.now();
       expect(splitPostRenderRules(text, [rule]), pattern).toEqual([{ type: "text", text }]);
