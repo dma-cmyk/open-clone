@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { PluginDetail, PluginInstallInfo, PluginReviewInfo, PluginScope } from "shared";
 import { pluginApi } from "@/features/plugin-host";
+import { parseTemplateOrigin } from "@/features/plugin-templates";
 import {
   Badge,
   Card,
@@ -90,6 +91,10 @@ export default function PluginViewPage() {
   }
 
   const plugin = detail;
+  // 作成元（report27 §5.4 / 29 決定 4）: changelog 先頭の `[template:<id>]` を解析するだけ。
+  const templateOrigin = parseTemplateOrigin(
+    plugin?.versions.find((version) => version.version === plugin.latestVersion)?.changelog,
+  );
   const parsedBoardId = Number.parseInt(boardId, 10);
   const boardIdValid = Number.isInteger(parsedBoardId) && parsedBoardId > 0;
 
@@ -134,6 +139,7 @@ export default function PluginViewPage() {
               <Badge>通報 {plugin.reportCount}</Badge>
               {plugin.source !== "local" ? <Badge>{plugin.source}</Badge> : null}
               {plugin.flagged ? <Badge tone="danger">要確認（通報あり）</Badge> : null}
+              {templateOrigin ? <Badge>作成元: テンプレート {templateOrigin.label}</Badge> : null}
             </div>
             <p style={{ whiteSpace: "pre-wrap" }}>{plugin.description || plugin.summary}</p>
             <table style={{ fontSize: 12, color: "#444", borderCollapse: "collapse" }}>
@@ -164,6 +170,12 @@ export default function PluginViewPage() {
                   <tr>
                     <td style={{ paddingRight: 12 }}>取得元</td>
                     <td style={{ wordBreak: "break-all" }}>{plugin.sourceRef}</td>
+                  </tr>
+                ) : null}
+                {templateOrigin ? (
+                  <tr>
+                    <td style={{ paddingRight: 12 }}>作成元</td>
+                    <td>テンプレート「{templateOrigin.label}」（{templateOrigin.templateId}）</td>
                   </tr>
                 ) : null}
               </tbody>

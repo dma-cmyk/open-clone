@@ -122,6 +122,8 @@ export interface PluginCreateInput {
   code: string;
   changelog?: string;
   visibility?: "private" | "unlisted" | "public";
+  /** テンプレート由来の任意メタ（report28 §6.3。changelog の `[template:<id>]` と併用）。 */
+  templateId?: string;
 }
 
 export interface PluginVersionInput {
