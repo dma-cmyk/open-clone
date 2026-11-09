@@ -176,6 +176,27 @@ test.describe("テンプレートから作る", () => {
     }
   });
 
+  test("コードを見る・手で編集する: 入力済みの内容をエディタへ引き継ぐ（決定 7）", async ({
+    page,
+    context,
+  }) => {
+    await loginAsTestUser(context);
+    const name = unique("handoff-tpl");
+
+    await openTemplate(page, "spoiler", "ネタバレ伏せ");
+    await page.getByLabel("プラグイン名").fill(name);
+    await page.getByRole("button", { name: "コードを見る・手で編集する" }).click();
+
+    await expect(page).toHaveURL(/\/plugins\/new\/?\?from=template/);
+    await expect(page.getByText("テンプレートの内容を読み込みました", { exact: false })).toBeVisible();
+    await expect(page.getByLabel("名前（slug・変更不可）")).toHaveValue(name);
+    await expect(
+      page.getByLabel("宣言的レンダー規則（manifest.render.post の JSON 配列）"),
+    ).toHaveValue(/spoiler/);
+    // 読み取りは 1 回だけ（sessionStorage を消している）
+    expect(await page.evaluate(() => window.sessionStorage.getItem("oc.templateDraft"))).toBeNull();
+  });
+
   test("名前が衝突したら 27 §6.2 の文言を出す（保存はされない）", async ({ page, context, request }) => {
     await loginAsTestUser(context);
     const name = unique("dup-tpl");

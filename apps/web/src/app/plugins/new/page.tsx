@@ -4,7 +4,7 @@
 // CodeMirror でコードを編集し、sandbox iframe で即時実行、静的検査・保存・公開申請まで行う。
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { javascript } from "@codemirror/lang-javascript";
 import {
   PLUGIN_PERMISSIONS,
@@ -196,7 +196,11 @@ export default function PluginEditorPage() {
   // - `?from=template`: /plugins/templates で入力済みの { manifest, code } を sessionStorage から 1 回読む
   // - `?template=<id>`: 既定値から生成する（方式 A）
   // 既存の編集（`?id=`）とは排他で、指定が無ければ何もしない（既存構造は維持）。
+  // StrictMode の effect 二重実行で sessionStorage を 2 回読まないよう、一度だけ実行する。
+  const templateInitRef = useRef(false);
   useEffect(() => {
+    if (templateInitRef.current) return;
+    templateInitRef.current = true;
     const params = new URLSearchParams(window.location.search);
     if (params.get("from") === "template") {
       const draft = takeTemplateDraft();
