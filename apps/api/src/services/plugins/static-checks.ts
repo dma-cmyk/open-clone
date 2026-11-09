@@ -83,7 +83,7 @@ export async function runStaticChecks(code: string, manifest?: PluginManifest | 
 
   const renderRules = manifest?.render?.post ?? [];
   renderRules.forEach((rule, index) => {
-    const safety = analyzeRegexPattern(rule.pattern);
+    const safety = analyzeRegexPattern(rule.pattern, rule.flags);
     if (safety.safe) return;
     reasons.push(`禁止: render.post[${index}] の正規表現が危険です（${safety.reason}）`);
     riskScore += 40;

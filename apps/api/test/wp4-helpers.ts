@@ -105,8 +105,9 @@ export interface ApiEnvelope<T> {
 export async function prepareUpload(
   cookie: string,
   body: Record<string, unknown>,
+  headers?: Record<string, string>,
 ): Promise<{ response: Response; data: ApiEnvelope<Record<string, unknown>> }> {
-  const response = await apiFetch("/v1/uploads/prepare", { cookie, body });
+  const response = await apiFetch("/v1/uploads/prepare", { cookie, body, headers });
   return { response, data: await readJson<ApiEnvelope<Record<string, unknown>>>(response) };
 }
 

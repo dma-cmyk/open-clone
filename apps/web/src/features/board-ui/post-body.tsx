@@ -4,9 +4,13 @@
 // 対応: 安価 `>>n` / 飛び番 `>>3,4,8` / URL / ネタバレ `||...||` / 画像・動画 URL のインライン展開 /
 //       プラグインの宣言的レンダー規則（規則の適用範囲も同じトークン描画を通す）。
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { PluginPostRenderRule } from "shared";
-import { splitPostRenderRules } from "@/features/plugin-host/render-rules";
+import {
+  MAX_RENDER_TEXT_CHARS,
+  type PostRenderSegment,
+} from "@/features/plugin-host/render-rules";
+import { requestRenderSegments } from "@/features/plugin-host/render-worker-client";
 import { mediaKind } from "./format";
 
 const TOKEN = /(>>\d+(?:[-,]\d+)*)|(https?:\/\/[^\s<>"）]+)|(\|\|[^|\n]+\|\|)/g;
@@ -107,12 +111,30 @@ export function PostBody({
   /** 有効なプラグインの宣言的変換規則。適用範囲もテキストとして描画する（HTML は解釈しない）。 */
   renderRules?: readonly PluginPostRenderRule[];
 }) {
-  const segments =
-    renderRules && renderRules.length > 0
-      ? splitPostRenderRules(body, renderRules)
-      : [{ type: "text" as const, text: body }];
+  // 規則の実行は Worker に任せる（M-4）。結果が来るまでは通常表示し、
+  // 時間切れ・規則なしなら通常表示のままにする。メインスレッドは止まらない。
+  const [rendered, setRendered] = useState<{ body: string; segments: PostRenderSegment[] } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setRendered(null);
+    if (!renderRules || renderRules.length === 0 || body.length > MAX_RENDER_TEXT_CHARS) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    void requestRenderSegments(body, renderRules).then((result) => {
+      if (!cancelled && result) setRendered({ body, segments: result });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [body, renderRules]);
 
-  const nodes = segments.map((segment, index) =>
+  // 本文が替わった直後に前の本文の変換結果を出さない（常に現在の本文と組で扱う）。
+  const displaySegments =
+    rendered && rendered.body === body ? rendered.segments : [{ type: "text" as const, text: body }];
+
+  const nodes = displaySegments.map((segment, index) =>
     segment.type === "rule" ? (
       <span
         key={`seg-${index}`}

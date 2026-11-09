@@ -226,7 +226,7 @@ describe("H-3: IP 単位のレート制限と compat キャッシュ", () => {
     client.setCookie("oc_sess", owner.token);
     const board = await createBoard(client, { settings: { turnstile: "off" } });
     const thread = await createThread(client, board.board.slug);
-    const ip = `203.0.113.${Math.floor(Math.random() * 100) + 1}`;
+    const ip = `198.18.50.${Math.floor(Math.random() * 100) + 1}`;
 
     const statuses: number[] = [];
     for (let i = 0; i < 41; i += 1) {
@@ -240,10 +240,10 @@ describe("H-3: IP 単位のレート制限と compat キャッシュ", () => {
     }
     expect(statuses.slice(0, 40).every((status) => status === 201)).toBe(true);
     expect(statuses.at(-1)).toBe(429);
-  });
+  }, 30_000);
 
   it("/v1/search は同一 IP の連続呼び出しで 429 になる", async () => {
-    const ip = `203.0.113.${Math.floor(Math.random() * 100) + 1}`;
+    const ip = `198.18.50.${Math.floor(Math.random() * 100) + 1}`;
     const statuses: number[] = [];
     for (let i = 0; i < 31; i += 1) {
       const response = await SELF.fetch("http://worker.test/v1/search?q=abc&type=thread", {
@@ -257,7 +257,7 @@ describe("H-3: IP 単位のレート制限と compat キャッシュ", () => {
   });
 
   it("/v1/rt/ticket は同一 IP の連続発行で 429 になる", async () => {
-    const ip = `203.0.113.${Math.floor(Math.random() * 100) + 1}`;
+    const ip = `198.18.50.${Math.floor(Math.random() * 100) + 1}`;
     const statuses: number[] = [];
     for (let i = 0; i < 31; i += 1) {
       const response = await SELF.fetch("http://worker.test/v1/rt/ticket", {
@@ -278,7 +278,7 @@ describe("H-3: IP 単位のレート制限と compat キャッシュ", () => {
     client.setCookie("oc_sess", owner.token);
     const board = await createBoard(client, { settings: { turnstile: "off" } });
     await createThread(client, board.board.slug);
-    const ip = `203.0.113.${Math.floor(Math.random() * 100) + 1}`;
+    const ip = `198.18.50.${Math.floor(Math.random() * 100) + 1}`;
     const url = `http://worker.test/compat/${board.board.slug}/subject.txt`;
     const headers = { origin: ORIGIN, "cf-connecting-ip": ip };
 

@@ -25,6 +25,41 @@ describe("analyzeRegexPattern", () => {
     }
   });
 
+  it("先頭文字集合が交差する選択肢の繰り返しを拒否する（報告書 24 第4回 M-4）", () => {
+    for (const pattern of [
+      "(?:a|\\w)+x",
+      "(a|\\w)+x",
+      "(?:a|[ab])+x",
+      "(?:[ab]|a)+x",
+      "(?:\\d|1)+x",
+      "(?:a|[a-z])+x",
+      "(?:ab|ac)+x",
+      "(?:a|[^x])+x",
+    ]) {
+      const result = analyzeRegexPattern(pattern);
+      expect(result.safe, pattern).toBe(false);
+      expect(result.reason, pattern).toContain("重なる選択肢");
+    }
+    // 先頭文字集合が交差しない選択肢は許可する（補集合どうしの排他も含む）。
+    for (const pattern of [
+      "(?:a|b)+x",
+      "(?:a|\\d)+x",
+      "(?:\\d|\\D)+x",
+      "(?:\\w|\\W)+x",
+      "(?:\\s|\\S)+x",
+      "(?:a|[^a])+x",
+    ]) {
+      const result = analyzeRegexPattern(pattern);
+      expect(result.safe, `${pattern}: ${result.reason ?? ""}`).toBe(true);
+    }
+
+    // `i` フラグ（大文字小文字無視）では `a` と `A`、`[a-z]` と `[A-Z]` の先頭集合が交差する。
+    for (const pattern of ["(?:a|A)+x", "(?:[a-z]|[A-Z])+x", "(?:a|\\w)+x"]) {
+      expect(analyzeRegexPattern(pattern, "gi").safe, pattern).toBe(false);
+    }
+    expect(analyzeRegexPattern("(?:a|A)+x", "g").safe).toBe(true);
+  });
+
   it("可変長の要素を含む並びの繰り返しを拒否する（報告書 24 第2回 M-2）", () => {
     for (const pattern of [
       "(a+[ab])+x",

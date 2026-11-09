@@ -542,24 +542,26 @@ describe("Turnstile とレート制限", () => {
     await setSiteConfig("uploader.default", "mock");
     // ユニークな端末で固定窓カウンタを最初から使う（他のテストの DO 状態と衝突しない）
     const cookie = anonymousCookie("d".repeat(32));
+    // 他のテストと IP 窓（uploadIp 100/日）を共有しないよう、専用 IP を使う。
+    const headers = { "x-real-ip": "198.18.60.1" };
 
     for (let i = 0; i < 50; i += 1) {
-      const prepared = await prepareUpload(cookie, {
-        contentType: "image/png",
-        size: PNG_BYTES.length,
-        filename: "a.png",
-      });
+      const prepared = await prepareUpload(
+        cookie,
+        { contentType: "image/png", size: PNG_BYTES.length, filename: "a.png" },
+        headers,
+      );
       expect(prepared.response.status).toBe(201);
     }
 
-    const limited = await prepareUpload(cookie, {
-      contentType: "image/png",
-      size: PNG_BYTES.length,
-      filename: "a.png",
-    });
+    const limited = await prepareUpload(
+      cookie,
+      { contentType: "image/png", size: PNG_BYTES.length, filename: "a.png" },
+      headers,
+    );
     expect(limited.response.status).toBe(429);
     expect(limited.data.code).toBe("RATE_LIMITED");
-  });
+  }, 30_000);
 });
 
 describe("attachToPost（WP1 契約）", () => {

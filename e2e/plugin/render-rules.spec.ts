@@ -162,6 +162,173 @@ test.describe("プラグインのレンダー規則と本文描画", () => {
     }
   });
 
+  test("静的判定を無効化しても危険な規則でメインスレッドが止まらない（Worker 実行）", async ({
+    page,
+    context,
+    request,
+  }) => {
+    await loginAsTestUser(context);
+
+    const slug = unique("redos-worker").toLowerCase();
+    const boardResponse = await request.post(`${API_BASE}/v1/boards`, {
+      headers: userHeaders(),
+      data: {
+        slug,
+        name: `ReDoS Worker 板${slug.slice(-4)}`,
+        category: "E2E",
+        description: "Worker 実行の回帰検証用",
+        settings: { turnstile: "off" },
+      },
+    });
+    expect(boardResponse.status(), await boardResponse.text()).toBe(201);
+
+    // 1 レス目: `(?:a|\w)+x` が指数的にバックトラックする 29 文字。
+    // 2 レス目: `(a+)+b` が指数的にバックトラックする約 2,000 文字（表示上限 2,048 以内）。
+    const shortAttack = `${"a".repeat(28)}!`;
+    const longAttack = `${"a".repeat(2_000)}!`;
+    const threadBody = `[spoiler]秘密[/spoiler] >>2\n${shortAttack}`;
+    const threadResponse = await request.post(`${API_BASE}/v1/boards/${slug}/threads`, {
+      headers: userHeaders(),
+      data: { title: `ReDoS Worker スレ ${slug}`, body: threadBody, turnstileToken: "1x00000000000000000000AA" },
+    });
+    expect(threadResponse.status(), await threadResponse.text()).toBe(201);
+    const thread = await readEnvelope<{ threadId: number }>(threadResponse);
+    if (!thread || !thread.ok) throw new Error("スレ作成の応答が不正です");
+    const threadId = thread.data.threadId;
+
+    const replyResponse = await request.post(`${API_BASE}/v1/threads/${threadId}/posts`, {
+      headers: userHeaders(),
+      data: { body: longAttack, turnstileToken: "1x00000000000000000000AA" },
+    });
+    expect(replyResponse.status(), await replyResponse.text()).toBe(201);
+
+    // `/v1/plugins/active` の応答に、静的検査を通らない危険な規則を差し込む
+    // （既に導入済み・旧検証をすり抜けた規則を再現する。API の検証経路は変えない）。
+    const manifestBase = {
+      name: "e2e-redos-worker",
+      version: "1.0.0",
+      summary: "Worker 実行の回帰検証",
+      scope: ["personal"],
+      permissions: [],
+      connectAllowlist: [],
+      entry: "plugin.js",
+      slots: [],
+      hooks: [],
+    };
+    const activeItems = [
+      {
+        installId: "e2e-spoiler",
+        pluginId: "e2e-spoiler",
+        name: "e2e-spoiler",
+        version: "1.0.0",
+        scope: "personal",
+        scopeRef: USER_SESSION,
+        stopped: false,
+        status: "published",
+        codeUrl: "",
+        pinned: false,
+        config: null,
+        manifest: { ...manifestBase, render: { post: [SPOILER_RULE] } },
+      },
+      {
+        installId: "e2e-redos-worker",
+        pluginId: "e2e-redos-worker",
+        name: "e2e-redos-worker",
+        version: "1.0.0",
+        scope: "personal",
+        scopeRef: USER_SESSION,
+        stopped: false,
+        status: "published",
+        codeUrl: "",
+        pinned: false,
+        config: null,
+        manifest: {
+          ...manifestBase,
+          render: {
+            post: [
+              { pattern: "(?:a|\\w)+x", flags: "g", template: "$1", kind: "text" },
+              { pattern: "(a+)+b", flags: "g", template: "$1", kind: "text" },
+            ],
+          },
+        },
+      },
+    ];
+    await page.route("**/api/v1/plugins/active*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, data: { items: activeItems } }),
+      });
+    });
+
+    // 静的判定の無効化は開発ビルド + localStorage のフラグでのみ有効（本番では無視される）。
+    // 併せて rAF のフレーム間隔を記録し、メインスレッドが止まっていないことを測る。
+    await page.addInitScript(() => {
+      window.localStorage.setItem("oc.e2e.disable-regex-static", "1");
+      const probe = { maxGap: 0, frames: 0 };
+      Reflect.set(window, "__ocFrameProbe", probe);
+      let last = performance.now();
+      const tick = (): void => {
+        const current = performance.now();
+        const gap = current - last;
+        if (gap > probe.maxGap) probe.maxGap = gap;
+        probe.frames += 1;
+        last = current;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+
+    const startedAt = Date.now();
+    await page.goto(`/b/${encodeURIComponent(slug)}/t/${threadId}`);
+    await expect(page.locator("#p1")).toBeVisible({ timeout: 15_000 });
+    // 未対策なら 1 レス目の exec だけで数秒、2 レス目は実質停止する。15 秒以内に描画されれば
+    // メインスレッドはブロックされていない。
+    expect(Date.now() - startedAt).toBeLessThan(15_000);
+
+    // 危険な規則は Worker 内で時間切れになり、その規則だけが無効化される。
+    // 同じ規則集合にある公式サンプル（spoiler）は従来どおり変換される。
+    const spoiler = page.locator("#p1 .oc-plugin-render-spoiler").first();
+    await expect(spoiler).toContainText("秘密", { timeout: 15_000 });
+    await expect(page.locator("#p1 .oc-plugin-render-text")).toHaveCount(0);
+    await expect(page.locator("#p1 .oc-post-main")).toContainText("a".repeat(28));
+
+    // 開発ビルド専用の観測カウンタで、危険な規則が実際に Worker へ渡り、
+    // 時間切れで terminate されたこと（= 静的判定の無効化が効いていること）を確認する。
+    const workerStats = await page.evaluate(() => {
+      const value: unknown = Reflect.get(window, "__ocRenderWorkerStats");
+      if (!value || typeof value !== "object") return { requests: 0, ruleTimeouts: 0 };
+      const requests = Reflect.get(value, "requests");
+      const ruleTimeouts = Reflect.get(value, "ruleTimeouts");
+      return {
+        requests: typeof requests === "number" ? requests : 0,
+        ruleTimeouts: typeof ruleTimeouts === "number" ? ruleTimeouts : 0,
+      };
+    });
+    expect(workerStats.requests).toBeGreaterThan(0);
+    expect(workerStats.ruleTimeouts).toBeGreaterThanOrEqual(2);
+
+    const probe = await page.evaluate(() => {
+      const value: unknown = Reflect.get(window, "__ocFrameProbe");
+      if (!value || typeof value !== "object") return { maxGap: Number.POSITIVE_INFINITY, frames: 0 };
+      const maxGap = Reflect.get(value, "maxGap");
+      const frames = Reflect.get(value, "frames");
+      return {
+        maxGap: typeof maxGap === "number" ? maxGap : Number.POSITIVE_INFINITY,
+        frames: typeof frames === "number" ? frames : 0,
+      };
+    });
+    expect(probe.frames).toBeGreaterThan(10);
+    expect(probe.maxGap).toBeLessThan(1_500);
+
+    // クリックも即座に反応する（安価プレビューの開閉）。
+    await page.locator("#p1 .oc-anchor").first().click();
+    const popup = page.getByRole("dialog", { name: "安価のプレビュー" });
+    await expect(popup).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(popup).toBeHidden();
+  });
+
   test("危険な正規表現を含むレンダー規則は作成時に拒否される", async ({ request }) => {
     // (a+)+b に加え、第2回 M-2 の「可変長を含む並びの繰り返し」と、
     // 第3回 M-3 の「繰り返すグループ本体の lookaround」も拒否する。
@@ -174,6 +341,12 @@ test.describe("プラグインのレンダー規則と本文描画", () => {
       "((?=a+)a)+x",
       "((?=\\w+)\\w)+x",
       "((?=(a+))a)+x",
+      "(?:a|\\w)+x",
+      "(a|\\w)+x",
+      "(?:a|[ab])+x",
+      "(?:[ab]|a)+x",
+      "(?:\\d|1)+x",
+      "(?:a|[a-z])+x",
     ]) {
       const name = unique("redos").toLowerCase();
       const response = await request.post(`${API_BASE}/v1/plugins`, {

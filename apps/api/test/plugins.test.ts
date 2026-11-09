@@ -888,6 +888,12 @@ describe("レンダー規則の ReDoS 対策（報告書 24 M-1）", () => {
       "((?=a+)a)+x",
       "((?=\\w+)\\w)+x",
       "((?=(a+))a)+x",
+      "(?:a|\\w)+x",
+      "(a|\\w)+x",
+      "(?:a|[ab])+x",
+      "(?:[ab]|a)+x",
+      "(?:\\d|1)+x",
+      "(?:a|[a-z])+x",
     ]) {
       const result = await call("/v1/plugins", {
         method: "POST",

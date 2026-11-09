@@ -129,7 +129,7 @@ export const pluginPostRenderRuleSchema = z.object({
 }).superRefine((rule, ctx) => {
   // ReDoS 対策: 入れ子の量指定子・重なる選択肢の繰り返し・後方参照・過大な長さ/回数を拒否する。
   // 判定は shared の analyzeRegexPattern（API と web で同一実装）。
-  const safety = analyzeRegexPattern(rule.pattern);
+  const safety = analyzeRegexPattern(rule.pattern, rule.flags);
   if (!safety.safe) {
     ctx.addIssue({
       code: "custom",

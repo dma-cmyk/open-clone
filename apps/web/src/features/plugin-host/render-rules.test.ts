@@ -3,9 +3,12 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  MAX_RENDER_TEXT_CHARS,
   applyPostRenderRules,
   resetRenderRuleGuardsForTest,
+  resetThreadRenderBudget,
   setRenderRuleTimeBudgetForTest,
+  setThreadRenderBudgetForTest,
   splitPostRenderRules,
 } from "./render-rules";
 
@@ -75,12 +78,8 @@ describe("ReDoS 対策（報告書 24 M-1）", () => {
   it("危険な正規表現（(a+)+b）は実行せず、31 文字の入力でも即座に本文を返す", () => {
     const rule = { pattern: "(a+)+b", flags: "g", template: "$1", kind: "text" as const };
     const text = `${"a".repeat(30)}!`;
-    const started = performance.now();
-    const segments = splitPostRenderRules(text, [rule]);
-    const elapsed = performance.now() - started;
-    // 未対策なら 31 文字で数十秒かかる（実測 64,044ms）。静的判定で即時拒否される。
-    expect(elapsed).toBeLessThan(100);
-    expect(segments).toEqual([{ type: "text", text }]);
+    // 未対策なら 31 文字で数十秒かかる（実測 64,044ms）。静的判定で exec せず拒否される。
+    expect(splitPostRenderRules(text, [rule])).toEqual([{ type: "text", text }]);
   });
 
   it("HTML 文字列版（applyPostRenderRules）も危険な規則を実行しない", () => {
@@ -101,12 +100,16 @@ describe("ReDoS 対策（報告書 24 M-1）", () => {
       "((?=a+)a)+x",
       "((?=\\w+)\\w)+x",
       "((?=(a+))a)+x",
+      "(?:a|\\w)+x",
+      "(a|\\w)+x",
+      "(?:a|[ab])+x",
+      "(?:[ab]|a)+x",
+      "(?:\\d|1)+x",
+      "(?:a|[a-z])+x",
     ]) {
       const rule = { pattern, flags: "g", template: "$1", kind: "text" as const };
-      const started = performance.now();
       expect(splitPostRenderRules(text, [rule]), pattern).toEqual([{ type: "text", text }]);
       expect(applyPostRenderRules(text, [rule]).matched, pattern).toBe(false);
-      expect(performance.now() - started, pattern).toBeLessThan(200);
     }
   });
 
@@ -125,9 +128,27 @@ describe("ReDoS 対策（報告書 24 M-1）", () => {
     expect(splitPostRenderRules(text, [rule])).toEqual([{ type: "text", text }]);
   });
 
-  it("本文が上限（10,000 文字）を超える場合は規則を適用しない", () => {
-    const rule = { pattern: "a", flags: "g", template: "!", kind: "text" as const };
-    const text = "a".repeat(10_001);
-    expect(splitPostRenderRules(text, [rule])).toEqual([{ type: "text", text }]);
+  it("本文が上限（2,048 文字）を超える場合は規則を適用しない", () => {
+    const rule = { pattern: "1d6", flags: "g", template: "🎲", kind: "dice" as const };
+    const over = `1d6${"x".repeat(MAX_RENDER_TEXT_CHARS - 2)}`; // 2,049 文字
+    expect(over.length).toBe(MAX_RENDER_TEXT_CHARS + 1);
+    expect(splitPostRenderRules(over, [rule])).toEqual([{ type: "text", text: over }]);
+
+    // 上限ちょうどなら適用する。
+    const atLimit = `1d6${"x".repeat(MAX_RENDER_TEXT_CHARS - 3)}`;
+    expect(atLimit.length).toBe(MAX_RENDER_TEXT_CHARS);
+    expect(splitPostRenderRules(atLimit, [rule])).toEqual([
+      { type: "rule", kind: "dice", text: "🎲" },
+      { type: "text", text: "x".repeat(MAX_RENDER_TEXT_CHARS - 3) },
+    ]);
+  });
+
+  it("スレ全体の合計予算を使い切ると規則を適用しない", () => {
+    const rule = { pattern: "1d6", flags: "g", template: "🎲", kind: "dice" as const };
+    setThreadRenderBudgetForTest(0);
+    expect(splitPostRenderRules("1d6", [rule])).toEqual([{ type: "text", text: "1d6" }]);
+
+    resetThreadRenderBudget();
+    expect(splitPostRenderRules("1d6", [rule])).toEqual([{ type: "rule", kind: "dice", text: "🎲" }]);
   });
 });

@@ -274,7 +274,10 @@ function findForbiddenInRepeatedBody(node: Node): string | null {
   }
 }
 
-/** 先頭 1 文字の集合。判定できない場合は any（何とでも重なり得る）。 */
+/**
+ * 先頭 1 文字の集合。`chars` は ASCII の代表文字（Universe）で判定し、
+ * `any` は「Universe 外の文字にも一致し得る」ことを表す（交差判定では保守的に扱う）。
+ */
 interface FirstChars {
   any: boolean;
   chars: Set<string>;
@@ -284,83 +287,106 @@ const DIGIT_CHARS = "0123456789";
 const WORD_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
 const SPACE_CHARS = " \t\n\r\f\v";
 
+/** 交差判定に使う代表文字（ASCII の印字可能文字 + 空白）。 */
+const UNIVERSE = new Set<string>([
+  ...Array.from({ length: 95 }, (_, index) => String.fromCharCode(32 + index)),
+  "\t",
+  "\n",
+  "\r",
+  "\f",
+  "\v",
+]);
+
 function anyFirstChars(): FirstChars {
-  return { any: true, chars: new Set() };
+  return { any: true, chars: new Set(UNIVERSE) };
 }
 
 function onlyChars(chars: Iterable<string>): FirstChars {
   return { any: false, chars: new Set(chars) };
 }
 
-function unionInto(target: Set<string>, source: ReadonlySet<string>): void {
-  for (const char of source) target.add(char);
+/** 補集合（`\D`・`\W`・`\S`・否定クラス）。Universe 外にも一致し得るので any=true。 */
+function complementChars(chars: ReadonlySet<string>): FirstChars {
+  const result = new Set<string>();
+  for (const char of UNIVERSE) {
+    if (!chars.has(char)) result.add(char);
+  }
+  return { any: true, chars: result };
 }
 
-/** 文字クラス `[...]` の先頭 1 文字集合を保守的に求める（判定不能なら any）。 */
+function unionFirstChars(left: FirstChars, right: FirstChars): FirstChars {
+  const chars = new Set(left.chars);
+  for (const char of right.chars) chars.add(char);
+  return { any: left.any || right.any, chars };
+}
+
+function shorthandFirstChars(shorthand: string): FirstChars {
+  if (shorthand === "d") return onlyChars(DIGIT_CHARS);
+  if (shorthand === "w") return onlyChars(WORD_CHARS);
+  if (shorthand === "s") return onlyChars(SPACE_CHARS);
+  if (shorthand === "D") return complementChars(new Set(DIGIT_CHARS));
+  if (shorthand === "W") return complementChars(new Set(WORD_CHARS));
+  if (shorthand === "S") return complementChars(new Set(SPACE_CHARS));
+  return anyFirstChars();
+}
+
+/** 文字クラス `[...]` の先頭 1 文字集合を求める（判定不能なら any）。 */
 function parseClassFirstChars(raw: string): FirstChars {
-  if (raw.startsWith("[^")) return anyFirstChars();
-  const inner = raw.slice(1, raw.endsWith("]") ? -1 : undefined);
-  const chars = new Set<string>();
+  const negated = raw.startsWith("[^");
+  const inner = raw.slice(negated ? 2 : 1, raw.endsWith("]") ? -1 : undefined);
+  let result = onlyChars([]);
+  let unknown = false;
   let index = 0;
+
+  const addChars = (chars: Iterable<string>): void => {
+    result = unionFirstChars(result, onlyChars(chars));
+  };
+
   while (index < inner.length) {
     const char = inner[index]!;
     if (char === "\\") {
       const next = inner[index + 1];
       if (next === undefined) return anyFirstChars();
-      if (next === "d") {
-        unionInto(chars, new Set(DIGIT_CHARS));
+      if (next === "d" || next === "w" || next === "s") {
+        addChars(shorthandFirstChars(next).chars);
         index += 2;
         continue;
       }
-      if (next === "w") {
-        unionInto(chars, new Set(WORD_CHARS));
-        index += 2;
-        continue;
-      }
-      if (next === "s") {
-        unionInto(chars, new Set(SPACE_CHARS));
+      if (next === "D" || next === "W" || next === "S") {
+        result = unionFirstChars(result, shorthandFirstChars(next));
         index += 2;
         continue;
       }
       if (next === "t") {
-        chars.add("\t");
+        addChars(["\t"]);
         index += 2;
         continue;
       }
       if (next === "n") {
-        chars.add("\n");
+        addChars(["\n"]);
         index += 2;
         continue;
       }
       if (next === "r") {
-        chars.add("\r");
+        addChars(["\r"]);
         index += 2;
         continue;
       }
       if (next === "f") {
-        chars.add("\f");
+        addChars(["\f"]);
         index += 2;
         continue;
       }
       if (next === "v") {
-        chars.add("\v");
+        addChars(["\v"]);
         index += 2;
         continue;
       }
-      if (
-        next === "D" ||
-        next === "W" ||
-        next === "S" ||
-        next === "b" ||
-        next === "x" ||
-        next === "u" ||
-        next === "p" ||
-        next === "P" ||
-        next === "0"
-      ) {
-        return anyFirstChars();
+      if (next === "b" || next === "x" || next === "u" || next === "p" || next === "P" || next === "0") {
+        unknown = true;
+        break;
       }
-      chars.add(next);
+      addChars([next]);
       index += 2;
       continue;
     }
@@ -370,16 +396,23 @@ function parseClassFirstChars(raw: string): FirstChars {
     if (next === "-" && rangeEnd !== undefined && rangeEnd !== "]") {
       const startCode = char.codePointAt(0)!;
       const endCode = rangeEnd.codePointAt(0)!;
-      if (endCode < startCode || endCode - startCode > 128) return anyFirstChars();
-      for (let code = startCode; code <= endCode; code += 1) chars.add(String.fromCodePoint(code));
+      if (endCode < startCode || endCode - startCode > 128) {
+        unknown = true;
+        break;
+      }
+      const range: string[] = [];
+      for (let code = startCode; code <= endCode; code += 1) range.push(String.fromCodePoint(code));
+      addChars(range);
       index += 3;
       continue;
     }
 
-    chars.add(char);
+    addChars([char]);
     index += 1;
   }
-  return onlyChars(chars);
+
+  if (unknown) return anyFirstChars();
+  return negated ? complementChars(result.chars) : result;
 }
 
 /** ノードが最初に消費し得る 1 文字の集合。 */
@@ -392,13 +425,8 @@ function firstCharsOf(node: Node): FirstChars {
         case "backref":
         case "dot":
           return anyFirstChars();
-        case "shorthand": {
-          const shorthand = node.value[1];
-          if (shorthand === "d") return onlyChars(DIGIT_CHARS);
-          if (shorthand === "w") return onlyChars(WORD_CHARS);
-          if (shorthand === "s") return onlyChars(SPACE_CHARS);
-          return anyFirstChars();
-        }
+        case "shorthand":
+          return shorthandFirstChars(node.value[1] ?? "");
         case "class":
           return parseClassFirstChars(node.value);
         case "literal":
@@ -407,34 +435,45 @@ function firstCharsOf(node: Node): FirstChars {
     case "group":
       return firstCharsOf(node.body);
     case "alt": {
-      const chars = new Set<string>();
-      let any = false;
-      for (const option of node.options) {
-        const part = firstCharsOf(option);
-        if (part.any) any = true;
-        else unionInto(chars, part.chars);
-      }
-      return any ? anyFirstChars() : onlyChars(chars);
+      let result = onlyChars([]);
+      for (const option of node.options) result = unionFirstChars(result, firstCharsOf(option));
+      return result;
     }
     case "seq": {
-      const chars = new Set<string>();
-      let any = false;
+      let result = onlyChars([]);
       for (const item of node.items) {
         if (isZeroWidth(item)) continue;
-        const part = firstCharsOf(item);
-        if (part.any) any = true;
-        else unionInto(chars, part.chars);
+        result = unionFirstChars(result, firstCharsOf(item));
         if (!nullable(item)) break;
       }
-      return any ? anyFirstChars() : onlyChars(chars);
+      return result;
     }
   }
 }
 
-function firstCharsOverlap(left: FirstChars, right: FirstChars): boolean {
-  if (left.any || right.any) return true;
+/**
+ * 2 つの先頭文字集合が交差するか。`ignoreCase`（`i` フラグ）のときは大文字小文字を
+ * 同一視する（`a` と `A` が重なる）。
+ */
+function firstCharsOverlap(left: FirstChars, right: FirstChars, ignoreCase = false): boolean {
+  const hasOutside = (chars: ReadonlySet<string>): boolean => {
+    for (const char of chars) {
+      if (!UNIVERSE.has(char)) return true;
+    }
+    return false;
+  };
+
+  if (left.any && right.any) return true;
+  // any 側は Universe 外の全文字に一致し得る。相手が Universe 外の文字を持つなら交差する。
+  if (left.any && hasOutside(right.chars)) return true;
+  if (right.any && hasOutside(left.chars)) return true;
   for (const char of left.chars) {
     if (right.chars.has(char)) return true;
+    if (ignoreCase) {
+      const lower = char.toLowerCase();
+      const upper = char.toUpperCase();
+      if (right.chars.has(lower) || right.chars.has(upper)) return true;
+    }
   }
   return false;
 }
@@ -464,7 +503,7 @@ function canVaryLength(node: Node): boolean {
  * 例: `\w+[a-z]+`・`a+a+`・`.*\s*` は曖昧。`\d+\.\d+`・`\w+\s+\w+` は
  * 間に「どちらとも重ならない」要素があるため境界が決まる（許可）。
  */
-function hasAmbiguousVariableSequence(items: readonly Node[]): boolean {
+function hasAmbiguousVariableSequence(items: readonly Node[], ignoreCase = false): boolean {
   const consuming = items.filter((item) => !isZeroWidth(item));
   const variables: { index: number; first: FirstChars }[] = [];
   consuming.forEach((item, index) => {
@@ -475,13 +514,16 @@ function hasAmbiguousVariableSequence(items: readonly Node[]): boolean {
     for (let j = i + 1; j < variables.length; j += 1) {
       const left = variables[i]!;
       const right = variables[j]!;
-      if (!firstCharsOverlap(left.first, right.first)) continue;
+      if (!firstCharsOverlap(left.first, right.first, ignoreCase)) continue;
       let separated = false;
       for (let k = left.index + 1; k < right.index; k += 1) {
         const between = consuming[k]!;
         if (nullable(between)) continue;
         const first = firstCharsOf(between);
-        if (!firstCharsOverlap(first, left.first) && !firstCharsOverlap(first, right.first)) {
+        if (
+          !firstCharsOverlap(first, left.first, ignoreCase) &&
+          !firstCharsOverlap(first, right.first, ignoreCase)
+        ) {
           separated = true;
           break;
         }
@@ -490,15 +532,6 @@ function hasAmbiguousVariableSequence(items: readonly Node[]): boolean {
     }
   }
   return false;
-}
-
-/** 量指定子の無い透過的なグループ・1 要素の並びを剥がして実体を見る。 */
-function unwrapTransparent(node: Node): Node {
-  if (node.type === "seq" && node.items.length === 1) return unwrapTransparent(node.items[0]!);
-  if (node.type === "group" && node.quantifier === null && node.kind !== "lookaround") {
-    return unwrapTransparent(node.body);
-  }
-  return node;
 }
 
 /** 本体に固定回数以外の量指定子があれば理由を返す（lookaround 用）。 */
@@ -526,71 +559,35 @@ function findVariableQuantifier(node: Node): string | null {
   }
 }
 
-/** 選択肢の先頭から決定的に読めるトークン列（判定できない部分は null）。 */
-function prefixTokens(node: Node): string[] | null {
-  switch (node.type) {
-    case "atom": {
-      if (node.atom === "anchor") return [];
-      if (node.atom === "backref") return null;
-      return [atomToken(node)];
-    }
-    case "group": {
-      if (node.kind === "lookaround") return [];
-      return prefixTokens(node.body);
-    }
-    case "alt":
-      return null;
-    case "seq": {
-      const tokens: string[] = [];
-      for (const item of node.items) {
-        const part = prefixTokens(item);
-        if (part === null) return tokens.length > 0 ? tokens : null;
-        tokens.push(...part);
-        if (item.type === "atom" && isVariable(item.quantifier)) break;
-        if (item.type === "group" && isVariable(item.quantifier)) break;
-      }
-      return tokens;
-    }
-  }
-}
-
-function atomToken(node: Extract<Node, { type: "atom" }>): string {
-  switch (node.atom) {
-    case "literal":
-      return `l:${node.value}`;
-    case "shorthand":
-      return `s:${node.value}`;
-    case "class":
-      return `c:${node.value}`;
-    case "dot":
-      return "d:.";
-    default:
-      return "z:";
-  }
-}
-
-/** 量指定子付きの繰り返しグループで、選択肢が重なる（同じ文字列を複数の経路で受理できる）か。 */
-function overlappingAlternation(options: readonly Node[]): boolean {
-  if (options.length < 2) return false;
-  const sigs = options.map(prefixTokens);
-  for (let i = 0; i < sigs.length; i += 1) {
-    const left = sigs[i];
-    if (!left) continue;
-    for (let j = i + 1; j < sigs.length; j += 1) {
-      const right = sigs[j];
-      if (!right) continue;
-      if (left.length === 0 || right.length === 0) return true; // 空に一致する選択肢
-      if (left.join("\u0000") === right.join("\u0000")) return true;
-      const shorter = left.length <= right.length ? left : right;
-      const longer = left.length <= right.length ? right : left;
-      if (shorter.every((token, index) => token === longer[index])) return true;
-      const leftKind = left[0]!.slice(0, 2);
-      const rightKind = right[0]!.slice(0, 2);
-      if (leftKind === "d:" || rightKind === "d:") return true;
-      if ((leftKind === "c:" || leftKind === "s:") && (rightKind === "c:" || rightKind === "s:")) return true;
+/**
+ * 選択肢の先頭に来うる文字集合が交差するか（報告書 24 第4回 M-4）。
+ * 1 組でも交差すれば「重なる選択肢」とみなす（安全側）。
+ */
+function overlappingAlternation(options: readonly Node[], ignoreCase = false): boolean {
+  const sets = options.map(firstCharsOf);
+  for (let i = 0; i < sets.length; i += 1) {
+    for (let j = i + 1; j < sets.length; j += 1) {
+      if (firstCharsOverlap(sets[i]!, sets[j]!, ignoreCase)) return true;
     }
   }
   return false;
+}
+
+/** 繰り返すグループの本体に、先頭文字集合が交差する選択肢 `|` があるか。 */
+function hasOverlappingAlternation(node: Node, ignoreCase = false): boolean {
+  switch (node.type) {
+    case "alt":
+      return (
+        overlappingAlternation(node.options, ignoreCase) ||
+        node.options.some((option) => hasOverlappingAlternation(option, ignoreCase))
+      );
+    case "seq":
+      return node.items.some((item) => hasOverlappingAlternation(item, ignoreCase));
+    case "group":
+      return hasOverlappingAlternation(node.body, ignoreCase);
+    case "atom":
+      return false;
+  }
 }
 
 function checkRepeatBound(quantifier: Quantifier | null): boolean {
@@ -600,22 +597,22 @@ function checkRepeatBound(quantifier: Quantifier | null): boolean {
   return true;
 }
 
-/** ノード木を検査し、危険な形があれば理由を返す。 */
-function checkNode(node: Node): string | null {
+/** ノード木を検査し、危険な形があれば理由を返す（`ignoreCase` は `i` フラグ）。 */
+function checkNode(node: Node, ignoreCase = false): string | null {
   switch (node.type) {
     case "seq": {
       for (const item of node.items) {
-        const reason = checkNode(item);
+        const reason = checkNode(item, ignoreCase);
         if (reason) return reason;
       }
-      if (hasAmbiguousVariableSequence(node.items)) {
+      if (hasAmbiguousVariableSequence(node.items, ignoreCase)) {
         return "可変長の量指定子の並びが曖昧です（例: \\w+[a-z]+）";
       }
       return null;
     }
     case "alt": {
       for (const option of node.options) {
-        const reason = checkNode(option);
+        const reason = checkNode(option, ignoreCase);
         if (reason) return reason;
       }
       return null;
@@ -639,12 +636,11 @@ function checkNode(node: Node): string | null {
         if (nullable(node.body)) {
           return "空文字に一致し得るグループの繰り返し（例: (a*)+）は使用できません";
         }
-        const body = unwrapTransparent(node.body);
-        if (body.type === "alt" && overlappingAlternation(body.options)) {
+        if (hasOverlappingAlternation(node.body, ignoreCase)) {
           return "重なる選択肢の繰り返し（例: (a|aa)+）は使用できません";
         }
       }
-      return checkNode(node.body);
+      return checkNode(node.body, ignoreCase);
     }
   }
 }
@@ -654,7 +650,7 @@ function checkNode(node: Node): string | null {
  * 安全側（疑わしきは拒否）に倒す。公式サンプル（spoiler の
  * `\[spoiler\]([\s\S]*?)\[/spoiler\]` 等）は通る。
  */
-export function analyzeRegexPattern(pattern: string): RegexSafetyResult {
+export function analyzeRegexPattern(pattern: string, flags = ""): RegexSafetyResult {
   if (typeof pattern !== "string" || pattern.length === 0) {
     return { safe: false, reason: "正規表現が空です" };
   }
@@ -669,6 +665,6 @@ export function analyzeRegexPattern(pattern: string): RegexSafetyResult {
     return { safe: false, reason: "正規表現を解析できませんでした（括弧の対応などを見直してください）" };
   }
 
-  const reason = checkNode(ast);
+  const reason = checkNode(ast, flags.includes("i"));
   return reason ? { safe: false, reason } : { safe: true };
 }

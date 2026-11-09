@@ -5,17 +5,33 @@
 import { analyzeRegexPattern, type PluginPostRenderRule } from "shared";
 
 /**
- * ReDoS 対策の実行時上限（M-1）。静的判定（`analyzeRegexPattern`）をすり抜けた規則でも
+ * ReDoS 対策の実行時上限（M-1 / M-4）。静的判定（`analyzeRegexPattern`）をすり抜けた規則でも
  * 1 規則あたりのマッチ数と経過時間を制限し、超えた規則はそのページ以降無効化する。
- * 単一の `exec` が長時間ブロックする形は静的判定で拒否する（実行前に判定するため
- * 判定自体がメインスレッドを止めない）。
+ * スレ画面ではこのモジュールを Worker 内で実行する（render-worker.ts）。単一の `exec` が
+ * 長時間ブロックする形は、メインスレッドが Worker を terminate() することで止める。
  */
-const MAX_RENDER_RULES = 20;
+export const MAX_RENDER_RULES = 20;
 const MAX_MATCHES_PER_RULE = 500;
-const MAX_RENDER_TEXT_CHARS = 10_000;
+
+/**
+ * 規則を適用する本文の上限（UTF-16 長）。2 乗の最悪ケースでも 1 レスあたり数十ms に
+ * 収めるための値。実測（CI 相当の遅いマシンで約 4.5 倍）:
+ *   `\w((?:a|b)){2,}b` は 2,048 文字で約 35ms、3,000 文字で約 77ms、4,096 文字で約 145ms。
+ * 超えた本文は規則を適用せず通常表示する。
+ */
+export const MAX_RENDER_TEXT_CHARS = 2_048;
+
+/**
+ * 1 スレッド表示全体で規則適用に使ってよい合計時間。投稿ごとの上限だけでは
+ * 長いスレで積み上がるため、スレ表示側（thread-view）が `resetThreadRenderBudget` を
+ * 呼んでリセットする。使い切ったら以降のレスは通常表示する。
+ */
+export const MAX_THREAD_RENDER_BUDGET_MS = 150;
+
 const DEFAULT_RULE_TIME_BUDGET_MS = 50;
 
 let ruleTimeBudgetMs = DEFAULT_RULE_TIME_BUDGET_MS;
+let threadRenderBudgetMs = MAX_THREAD_RENDER_BUDGET_MS;
 const disabledRuleKeys = new Set<string>();
 
 /** `String.replace` のコールバックから規則の中断を伝える内部センチネル。 */
@@ -30,10 +46,21 @@ export function setRenderRuleTimeBudgetForTest(ms: number): void {
   ruleTimeBudgetMs = ms;
 }
 
+/** スレ表示を開始するときに、スレ全体の合計予算をリセットする。 */
+export function resetThreadRenderBudget(): void {
+  threadRenderBudgetMs = MAX_THREAD_RENDER_BUDGET_MS;
+}
+
+/** テスト専用: スレ全体の合計予算を差し替える。 */
+export function setThreadRenderBudgetForTest(ms: number): void {
+  threadRenderBudgetMs = ms;
+}
+
 /** テスト専用: 無効化した規則の記憶と上限を初期化する。 */
 export function resetRenderRuleGuardsForTest(): void {
   disabledRuleKeys.clear();
   ruleTimeBudgetMs = DEFAULT_RULE_TIME_BUDGET_MS;
+  threadRenderBudgetMs = MAX_THREAD_RENDER_BUDGET_MS;
 }
 
 export interface PostRenderResult {
@@ -90,10 +117,10 @@ function renderTemplate(template: string, captures: readonly string[]): string {
  * 規則の正規表現を global 付きでコンパイルする（不正・危険・無効化済みなら null）。
  * `analyzeRegexPattern` はブラウザのメインスレッドで exec を回す前に ReDoS 形を拒否する。
  */
-function compileRule(rule: PluginPostRenderRule): RegExp | null {
+function compileRule(rule: PluginPostRenderRule, disableSafety = false): RegExp | null {
   const key = ruleKey(rule);
-  if (disabledRuleKeys.has(key)) return null;
-  if (!analyzeRegexPattern(rule.pattern).safe) {
+  if (!disableSafety && disabledRuleKeys.has(key)) return null;
+  if (!disableSafety && !analyzeRegexPattern(rule.pattern, rule.flags ?? "").safe) {
     disabledRuleKeys.add(key);
     return null;
   }
@@ -110,11 +137,16 @@ interface RuleRuntime {
   matches: number;
   /** 時間・マッチ数の上限に達した（規則を丸ごと諦める）。 */
   aborted: boolean;
+  /** この規則に使ってよい時間（1 規則の上限とスレ全体の残り予算の小さい方）。 */
+  limitMs: number;
+}
+
+function currentTimeMs(): number {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
 
 function overBudget(runtime: RuleRuntime): boolean {
-  const nowMs = typeof performance !== "undefined" ? performance.now() : Date.now();
-  return runtime.matches > MAX_MATCHES_PER_RULE || nowMs - runtime.started > ruleTimeBudgetMs;
+  return runtime.matches > MAX_MATCHES_PER_RULE || currentTimeMs() - runtime.started > runtime.limitMs;
 }
 
 /** レス本文の断片。`rule` はプラグインの変換規則が適用された範囲。 */
@@ -130,39 +162,74 @@ export type PostRenderSegment =
  * `rule.text` も**文字列**であり HTML ではない。React のテキストノードとして描画すれば
  * 悪意あるテンプレート・キャプチャもエスケープされる（XSS にならない）。
  */
+export interface SplitRenderOptions {
+  /** テスト専用: 静的判定を無効化し、実行時の時間制限だけを検証する。 */
+  disableSafety?: boolean;
+  /**
+   * スレ全体の合計予算をこの呼び出しでは消費/参照しない。Worker 側はメインスレッドと
+   * モジュール状態が別なので、Worker 実行では呼び出し側（render-worker-client）が
+   * 予算を管理し、ここでは無効にする。
+   */
+  skipThreadBudget?: boolean;
+}
+
+/**
+ * すでに分割済みの断片列に 1 規則を適用する（Worker が規則ごとに進捗を返すために使う）。
+ * 上限超過で中断した場合は**元の断片列**をそのまま返し、その規則を無効化する。
+ */
+export function applyRuleToSegments(
+  segments: PostRenderSegment[],
+  rule: PluginPostRenderRule,
+  options: SplitRenderOptions = {},
+  limitMs = ruleTimeBudgetMs,
+): PostRenderSegment[] {
+  const regex = compileRule(rule, options.disableSafety);
+  if (!regex) return segments;
+  const kind = rule.kind ?? "text";
+  const runtime: RuleRuntime = {
+    started: currentTimeMs(),
+    matches: 0,
+    aborted: false,
+    limitMs,
+  };
+  const next: PostRenderSegment[] = [];
+  for (const segment of segments) {
+    if (segment.type === "rule") {
+      next.push(segment);
+      continue;
+    }
+    next.push(...splitRuleMatches(segment.text, regex, kind, rule.template, runtime));
+    if (runtime.aborted) break;
+  }
+  if (runtime.aborted) {
+    // 途中までの結果は使わず、この規則を無効化する（以降のレスでも実行しない）。
+    disabledRuleKeys.add(ruleKey(rule));
+    return segments;
+  }
+  return next;
+}
+
 export function splitPostRenderRules(
   text: string,
   rules: readonly PluginPostRenderRule[] = [],
+  options: SplitRenderOptions = {},
 ): PostRenderSegment[] {
   // 本文が上限を超える場合は規則を適用しない（防御の最終段。通常の投稿上限は 4096 バイト）。
   if (text.length > MAX_RENDER_TEXT_CHARS) return [{ type: "text", text }];
+  // スレ全体の予算を使い切ったら、以降のレスは通常表示する。
+  const trackThreadBudget = !options.skipThreadBudget;
+  if (trackThreadBudget && threadRenderBudgetMs <= 0) return [{ type: "text", text }];
 
   let segments: PostRenderSegment[] = [{ type: "text", text }];
 
   for (const rule of rules.slice(0, MAX_RENDER_RULES)) {
-    const regex = compileRule(rule);
-    if (!regex) continue;
-    const kind = rule.kind ?? "text";
-    const runtime: RuleRuntime = {
-      started: typeof performance !== "undefined" ? performance.now() : Date.now(),
-      matches: 0,
-      aborted: false,
-    };
-    const next: PostRenderSegment[] = [];
-    for (const segment of segments) {
-      if (segment.type === "rule") {
-        next.push(segment);
-        continue;
-      }
-      next.push(...splitRuleMatches(segment.text, regex, kind, rule.template, runtime));
-      if (runtime.aborted) break;
-    }
-    if (runtime.aborted) {
-      // 途中までの結果は使わず、この規則を無効化する（以降のレスでも実行しない）。
-      disabledRuleKeys.add(ruleKey(rule));
-      continue;
-    }
-    segments = next;
+    if (trackThreadBudget && threadRenderBudgetMs <= 0) break;
+    const ruleStarted = currentTimeMs();
+    const limitMs = trackThreadBudget
+      ? Math.min(ruleTimeBudgetMs, threadRenderBudgetMs)
+      : ruleTimeBudgetMs;
+    segments = applyRuleToSegments(segments, rule, options, limitMs);
+    if (trackThreadBudget) threadRenderBudgetMs -= currentTimeMs() - ruleStarted;
   }
 
   return segments;
@@ -219,9 +286,10 @@ export function applyPostRenderRules(
     const regex = compileRule(rule);
     if (!regex) continue;
     const runtime: RuleRuntime = {
-      started: typeof performance !== "undefined" ? performance.now() : Date.now(),
+      started: currentTimeMs(),
       matches: 0,
       aborted: false,
+      limitMs: ruleTimeBudgetMs,
     };
     const before = html;
     let ruleMatched = false;

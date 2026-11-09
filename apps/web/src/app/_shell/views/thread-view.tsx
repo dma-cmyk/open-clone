@@ -19,6 +19,7 @@ import type { AttachmentRef, Post } from "@/features/board-ui/types";
 import { Button, Notice, Spinner, useToast } from "@/components/ui";
 import { PluginSlot } from "@/components/plugin-slot";
 import { PluginRenderStyles, usePluginPostRenderRules } from "@/features/plugin-host";
+import { resetThreadRenderBudget } from "@/features/plugin-host/render-worker-client";
 import { Link, navigate, useLocation } from "../router";
 
 function statusLabel(status: LiveStatus): string {
@@ -49,6 +50,13 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   const range = useMemo(() => parseRange(rParam), [rParam]);
   const settings = settingsStore.use();
   const toast = useToast();
+
+  // スレ全体の規則適用予算はスレごとにリセットする（描画前に実行）。
+  const budgetThreadRef = useRef<number | null>(null);
+  if (budgetThreadRef.current !== threadId) {
+    budgetThreadRef.current = threadId;
+    resetThreadRenderBudget();
+  }
 
   const page = useApiData(
     () =>
