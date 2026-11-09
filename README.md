@@ -22,8 +22,10 @@
 
 - **掲示板本体**: 板・スレ・レス、ID（4文字）・トリップ（2ch互換10桁）・安価・sage/age・つぶやき・実況・NG・アク禁・投票・検索（FTS5 + LIKE）・ランキング・通報・専ブラ互換（`/compat/*`、Shift_JIS）
 - **ユーザー製プラグイン**: Web エディタで作成・プレビュー・公開・検索・インストール・更新。`sandbox="allow-scripts"` の iframe（不透明オリジン）+ postMessage RPC で隔離。GitHub 連携なしでもレジストリ内で完結
+- **テンプレートから作る**: ネタバレ伏せ・NG ワード表示置換・キーワード装飾・サイコロ・カウンタ・スレ情報・定型レスの 7 件から選び、フォームに入力するだけで作れる。正規表現もコードも書かなくてよい（[`docs/plugin-guide.md`](docs/plugin-guide.md)）
+- **自分の AI をつないで作る**: プラグイン作成専用の個人用トークン（`ocp_`）と MCP `/mcp-plugin` を用意。Claude Code など Bearer を設定できる MCP クライアントから、自分の AI に下書き作成・版追加・静的チェック・公開申請・個人導入をさせられる（ChatGPT は現在未対応）。どちらの経路で作ったプラグインも、同じ静的チェック・sandbox・審査を通る（[`docs/plugin-authoring.md`](docs/plugin-authoring.md)）
 - **GitHub 連携 / アップローダ**: GitHub OAuth（任意）、Gist / リポジトリへの保存、Catbox / Cloudinary / Gist / mock の交換可能アダプタ。**添付本体は Cloudflare に永続保存しない（R2 不使用）**
-- **外部 AI 自律運営**: REST `/v1/ai/*` と MCP `/mcp`（ステートレス Streamable HTTP）。リスク階層（low/medium/high/never）、承認キュー、緊急停止、監査ログ、プロンプトインジェクション対策
+- **外部 AI 自律運営**: REST `/v1/ai/*` と MCP `/mcp`・`/mcp/legacy`（ステートレス Streamable HTTP。Origin なし + `Authorization: Bearer` の外部 MCP クライアントからも接続可）。リスク階層（low/medium/high/never）、承認キュー、緊急停止、監査ログ、プロンプトインジェクション対策
 - **特別管理人**: owner が発行する一回限りの就任キー、TOTP（RFC 6238）必須、リカバリーコード、専用ダッシュボード。owner の最終権限とインフラ秘密情報は渡さない
 
 ### スクリーンショット
@@ -39,6 +41,12 @@
 ユーザー製プラグインのエディタ（サンプル読み込み＋sandbox プレビュー実行）、AI 運営ダッシュボード、お絵かきエディタ:
 
 ![プラグインエディタ。サンプル（サイコロ）を読み込み、sandbox でプレビュー実行している](docs/images/plugin-editor-pc.webp)
+
+テンプレートからの作成（ネタバレ伏せの入力フォームとプレビュー）と、自分の AI をつなぐための個人用トークン:
+
+![プラグインのテンプレート。ネタバレ伏せの入力フォームと、スレ表示と同じ経路のプレビュー](docs/images/plugin-templates-pc.webp)
+
+![プラグイン作成用の個人用トークン。Claude Code の接続手順と、prefix だけを表示する発行済み一覧](docs/images/plugin-tokens-pc.webp)
 
 ![AI 運営ダッシュボード。稼働状況・AI 管理者・承認キュー・Webhook を一画面に表示](docs/images/ai-dashboard-pc.webp)
 
@@ -68,7 +76,7 @@ open-clone/
 └─ docs/            要件・設計・API/MCP/プラグイン/運用ドキュメント
 ```
 
-- API: `/v1/*`（REST）、`/mcp`・`/mcp/legacy`（MCP）、`/compat/*`（専ブラ互換）、`/rt`（WebSocket）
+- API: `/v1/*`（REST）、`/mcp`・`/mcp/legacy`、`/mcp-plugin`・`/mcp-plugin/legacy`（MCP）、`/compat/*`（専ブラ互換）、`/rt`（WebSocket）
 - データ: D1 のみ（`apps/api/migrations/`）。Durable Objects は SQLite-backed（`RealtimeHub` / `RateLimiter` / `AiGate`）
 - フロントは静的エクスポート。開発時は `next.config.ts` の rewrites、本番は `apps/web/vercel.json` の rewrites で `/api/*` を Worker へ中継
 
@@ -198,6 +206,8 @@ actionlint .github/workflows/*.yml
 - 全 mutation で Origin 検証（CSRF）。CORS は許可リストのみ
 - パスワードは PBKDF2-SHA256 100k、TOTP は ±1 窓・5回失敗ロック
 - プラグインは不透明オリジンの iframe + 権限宣言 + ホストブリッジで強制
+- プラグインの静的チェックは意図の検出で、最終的な防御は sandbox（不透明オリジン + CSP + 権限宣言 + RPC）
+- テンプレートの NG ワード置換は表示だけを置き換える（投稿本文そのものは変更しない）
 - AI は REST/MCP 共通の政策エンジンを必ず通過。high は人間承認、never は常に 403
 - 秘密情報は Wrangler secrets / Vercel env のみ。CI で gitleaks
 
@@ -207,7 +217,8 @@ actionlint .github/workflows/*.yml
 |---|---|
 | [`docs/api.md`](docs/api.md) | REST API 仕様（zod スキーマから自動生成） |
 | [`docs/mcp.md`](docs/mcp.md) | MCP 接続方法・認証・ツール一覧・リスク階層 |
-| [`docs/plugin-guide.md`](docs/plugin-guide.md) | プラグイン開発ガイド（manifest / SDK / 権限 / 審査 / GitHub 配布） |
+| [`docs/plugin-guide.md`](docs/plugin-guide.md) | プラグイン開発ガイド（テンプレート / manifest / SDK / 権限 / 審査 / GitHub 配布） |
+| [`docs/plugin-authoring.md`](docs/plugin-authoring.md) | 自分の AI でプラグインを作る（個人用トークン・`/mcp-plugin`・接続手順） |
 | [`docs/special-admin.md`](docs/special-admin.md) | 特別管理人（専用ロール）の招待・就任手順 |
 | [`docs/operations.md`](docs/operations.md) | 運用（緊急停止・無料枠監視・障害対応） |
 | [`docs/deploy.md`](docs/deploy.md) | デプロイ手順・環境変数・ロールバック |
