@@ -11,11 +11,11 @@ import { Wp1ApiError, queryString, wp1Request } from "../../_wp1/api";
 
 type ReportAction = "reject" | "resolve" | "hide" | "delete";
 
-const ACTION_LABELS: Record<ReportAction, string> = {
-  reject: "却下",
-  resolve: "対応済み",
-  hide: "非表示",
-  delete: "削除",
+const ACTION_DONE_MESSAGES: Record<ReportAction, string> = {
+  reject: "却下しました",
+  resolve: "対応済みにしました",
+  hide: "非表示にしました",
+  delete: "削除しました",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -97,7 +97,7 @@ export default function AdminReportsPage() {
         method: "POST",
         body: JSON.stringify({ action, note }),
       });
-      toast.show(`${ACTION_LABELS[action]}しました`);
+      toast.show(ACTION_DONE_MESSAGES[action]);
       setSelected(null);
       await load();
     } catch (cause) {

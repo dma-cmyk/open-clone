@@ -22,6 +22,11 @@ import { PluginRenderStyles, usePluginPostRenderRules } from "@/features/plugin-
 import { resetThreadRenderBudget } from "@/features/plugin-host/render-worker-client";
 import { Link, navigate, useLocation } from "../router";
 
+const POST_REMOVAL_DONE_MESSAGES: Record<"hide" | "delete", string> = {
+  hide: "非表示にしました",
+  delete: "削除しました",
+};
+
 function statusLabel(status: LiveStatus): string {
   switch (status) {
     case "live":
@@ -268,7 +273,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
         await api.deletePost(post.id);
         setPosts((prev) => prev.filter((item) => item.id !== post.id));
       }
-      toast.show(`${label}しました`);
+      toast.show(POST_REMOVAL_DONE_MESSAGES[mode]);
     } catch (cause) {
       toast.show(cause instanceof Error ? cause.message : `${label}に失敗しました`);
     }

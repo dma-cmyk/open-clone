@@ -12,11 +12,11 @@ import { Link } from "../router";
 
 type ReportAction = "reject" | "resolve" | "hide" | "delete";
 
-const ACTION_LABELS: Record<ReportAction, string> = {
-  reject: "却下",
-  resolve: "対応済み",
-  hide: "非表示",
-  delete: "削除",
+const ACTION_DONE_MESSAGES: Record<ReportAction, string> = {
+  reject: "却下しました",
+  resolve: "対応済みにしました",
+  hide: "非表示にしました",
+  delete: "削除しました",
 };
 
 const ACTION_PROMPTS: Record<ReportAction, string> = {
@@ -39,7 +39,7 @@ export function ManageReports({ slug }: { slug: string }) {
     setError(null);
     try {
       await api.handleReport(id, action, note);
-      toast.show(`${ACTION_LABELS[action]}しました`);
+      toast.show(ACTION_DONE_MESSAGES[action]);
       reports.reload();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "処理に失敗しました");
