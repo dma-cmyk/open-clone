@@ -95,7 +95,7 @@ export default function AdminBoardsPage() {
                       <Link className="oc-btn oc-btn-sm" href={`/b/${board.slug}/manage/reports`}>
                         通報
                       </Link>
-                      <Link className="oc-btn oc-btn-sm" href={`/b/${board.slug}/plugins`}>
+                      <Link className="oc-btn oc-btn-sm" href={`/plugins/board/?slug=${encodeURIComponent(board.slug)}`}>
                         プラグイン
                       </Link>
                     </div>

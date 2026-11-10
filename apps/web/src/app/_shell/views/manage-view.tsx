@@ -103,7 +103,7 @@ export function ManageView({ slug, tab }: { slug: string; tab: string }) {
                 宣言した権限の範囲でのみ動作します。
               </Notice>
               <div className="oc-row">
-                <a className="oc-btn oc-btn-primary" href={`/b/${encodeURIComponent(slug)}/plugins`}>
+                <a className="oc-btn oc-btn-primary" href={`/plugins/board/?slug=${encodeURIComponent(slug)}`}>
                   板のプラグイン設定を開く
                 </a>
                 <a className="oc-btn" href="/plugins">

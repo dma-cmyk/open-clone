@@ -69,7 +69,11 @@ export default function BoardPluginsPage() {
         if (envelope.ok !== true || !envelope.data || typeof envelope.data !== "object") {
           throw new Error("板 API の応答が不正です");
         }
-        const data = envelope.data as { id?: unknown; slug?: unknown; name?: unknown };
+        // `/v1/boards/:slug` は `{ board, staff, canManage, ... }` を返す（板そのものは data.board）。
+        const envelopeData = envelope.data as { board?: unknown; id?: unknown; slug?: unknown; name?: unknown };
+        const data = (
+          envelopeData.board && typeof envelopeData.board === "object" ? envelopeData.board : envelopeData
+        ) as { id?: unknown; slug?: unknown; name?: unknown };
         if (typeof data.id !== "number") throw new Error("板 ID を取得できませんでした");
         if (!cancelled) {
           setBoard({
