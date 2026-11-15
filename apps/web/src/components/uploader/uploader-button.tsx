@@ -61,6 +61,12 @@ export interface UploaderButtonProps {
 
 interface FailureEntry extends UploadFailure {
   linkRequired?: boolean;
+  /** 同じファイルで再試行してよい失敗か（通信・保存先の一時的な拒否など）。 */
+  retryable?: boolean;
+  /** 保存先が返した HTTP ステータス（分かる場合）。 */
+  upstreamStatus?: number;
+  /** 再試行用に保持するファイル本体（ブラウザ内のみ。外部へは送らない）。 */
+  file?: File;
 }
 
 /** 送信前のローカル検証。サーバ側（`services/uploads/validation.ts`）が最終判定を持つ。 */
@@ -85,10 +91,24 @@ function describeError(cause: unknown): FailureEntry {
     if (cause.code === "GITHUB_LINK_REQUIRED" || cause.code === "LINK_REQUIRED") {
       return { name: "", message: cause.message, linkRequired: true };
     }
-    return { name: "", message: cause.message };
+    const details = (cause.details ?? {}) as { reason?: string; upstreamStatus?: number };
+    // 通信断・タイムアウト・保存先の一時的な拒否は、同じファイルでやり直せる。
+    const retryable =
+      details.reason === "upstream_blocked" ||
+      Boolean(details.upstreamStatus) ||
+      cause.code === "NETWORK" ||
+      cause.code === "TIMEOUT" ||
+      cause.code === "UPLOAD_FAILED" ||
+      cause.status === 0;
+    return {
+      name: "",
+      message: cause.message,
+      retryable,
+      upstreamStatus: details.upstreamStatus,
+    };
   }
-  if (cause instanceof Error) return { name: "", message: cause.message };
-  return { name: "", message: "アップロードに失敗しました" };
+  if (cause instanceof Error) return { name: "", message: cause.message, retryable: true };
+  return { name: "", message: "アップロードに失敗しました", retryable: true };
 }
 
 const PHASE_LABEL: Record<UploadingFile["phase"], string> = {
@@ -191,7 +211,7 @@ export const UploaderButton = forwardRef<UploaderButtonHandle, UploaderButtonPro
           uploaded.push(result);
         } catch (cause) {
           const entry = describeError(cause);
-          errors.push({ ...entry, name: file.name });
+          errors.push({ ...entry, name: file.name, file });
           setFailures([...errors]);
         } finally {
           // トークンは prepare で消費済み（失敗時も再取得させる）。
@@ -262,11 +282,38 @@ export const UploaderButton = forwardRef<UploaderButtonHandle, UploaderButtonPro
     if (files.length > 0) void uploadFiles(files);
   };
 
+  /** 失敗 1 件を表示から消す（「キャンセル」。ファイル本体も捨てるので再試行には出直しがいる）。 */
+  const clearFailure = (index: number) => {
+    setFailures((prev) => prev.filter((_, position) => position !== index));
+  };
+
   const defaultLabel = uploading ? `${PHASE_LABEL[uploading.phase]}…` : label ?? "画像/ファイル";
+
+  // 保存先セレクトは通常はボタン行に出す。狭幅の投稿フォーム（compact）では場所を取るため、
+  // 失敗したときにエラー行の中へ出す（利用者がその場で別の保存先へ切り替えられるように）。
+  const adapterSelect = forcedAdapter ? null : (
+    <select
+      className="oc-select oc-upload-adapter"
+      aria-label="保存先"
+      value={selected}
+      disabled={disabled || busy || adapters === null}
+      onChange={(event) => changeAdapter(event.target.value)}
+      title="ファイルの保存先を選択します（ファイル本体はこのサイトに保存されません）"
+    >
+      <option value="">自動（既定: {adapters?.defaultAdapter ?? "catbox"}）</option>
+      {(adapters?.items ?? []).map((item) => (
+        <option key={item.id} value={item.id} disabled={!item.available} title={item.reason ?? item.label}>
+          {item.label}
+          {item.available ? "" : "（利用不可）"}
+          {item.retentionSeconds ? `・${Math.round(item.retentionSeconds / 3600)}時間で消去` : ""}
+        </option>
+      ))}
+    </select>
+  );
 
   return (
     <div
-      className={[className, compact ? "oc-inline" : "oc-stack"].filter(Boolean).join(" ")}
+      className={[className, "oc-uploader", compact ? "oc-uploader-inline oc-inline" : "oc-stack"].filter(Boolean).join(" ")}
       onDragOver={(event) => {
         if (disabled) return;
         event.preventDefault();
@@ -288,29 +335,17 @@ export const UploaderButton = forwardRef<UploaderButtonHandle, UploaderButtonPro
           if (files.length > 0) void uploadFiles(files);
         }}
       />
-      <div className="oc-inline" style={{ gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-        <button type="button" className="oc-icon-btn" onClick={pick} disabled={disabled || busy} title="画像・動画・テキストを添付">
+      <div className="oc-inline oc-upload-bar">
+        <button
+          type="button"
+          className="oc-icon-btn oc-upload-pick"
+          onClick={pick}
+          disabled={disabled || busy}
+          title="画像・動画・テキストを添付"
+        >
           🖼 {defaultLabel}
         </button>
-        {showAdapterSelect && !forcedAdapter ? (
-          <select
-            className="oc-select"
-            aria-label="保存先"
-            value={selected}
-            disabled={disabled || busy || adapters === null}
-            onChange={(event) => changeAdapter(event.target.value)}
-            title="ファイルの保存先を選択します（ファイル本体はこのサイトに保存されません）"
-          >
-            <option value="">自動（既定: {adapters?.defaultAdapter ?? "catbox"}）</option>
-            {(adapters?.items ?? []).map((item) => (
-              <option key={item.id} value={item.id} disabled={!item.available} title={item.reason ?? item.label}>
-                {item.label}
-                {item.available ? "" : "（利用不可）"}
-                {item.retentionSeconds ? `・${Math.round(item.retentionSeconds / 3600)}時間で消去` : ""}
-              </option>
-            ))}
-          </select>
-        ) : null}
+        {showAdapterSelect ? adapterSelect : null}
       </div>
       {!compact ? (
         <span className="oc-note">
@@ -339,17 +374,32 @@ export const UploaderButton = forwardRef<UploaderButtonHandle, UploaderButtonPro
         </div>
       ) : null}
       {!uploading && doneCount > 0 ? <span className="oc-note oc-ok">{doneCount} 件をアップロードしました</span> : null}
+      {/* 失敗は必ず独立した行に出す（狭幅でボタンを圧縮しない: F-08）。
+          「再試行」は保持していたファイルを同じ保存先で送り直し、「別の保存先」は選択を出す。 */}
       {failures.map((failure, index) => (
-        <span key={`${failure.name}-${index}`} className="oc-error" role="alert">
-          {failure.name ? `${failure.name}: ` : ""}
-          {failure.message}
-          {failure.linkRequired ? (
-            <>
-              {" "}
-              <a href="/account/github">GitHub 連携へ</a>
-            </>
-          ) : null}
-        </span>
+        <div key={`${failure.name}-${index}`} className="oc-upload-error" role="alert">
+          <div className="oc-upload-error-msg">
+            {failure.name ? <span className="oc-upload-error-file">{failure.name}</span> : null}
+            <span>{failure.message}</span>
+          </div>
+          <div className="oc-upload-error-actions">
+            {!showAdapterSelect ? adapterSelect : null}
+            {failure.retryable && failure.file ? (
+              <button
+                type="button"
+                className="oc-btn oc-btn-sm"
+                disabled={disabled || busy}
+                onClick={() => void uploadFiles([failure.file as File])}
+              >
+                再試行
+              </button>
+            ) : null}
+            <button type="button" className="oc-btn oc-btn-sm" onClick={() => clearFailure(index)}>
+              キャンセル
+            </button>
+            {failure.linkRequired ? <a href="/account/github">GitHub 連携へ</a> : null}
+          </div>
+        </div>
       ))}
     </div>
   );

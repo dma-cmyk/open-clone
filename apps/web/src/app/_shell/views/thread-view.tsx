@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api, ApiError } from "@/features/board-ui/api";
 import { AnchorPopup, type AnchorTarget } from "@/features/board-ui/anchor-popup";
-import { formatRelative, threadPath, boardPath } from "@/features/board-ui/format";
+import { formatRelative, referencedNums, threadPath, boardPath } from "@/features/board-ui/format";
 import { getLastRead, isBookmarked, recordRead, setLastRead, toggleBookmark } from "@/features/board-ui/history";
 import { TsubuyakiOverlay } from "@/features/board-ui/tsubuyaki-overlay";
 import { PostForm } from "@/features/board-ui/post-form";
@@ -17,6 +17,7 @@ import { pageLinks, parseRange, rangeLabel, rangeQuery } from "@/features/board-
 import { quotePost } from "@/features/board-ui/quote-bus";
 import type { AttachmentRef, Post } from "@/features/board-ui/types";
 import { Button, Notice, Spinner, useToast } from "@/components/ui";
+import { usePageTitle } from "@/lib/title";
 import { PluginSlot } from "@/components/plugin-slot";
 import { PluginRenderStyles, usePluginPostRenderRules } from "@/features/plugin-host";
 import { resetThreadRenderBudget } from "@/features/plugin-host/render-worker-client";
@@ -101,10 +102,26 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   const thread = page.data?.thread;
   const threadKey = `t:${threadId}`;
 
+  // スレ全体の最終投稿時刻（秒）。サーバー応答の `thread.lastPostAt` を基準にし、
+  // 受信した新着がより新しいときだけ進める。表示範囲（?r=）・スレ内検索・ID 抽出で
+  // 絞られた `posts` の末尾から逆算しない（古い 1 件だけを見ると「1時間前」へ
+  // 巻き戻るため: R2）。
+  // スレ ID も一緒に持つ: SPA で別スレへ移ると ThreadView は同じコンポーネントのまま
+  // props だけ変わるので、前スレの値を新スレの初期値にしない（R2b）。
+  const [lastPostAt, setLastPostAt] = useState<{ threadId: number; at: number } | null>(null);
+
   useEffect(() => {
     if (!page.data) return;
+    // 取得中は前スレのデータが残る。別スレの応答を今のスレの値として取り込まない。
+    if (page.data.thread.id !== threadId) return;
     const own = page.data.posts.filter((post) => post.kind !== "tsubuyaki");
     setPosts(own);
+    const serverLast = page.data.thread.lastPostAt ?? page.data.thread.createdAt ?? 0;
+    setLastPostAt((prev) =>
+      prev && prev.threadId === threadId
+        ? { threadId, at: Math.max(prev.at, serverLast) }
+        : { threadId, at: serverLast },
+    );
     setTsubuyakiComments(page.data.posts.filter((post) => post.kind === "tsubuyaki"));
     const maxId = own.reduce((max, post) => Math.max(max, post.id), 0);
     if (loadedThreadId.current !== threadId) {
@@ -125,9 +142,17 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
     setBookmarked(isBookmarked(threadKey));
   }, [threadKey]);
 
+  // URL の q（適用中の検索語）と入力欄を一致させる。解除・戻る/進む・別リンクで
+  // 入力欄だけ古い語が残らないようにする（F-10）。
+  useEffect(() => {
+    setSearchDraft(qFilter);
+  }, [qFilter]);
+
+  // タブ名。スレを離れたら AppShell の RouteTitle が板名・設定などへ戻す（F-12）。
+  usePageTitle(thread ? `${thread.title} ｜ ${thread.boardName ?? slug}` : null);
+
   useEffect(() => {
     if (!thread) return;
-    document.title = `${thread.title} ｜ ${thread.boardName ?? slug} ｜ おーぷんクローン`;
     recordRead({
       key: threadKey,
       path: threadPath(slug, threadId),
@@ -151,6 +176,36 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
     return map;
   }, [posts]);
 
+  // 安価（被参照表示）。サーバーが返した backlinks に、今画面にあるレスの本文を足し合わせる。
+  // 実況・自分の投稿で届いたレスは backlinks が未計算のため、そのままだと「安価 2」が
+  // 再読み込みするまで出ない（F-09）。引用元レス番号はクライアント側で分かるのでここで補う。
+  const postsWithBacklinks = useMemo(() => {
+    const extra = new Map<number, Set<number>>();
+    for (const post of posts) {
+      for (const target of referencedNums(post.body)) {
+        if (target === post.num) continue;
+        const set = extra.get(target) ?? new Set<number>();
+        set.add(post.num);
+        extra.set(target, set);
+      }
+    }
+    if (extra.size === 0) return posts;
+    return posts.map((post) => {
+      const added = extra.get(post.num);
+      if (!added) return post;
+      const merged = [...new Set([...(post.backlinks ?? []), ...added])].sort((a, b) => a - b);
+      return merged.length === (post.backlinks?.length ?? 0) ? post : { ...post, backlinks: merged };
+    });
+  }, [posts]);
+
+  // 「最終◯分前」は相対表示なので、新しいレスが届いたら時刻側も更新し、さらに一定ごとに
+  // 数え直す（放置すると「14分前」がずっと残る: F-09）。
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now() / 1000), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const appendPost = useCallback(
     (post: Post) => {
       if (post.kind === "tsubuyaki") {
@@ -164,6 +219,11 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
         return [...prev, post];
       });
       lastIdRef.current = Math.max(lastIdRef.current, post.id);
+      setLastPostAt((prev) =>
+        prev && prev.threadId === threadId
+          ? { threadId, at: Math.max(prev.at, post.createdAt) }
+          : { threadId, at: post.createdAt },
+      );
       if (post.id > initialMaxId.current) {
         setNewIds((prev) => new Set(prev).add(post.num));
       }
@@ -173,7 +233,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
         window.requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ block: "end" }));
       }
     },
-    [live, settings.behavior.autoScroll, settings.behavior.readAloud, settings.behavior.sound],
+    [threadId, live, settings.behavior.autoScroll, settings.behavior.readAloud, settings.behavior.sound],
   );
 
   const liveState = useThreadLive({
@@ -329,8 +389,9 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   const canPost = total < maxPosts;
   const lastRead = getLastRead(threadKey);
   const imagesOnly = range.kind === "images";
-  const ordered = settings.display.reverse ? [...posts].reverse() : posts;
+  const ordered = settings.display.reverse ? [...postsWithBacklinks].reverse() : postsWithBacklinks;
   const images: AttachmentRef[] = posts.flatMap((post) => post.attachments ?? []);
+  // 「最終◯分前」は画面にある最後のレスの時刻を使う（受信直後に古いままだと F-09 になる）。
 
   const fontStyle = { "--oc-post-font-size": `${settings.display.fontSize}px` } as CSSProperties;
 
@@ -445,7 +506,13 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
         {qFilter ? (
           <div className="oc-row oc-mt">
             <span className="oc-badge oc-badge-yellow">スレ内検索: {qFilter}</span>
-            <Button size="sm" onClick={() => applyQuery({ q: null })}>
+            <Button
+              size="sm"
+              onClick={() => {
+                setSearchDraft("");
+                applyQuery({ q: null });
+              }}
+            >
               解除
             </Button>
           </div>
@@ -483,7 +550,12 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
         </Link>
         <span className="oc-spacer" />
         <span className="oc-muted">
-          最終 {formatRelative(thread.lastPostAt ?? thread.createdAt)} / 作成 {formatRelative(thread.createdAt)}
+          最終{" "}
+          {formatRelative(
+            lastPostAt && lastPostAt.threadId === threadId ? lastPostAt.at : (thread.lastPostAt ?? thread.createdAt),
+            now,
+          )}{" "}
+          / 作成 {formatRelative(thread.createdAt, now)}
         </span>
       </div>
 

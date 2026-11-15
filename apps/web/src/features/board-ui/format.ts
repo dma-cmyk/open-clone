@@ -59,6 +59,17 @@ export function expandAnchorSpec(spec: string): number[] {
   return result;
 }
 
+/** 本文から引用（安価）対象のレス番号を全て取り出す。`>>2` / `>>3,4` / `>>1-3` に対応。 */
+export function referencedNums(body: string): number[] {
+  const result = new Set<number>();
+  for (const match of body.matchAll(/>>(\d+(?:[-,]\d+)*)/g)) {
+    for (const num of expandAnchorSpec(match[1] ?? "")) {
+      result.add(num);
+    }
+  }
+  return [...result];
+}
+
 export function truncate(text: string, length: number): string {
   return text.length <= length ? text : `${text.slice(0, length)}…`;
 }

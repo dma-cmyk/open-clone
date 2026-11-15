@@ -1,16 +1,22 @@
 "use client";
 
 // 投稿フォーム（レス / スレ立て）。Turnstile、アップローダ（WP4）、お絵かきを統合する。
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { POST_BODY_MAX_BYTES } from "shared";
 import { api, ApiError } from "./api";
 import { Button, Notice, useToast } from "@/components/ui";
 import { OekakiEditor } from "./oekaki-editor";
-import { TurnstileWidget } from "./turnstile";
+import { TurnstileWidget, useTurnstileToken } from "./turnstile";
 import { UploaderMount, type UploaderHandle } from "./uploader-mount";
 import { onQuote } from "./quote-bus";
 import { settingsStore } from "./settings";
 import { recordWrite } from "./history";
 import { THREAD_MODES, type AttachmentRef, type Post } from "./types";
+
+// API の本文上限は UTF-8 バイト数（shared の POST_BODY_MAX_BYTES = 4096。pipeline.ts が
+// TextEncoder の長さで判定する）。日本語は 1 文字あたり約 3 バイトなので、文字数ではなく
+// バイト数で数えないと送信直前の 413 と食い違う。
+const BODY_MAX_BYTES = POST_BODY_MAX_BYTES;
 
 interface PostFormProps {
   mode: "post" | "thread";
@@ -45,20 +51,23 @@ export function PostForm({
   const [body, setBody] = useState("");
   const [sage, setSage] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentRef[]>([]);
-  const [token, setToken] = useState("");
-  const [resetKey, setResetKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 文字数と UTF-8 バイト数（API の上限判定と同じ数え方）を表示用に持つ。
+  const bodyBytes = useMemo(() => new TextEncoder().encode(body).length, [body]);
   const [showMail, setShowMail] = useState(false);
   const [oekakiOpen, setOekakiOpen] = useState(false);
   const [floating, setFloating] = useState(settingsStore.get().behavior.floatForm);
   // スマホでは投稿欄を「書き込む」バー1行に畳む（タップで展開）。
   const [mobileOpen, setMobileOpen] = useState(true);
-  const [needsTurnstile, setNeedsTurnstile] = useState(true);
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const uploaderRef = useRef<UploaderHandle>(null);
   const toast = useToast();
+
+  // Turnstile はフォームで 1 個だけ。投稿もアップロードも同じトークン供給元を使う（F-06）。
+  const turnstileToken = useTurnstileToken(turnstile);
+  const needsTurnstile = turnstileToken.needed;
 
   const draftKey = useMemo(
     () => `oc.draft.v1.${boardSlug}.${mode === "thread" ? "new" : String(threadId ?? "x")}`,
@@ -81,29 +90,17 @@ export function PostForm({
     }
   }, [draftKey]);
 
-  useEffect(() => {
-    if (turnstile === "off") {
-      setNeedsTurnstile(false);
-      return;
-    }
-    if (turnstile === "always") {
-      setNeedsTurnstile(true);
-      return;
-    }
-    let alive = true;
-    api.getSession().then((session) => {
-      if (alive) setNeedsTurnstile(!session);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [turnstile]);
-
+  // 下書きの自動保存。空にした場合も「空」を保存する（旧文が再読み込みで復活しない: F-05）。
   useEffect(() => {
     if (typeof window === "undefined") return;
     const timer = window.setTimeout(() => {
-      if (!body && !title && !name && !mail) return;
+      const empty = !body && !title && !name && !mail;
       try {
+        if (empty) {
+          window.localStorage.removeItem(draftKey);
+          setDraftSavedAt(null);
+          return;
+        }
         window.localStorage.setItem(draftKey, JSON.stringify({ name, mail, body, title, sage }));
         setDraftSavedAt(Date.now());
       } catch {
@@ -132,7 +129,6 @@ export function PostForm({
     });
   }, [mode]);
 
-  const onToken = useCallback((value: string) => setToken(value), []);
 
   const submit = async () => {
     // 新しい送信を始めたら、前回の「投稿しました」トーストを消す。
@@ -148,8 +144,14 @@ export function PostForm({
       setError("本文を入力してください");
       return;
     }
+    if (bodyBytes > BODY_MAX_BYTES) {
+      setError(`本文が長すぎます（${bodyBytes} / 上限 ${BODY_MAX_BYTES} バイト）。約 ${bodyBytes - BODY_MAX_BYTES} バイト減らしてください。`);
+      return;
+    }
     setSubmitting(true);
     try {
+      // Bot 確認が要る板では、ウィジェットの成功を待ってから送る（空トークンで 400 にしない）。
+      const token = await turnstileToken.take();
       if (mode === "thread") {
         const result = await api.createThread(boardSlug, {
           title: title.trim(),
@@ -189,8 +191,6 @@ export function PostForm({
         setBody("");
         setAttachments([]);
       }
-      setResetKey((value) => value + 1);
-      setToken("");
       if (typeof window !== "undefined") {
         window.localStorage.removeItem(draftKey);
         setDraftSavedAt(null);
@@ -198,9 +198,6 @@ export function PostForm({
     } catch (cause) {
       if (cause instanceof ApiError) {
         setError(cause.message);
-        if (cause.code === "TURNSTILE_FAILED" || cause.status === 403) {
-          setResetKey((value) => value + 1);
-        }
       } else {
         setError(cause instanceof Error ? cause.message : "投稿に失敗しました");
       }
@@ -303,11 +300,17 @@ export function PostForm({
           rows={4}
           placeholder="本文。レス番号クリックで >>n を引用。||ネタバレ|| も使えます。"
           value={body}
-          maxLength={4096}
           onChange={(event) => setBody(event.target.value)}
           disabled={disabled}
           aria-label="本文"
         />
+        {/* 文字数と上限（API は UTF-8 バイトで 4096 まで）。超過は送信前から赤字で警告する。 */}
+        <div className={`oc-form-count${bodyBytes > BODY_MAX_BYTES ? " over" : ""}`} aria-live="polite">
+          <span>
+            {body.length} 文字 / {bodyBytes} バイト（上限 {BODY_MAX_BYTES} バイト）
+          </span>
+          {bodyBytes > BODY_MAX_BYTES ? <strong>上限を超えています（送信できません）</strong> : null}
+        </div>
 
         {attachments.length > 0 ? (
           <div className="oc-ng-list">
@@ -333,7 +336,7 @@ export function PostForm({
             boardId={boardId}
             disabled={disabled}
             compact
-            turnstile={turnstile}
+            turnstile={turnstileToken}
             onUploaded={(refs) => setAttachments((prev) => [...prev, ...refs])}
           />
           <button
@@ -357,6 +360,17 @@ export function PostForm({
           </button>
         </div>
 
+        {/* Bot 確認はフォームに 1 個だけ（投稿・添付で同じトークンを使い回さない）。 */}
+        {needsTurnstile ? (
+          <div className="oc-turnstile-row">
+            <TurnstileWidget
+              onToken={turnstileToken.accept}
+              onInvalidate={turnstileToken.invalidate}
+              resetKey={turnstileToken.resetKey}
+            />
+          </div>
+        ) : null}
+
         <Button
           type="submit"
           variant="primary"
@@ -368,11 +382,6 @@ export function PostForm({
         </Button>
 
         {error ? <Notice kind="error">{error}</Notice> : null}
-        {needsTurnstile ? (
-          <div className="oc-mt">
-            <TurnstileWidget onToken={onToken} resetKey={resetKey} compact />
-          </div>
-        ) : null}
       </div>
       )}
 

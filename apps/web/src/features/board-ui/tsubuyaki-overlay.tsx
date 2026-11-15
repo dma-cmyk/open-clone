@@ -181,7 +181,7 @@ export function TsubuyakiOverlay({
         {error ? <div className="oc-error oc-mt">{error}</div> : null}
         {needsTurnstile ? (
           <div className="oc-mt">
-            <TurnstileWidget onToken={onToken} resetKey={resetKey} compact />
+            <TurnstileWidget onToken={onToken} resetKey={resetKey} />
           </div>
         ) : null}
         <div className="oc-tsubuyaki-log">

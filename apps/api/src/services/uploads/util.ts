@@ -57,17 +57,36 @@ export function assertAllowedHost(url: string, allowedHosts: readonly string[], 
 /**
  * 上流応答が失敗なら ApiError に変換する。
  * 外部サービスの生メッセージは details に短く載せる（内部情報は含めない）。
+ *
+ * 412 / 403 は「保存先がこの接続からのアップロードを拒否した」ことを意味する
+ * （Catbox は multipart を解釈できない・bot 判定・IP 制限のいずれでも 412 を返す）。
+ * 利用者が次に何をすればよいか分かるよう、理由と取り得る操作をメッセージと details に載せる。
  */
-export function assertUpstreamOk(response: Response, label: string): void {
+export function assertUpstreamOk(response: Response, label: string, adapterId?: string): void {
   if (response.ok) return;
   const status = response.status;
+  const details = { upstreamStatus: status, adapter: adapterId ?? null };
   if (status === 413) {
-    throw new ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, `${label} がファイルサイズ上限を超えています`);
+    throw new ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, `${label} がファイルサイズ上限を超えています`, details);
   }
   if (status === 429) {
-    throw new ApiError(429, ErrorCode.RATE_LIMITED, `${label} 側のレート制限に達しました。時間をおいて再試行してください`);
+    throw new ApiError(
+      429,
+      ErrorCode.RATE_LIMITED,
+      `${label} 側のレート制限に達しました。時間をおいて再試行してください`,
+      details,
+    );
   }
-  throw new ApiError(502, ErrorCode.BAD_GATEWAY, `${label} へのアップロードに失敗しました（HTTP ${status}）`);
+  if (status === 412 || status === 403) {
+    throw new ApiError(
+      502,
+      ErrorCode.BAD_GATEWAY,
+      `${label} がアップロードを受け付けませんでした（HTTP ${status}）。保存先側の制限で拒否された可能性があります。` +
+        `少し待って再試行するか、保存先を別のものに変えてください。`,
+      { ...details, reason: "upstream_blocked", retryable: true },
+    );
+  }
+  throw new ApiError(502, ErrorCode.BAD_GATEWAY, `${label} へのアップロードに失敗しました（HTTP ${status}）`, details);
 }
 
 /** JSON からドットパス（`data.url` 等）を取り出す。 */

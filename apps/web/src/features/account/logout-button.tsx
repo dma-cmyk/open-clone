@@ -2,12 +2,10 @@
 
 // ログアウトボタン（セッション Cookie を失効させてトップへ戻る）。
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "./api";
 
 export function LogoutButton({ className = "oc-btn oc-btn-sm" }: { className?: string }) {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
 
   const logout = async () => {
@@ -16,8 +14,8 @@ export function LogoutButton({ className = "oc-btn oc-btn-sm" }: { className?: s
       await api("POST", "/auth/logout", {});
     } finally {
       // API が失敗しても Cookie は消えている可能性があるため、必ずトップへ戻して再取得させる。
-      router.push("/");
-      router.refresh();
+      // Next のクライアント遷移ではシェル（トップ）を描けないので、フルページ遷移で読み直す。
+      window.location.assign("/");
     }
   };
 
