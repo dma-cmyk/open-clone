@@ -195,7 +195,7 @@ CLI からデプロイする場合はリポジトリルートで `vercel deploy 
 
 ## 8. 初回セットアップ
 
-1. `https://<web-domain>/admin` を開く（owner 未作成ならセットアップ画面）
+1. `https://<web-domain>/admin/owner/setup/` を直接開く（`/admin` はログイン画面へ送られる。所有者の有無を未認証に明かさないため、ログイン画面からのリンクも置いていない）
 2. `OWNER_BOOTSTRAP_KEY`・表示名・メール・パスワード・TOTP を入力
    - API: `POST /v1/admin/owner/setup`（一度だけ。作成後は 409）
    - TOTP secret は `otpauth://` URI を QR で読み取り
