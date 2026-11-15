@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ApiRequestError, api, errorMessage } from "../../../features/account/api";
+import { resolveSafeNext } from "../../../features/account/safe-next";
 import { TurnstileWidget } from "../../../features/account/turnstile";
 
 export default function LoginPage() {
@@ -22,8 +23,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const target = params.get("next");
-    if (target && target.startsWith("/")) setNext(target);
+    setNext(resolveSafeNext(params.get("next"), "/account"));
   }, []);
 
   useEffect(() => {

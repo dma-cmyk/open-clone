@@ -337,7 +337,22 @@ export function GithubLinkPanel({ className, onStatusChange }: GithubLinkPanelPr
             </p>
             {status && !status.oauthAvailable ? (
               <div className="oc-warn-box">
-                このサーバーでは GitHub OAuth App が未設定のため、下の fine-grained PAT で連携してください。
+                <b>このサーバーでは GitHub OAuth App が未設定のため、「GitHub で連携する」ボタンは使えません。</b>
+                <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                  <li>
+                    今できること: 下の「fine-grained PAT を持ち込んで連携する」から自分で発行したトークンを登録すれば、
+                    OAuth と同じく Gist 作成・リポジトリへのコミットが使えます（PAT の管理は自分で行う必要があります）。
+                  </li>
+                  <li>
+                    連携しなくてもできること: 掲示板への投稿・閲覧・アップロード（Catbox 等）、サイト内でのプラグインの
+                    公開・検索・導入はすべて利用できます。
+                  </li>
+                  <li>
+                    今後使えるようになること: サーバー管理者が GitHub OAuth App を作成し、このサーバーにクライアント ID と
+                    シークレットを設定すると、上のボタンからブラウザ認可（OAuth）での連携ができるようになります。
+                    利用者側の手続きは不要です。
+                  </li>
+                </ul>
               </div>
             ) : null}
             <button

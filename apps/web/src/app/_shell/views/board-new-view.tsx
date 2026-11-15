@@ -1,7 +1,7 @@
 "use client";
 
 // 板作成画面。板管理人 = 作成者。1週間無投稿で自動削除（運用は cron / WP1）。
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/features/board-ui/api";
 import { boardBanner, boardDesignStyle } from "@/features/board-ui/board-design";
 import { TurnstileWidget } from "@/features/board-ui/turnstile";
@@ -16,6 +16,24 @@ export function BoardNewView() {
   const toast = useToast();
   const boards = useApiData(() => api.listBoards(), []);
   const categories = useMemo(() => boards.data?.categories ?? [], [boards.data]);
+  const [session, setSession] = useState<{ name: string } | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+
+  // C6 / museAI #14・F-14: ログイン状態に応じて案内を出し分ける。
+  useEffect(() => {
+    let alive = true;
+    api
+      .getSession()
+      .then((value) => {
+        if (alive) setSession(value);
+      })
+      .finally(() => {
+        if (alive) setSessionLoaded(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const [slug, setSlug] = useState("");
   const [name, setName] = useState("");
@@ -101,10 +119,19 @@ export function BoardNewView() {
       <div className="oc-panel">
         <div className="oc-panel-title">板を作る</div>
         <div className="oc-panel-inner">
-          <Notice kind="warn">
-            板の作成にはアカウントが必要です（<a href="/account/login">ログイン</a> / <a href="/account/register">新規登録</a>）。
-            作成者が初代板管理人になります。1週間投稿がない板は自動削除されます。
-          </Notice>
+          {sessionLoaded && session ? (
+            <Notice kind="ok">
+              {session.name} でログイン中です。作成者が初代板管理人になります。1週間投稿がない板は自動削除されます。
+            </Notice>
+          ) : null}
+          {sessionLoaded && !session ? (
+            <Notice kind="warn">
+              板の作成にはアカウントが必要です。入力する前に認証を済ませてください（
+              <a href="/account/login?next=%2Fboards%2Fnew">ログイン</a> /{" "}
+              <a href="/account/register?next=%2Fboards%2Fnew">新規登録</a>
+              ）。ログイン後はこの画面へ戻ります。作成者が初代板管理人になります。1週間投稿がない板は自動削除されます。
+            </Notice>
+          ) : null}
 
           <div className="oc-grid-2 oc-mt">
             <label className="oc-field">
@@ -130,11 +157,20 @@ export function BoardNewView() {
                 onChange={(event) => setCategory(event.target.value)}
                 maxLength={32}
               />
+              {/* C5 / museAI #13: 既存カテゴリを候補表示し、新規カテゴリになる場合は事前に知らせる */}
               <datalist id="oc-categories">
                 {categories.map((item) => (
                   <option key={item} value={item} />
                 ))}
               </datalist>
+              <span className="oc-note">
+                {categories.length > 0 ? `候補: ${categories.join(" / ")}。` : "候補: まだカテゴリがありません。"}
+                {category.trim().length > 0
+                  ? categories.includes(category.trim())
+                    ? `既存カテゴリ「${category.trim()}」に分類されます。`
+                    : `「${category.trim()}」は新しいカテゴリとして作成されます。`
+                  : ""}
+              </span>
             </label>
             <label className="oc-field">
               <span className="oc-label">連投制限（秒）</span>
