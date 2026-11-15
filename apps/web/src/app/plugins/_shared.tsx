@@ -52,7 +52,11 @@ export function PluginShell(props: {
   return (
     <div className="oc-app">
       <main className="oc-main">
-        <nav className="oc-row" style={ui.nav}>
+        <nav
+          className="oc-row"
+          style={{ ...ui.nav, minWidth: 0, rowGap: 4 }}
+          aria-label="プラグイン内の移動"
+        >
           <Link className="oc-btn oc-btn-sm" href="/plugins/">
             プラグイン一覧
           </Link>
@@ -167,10 +171,13 @@ export function Notice(props: { tone?: "ok" | "warn" | "danger"; children: React
   );
 }
 
+// B9: ステータス（運用状態）と公開範囲（visibility）は別物。
+// 「published」は運用状態（停止していない）であり、公開範囲の「公開」とは区別する。
+// 公開範囲は STATUS_LABEL の private/unlisted/public（別バッジで併記される）。
 export const STATUS_LABEL: Record<string, string> = {
   draft: "下書き",
   pending: "審査待ち",
-  published: "公開中",
+  published: "稼働中",
   rejected: "却下",
   disabled: "停止中",
   approved: "承認",

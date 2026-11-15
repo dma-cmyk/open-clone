@@ -688,6 +688,8 @@ export interface PluginActiveInstall {
   scopeRef: string;
   /** 停止（キル）済みなら true。ホストは kill を送って破棄する。 */
   stopped: boolean;
+  /** 停止理由の UI 表示用ラベル（stopped=true のときだけ入る） */
+  stoppedReason: string | null;
   status: PluginStatus;
   /** コード配信 URL（host が同一オリジンで fetch する） */
   codeUrl: string;

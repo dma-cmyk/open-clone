@@ -2,7 +2,7 @@
 
 // プラグイン詳細（公開・導入・更新・通報・停止・審査・GitHub 発行）
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PluginDetail, PluginInstallInfo, PluginReviewInfo, PluginScope } from "shared";
 import { pluginApi } from "@/features/plugin-host";
 import { parseTemplateOrigin } from "@/features/plugin-templates";
@@ -22,6 +22,12 @@ import {
 
 const RISK_LABEL: Record<string, string> = { low: "低", medium: "中", high: "高" };
 
+interface BoardOption {
+  id: number;
+  slug: string;
+  name: string;
+}
+
 export default function PluginViewPage() {
   const id = useQueryParam("id");
   const [detail, setDetail] = useState<PluginDetail | null>(null);
@@ -31,8 +37,17 @@ export default function PluginViewPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-
+  // B13: 未ログインかどうか（0 件を確定値として出さないための判定）
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
+  // B12: 板の選択（数値 ID の手入力ではなく名前と slug から選ぶ）
+  const [boards, setBoards] = useState<BoardOption[]>([]);
   const [boardId, setBoardId] = useState("1");
+  // B11: リンクのコピー状態
+  const [copied, setCopied] = useState(false);
+  // B11/M1: コピー失敗時の手動コピー用 URL（成功時に消える）
+  const [copyUrl, setCopyUrl] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
   const [publishScopes, setPublishScopes] = useState<PluginScope[]>(["personal"]);
   const [reportReason, setReportReason] = useState("broken");
   const [reportDetail, setReportDetail] = useState("");
@@ -75,6 +90,65 @@ export default function PluginViewPage() {
     void load();
   }, [load]);
 
+  // B13: ログイン状態（作成・公開・板用/サイト導入の案内を出し分ける）。
+  // B14: 個人用導入はログイン不要なので、ここで止めない。
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch("/api/v1/auth/session", { credentials: "include" });
+        const json = (await response.json().catch(() => null)) as { ok?: boolean; data?: { authenticated?: boolean } } | null;
+        setLoggedIn(Boolean(json?.ok && json.data?.authenticated));
+      } catch {
+        setLoggedIn(null);
+      }
+    })();
+  }, []);
+
+  // B12/R3: 板用インストールの対象は板 ID の数値入力ではなく板の選択にする。
+  // API の板一覧は 1 回 200 件までのため、検索語（q）でサーバー検索できるようにする。
+  // これで 200 件より古い管理対象板も名前・slug から探して選べる。
+  const [boardQuery, setBoardQuery] = useState("");
+  const [boardSearchState, setBoardSearchState] = useState<"loading" | "ready" | "error">("loading");
+  const boardQuerySeq = useRef(0);
+
+  async function searchBoards(query: string): Promise<void> {
+    const seq = boardQuerySeq.current + 1;
+    boardQuerySeq.current = seq;
+    setBoardSearchState("loading");
+    try {
+      const search = new URLSearchParams({ limit: "200" });
+      if (query.trim()) search.set("q", query.trim());
+      const response = await fetch(`/api/v1/boards?${search.toString()}`, { credentials: "include" });
+      const json = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        data?: { items?: Array<{ id?: unknown; slug?: unknown; name?: unknown }> };
+      } | null;
+      if (boardQuerySeq.current !== seq) return; // 古い応答は捨てる
+      const items = json?.ok ? (json.data?.items ?? []) : [];
+      const options = items
+        .filter(
+          (item): item is { id: number; slug: string; name: string } =>
+            typeof item.id === "number" && typeof item.slug === "string" && typeof item.name === "string",
+        )
+        .map((item) => ({ id: item.id, slug: item.slug, name: item.name }));
+      setBoards(options);
+      // 選択中の板が結果に残っていれば維持し、なければ先頭を選ぶ
+      setBoardId((prev) =>
+        options.some((option) => String(option.id) === prev) || options.length === 0
+          ? prev
+          : String(options[0]!.id),
+      );
+      setBoardSearchState("ready");
+    } catch {
+      if (boardQuerySeq.current !== seq) return;
+      setBoards([]);
+      setBoardSearchState("error");
+    }
+  }
+
+  useEffect(() => {
+    void searchBoards("");
+  }, []);
   async function run(action: () => Promise<string>, reload = true): Promise<void> {
     setBusy(true);
     setError(null);
@@ -97,6 +171,21 @@ export default function PluginViewPage() {
   );
   const parsedBoardId = Number.parseInt(boardId, 10);
   const boardIdValid = Number.isInteger(parsedBoardId) && parsedBoardId > 0;
+  // R1/R1-N: 作者以外の導入の件数（API の 409 判定と同じ規則・NULL 安全）。
+  // 削除ボタンが押せるのは作者・管理者（canEdit）で、その視点では全導入が見える。
+  // 「作者本人」は scope=personal・作者ID あり・installedBy が非 NULL で一致するものだけ。
+  // owner=NULL（公式）は誰の導入も本人にならないため全て保護対象。
+  const ownerId = plugin?.owner?.id ?? null;
+  const foreignInstalls =
+    plugin?.installs.filter(
+      (install) =>
+        !(
+          install.scope === "personal" &&
+          ownerId !== null &&
+          install.installedBy !== null &&
+          install.installedBy === ownerId
+        ),
+    ).length ?? 0;
 
   return (
     <PluginShell
@@ -104,6 +193,50 @@ export default function PluginViewPage() {
       description={plugin?.summary ?? "読み込み中…"}
       actions={
         <>
+          {/* B11: 共有リンク（URL コピー）UI（M1: 失敗時は手動コピー用の URL を出す） */}
+          <button
+            type="button"
+            className="oc-btn"
+            disabled={copied}
+            onClick={() => {
+              const url = `${window.location.origin}/plugins/view/?id=${encodeURIComponent(id ?? "")}`;
+              void (async () => {
+                let success = false;
+                try {
+                  await navigator.clipboard.writeText(url);
+                  success = true;
+                } catch {
+                  // クリップボード拒否時は入力欄フォールバック（非対応ブラウザ対策）。
+                  // execCommand の戻り値も見る（M1: 失敗を成功扱いにしない）。
+                  const input = document.createElement("input");
+                  input.value = url;
+                  document.body.appendChild(input);
+                  input.select();
+                  success = document.execCommand("copy");
+                  input.remove();
+                }
+                if (success) {
+                  setCopyUrl(null);
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 2500);
+                } else {
+                  setCopyUrl(url);
+                }
+              })();
+            }}
+          >
+            {copied ? "コピーしました" : copyUrl ? "コピーできませんでした" : "リンクをコピー"}
+          </button>
+          {copyUrl ? (
+            <input
+              className="oc-input oc-input-sm"
+              readOnly
+              value={copyUrl}
+              aria-label="コピーできなかった場合の手動コピー用 URL"
+              style={{ maxWidth: 240, fontSize: 11 }}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          ) : null}
           <a href="/plugins/" className="oc-btn">
             一覧へ
           </a>
@@ -197,32 +330,81 @@ export default function PluginViewPage() {
               >
                 個人用にインストール
               </button>
-              <span className="oc-muted oc-small">自分のブラウザにだけ適用されます（審査不要）</span>
+              <span className="oc-muted oc-small">
+                このブラウザにだけ適用されます（審査不要・ログインなしで使えます）
+              </span>
             </div>
 
-            <div style={{ ...ui.row, alignItems: "flex-end" }}>
-              <div style={{ width: 120 }}>
-                <Field label="板 ID">
-                  <input className="oc-input" value={boardId} onChange={(event) => setBoardId(event.target.value)} />
+            <div style={{ ...ui.row, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 200px", maxWidth: 360 }}>
+                <Field
+                  label="板を探す"
+                  hint="板名・slug の一部で絞り込み（200 件より古い板も見つかります）"
+                >
+                  <input
+                    className="oc-input"
+                    value={boardQuery}
+                    placeholder="例: news / 雑談"
+                    aria-label="板の検索語"
+                    onChange={(event) => {
+                      setBoardQuery(event.target.value);
+                      void searchBoards(event.target.value);
+                    }}
+                  />
+                </Field>
+              </div>
+              <div style={{ flex: "1 1 260px", maxWidth: 360 }}>
+                <Field label="板を選ぶ" hint="板管理人（admin）のみ実行できます">
+                  {boardSearchState === "loading" ? (
+                    <select className="oc-input" disabled aria-label="板用インストールの対象板">
+                      <option value="">板を読み込み中…</option>
+                    </select>
+                  ) : boardSearchState === "error" ? (
+                    <select className="oc-input" disabled aria-label="板用インストールの対象板">
+                      <option value="">板の取得に失敗しました。検索語を変えてください</option>
+                    </select>
+                  ) : boards.length === 0 ? (
+                    <select className="oc-input" disabled aria-label="板用インストールの対象板">
+                      <option value="">検索に一致する板がありません</option>
+                    </select>
+                  ) : (
+                    <select
+                      className="oc-input"
+                      value={boardId}
+                      onChange={(event) => setBoardId(event.target.value)}
+                      aria-label="板用インストールの対象板"
+                    >
+                      {boards.map((board) => (
+                        <option key={board.id} value={String(board.id)}>
+                          {board.name}（/b/{board.slug}）
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </Field>
               </div>
               <button
                 type="button"
                 className="oc-btn"
-                disabled={busy || !boardIdValid}
+                disabled={busy || !boardIdValid || boardSearchState !== "ready" || boards.length === 0}
                 onClick={() =>
                   void run(async () => {
+                    const board = boards.find((item) => String(item.id) === boardId);
                     const result = await pluginApi.install(plugin.id, {
                       scope: "board",
                       boardId: parsedBoardId,
                     });
-                    return `板 ${parsedBoardId} にインストールしました（v${result.install.version}）`;
+                    return `${board ? `板「${board.name}」` : `板 ${parsedBoardId}`} にインストールしました（v${result.install.version}）`;
                   })
                 }
               >
                 板用にインストール
               </button>
-              <span className="oc-muted oc-small">板管理人（admin）のみ実行できます</span>
+              {loggedIn === false ? (
+                <span className="oc-muted oc-small">
+                  <a href="/account/login">ログイン</a>すると板用インストールができます
+                </span>
+              ) : null}
             </div>
 
             <div style={{ ...ui.row, marginTop: 8 }}>
@@ -242,6 +424,12 @@ export default function PluginViewPage() {
               <span className="oc-muted oc-small">owner / 特別管理人のみ・サイト審査の承認が必要です</span>
             </div>
 
+            {plugin.status === "disabled" ? (
+              <Notice tone="warn">
+                このプラグインは全体停止（キルスイッチ）中です。個人用にインストールしても、停止が解除されるまで効果はありません。
+              </Notice>
+            ) : null}
+
             {plugin.installs.length > 0 ? (
               <div style={{ marginTop: 10 }}>
                 <h3 style={{ fontSize: 13, margin: "0 0 4px" }}>導入状況</h3>
@@ -250,6 +438,7 @@ export default function PluginViewPage() {
                     <InstallRow
                       key={install.id}
                       install={install}
+                      pluginStatus={plugin.status}
                       busy={busy}
                       onUpdate={() =>
                         void run(async () => {
@@ -266,20 +455,22 @@ export default function PluginViewPage() {
                             scope: install.scope,
                             boardId: install.scope === "board" ? Number(install.scopeRef) : undefined,
                           });
-                          return "アンインストールしました";
+                          return "アンインストールしました（導入を削除）";
                         })
                       }
                       onToggle={() =>
                         void run(async () => {
-                          if (install.scope !== "board") {
-                            await pluginApi.uninstall(plugin.id, { scope: install.scope });
-                            return "アンインストールしました";
+                          // B6: 無効化は導入を残して enabled=0 にする（アンインストールとは別操作）
+                          const input = {
+                            scope: install.scope,
+                            boardId: install.scope === "board" ? Number(install.scopeRef) : undefined,
+                          };
+                          if (install.enabled) {
+                            await pluginApi.disableInstall(plugin.id, input);
+                            return "無効化しました（導入は残ります。「有効化」で戻せます）";
                           }
-                          await pluginApi.disable(plugin.id, {
-                            reason: "板内で無効化",
-                            boardId: Number(install.scopeRef),
-                          });
-                          return "この板での実行を停止しました";
+                          await pluginApi.enableInstall(plugin.id, input);
+                          return "有効化しました";
                         })
                       }
                     />
@@ -457,21 +648,62 @@ export default function PluginViewPage() {
                 >
                   fork して複製
                 </button>
+                {/* B4: 削除は停止（キルスイッチ）とは別処理。確認ダイアログを挟む。 */}
                 <button
                   type="button"
-                  className="oc-btn"
+                  className="oc-btn oc-btn-danger"
                   disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      await pluginApi.remove(plugin.id);
-                      window.location.href = "/plugins/";
-                      return "削除しました";
-                    }, false)
-                  }
+                  onClick={() => setDeleteConfirm(true)}
                 >
-                  削除
+                  削除（レジストリから消す）
                 </button>
               </div>
+
+              {deleteConfirm ? (
+                <div
+                  className="oc-panel"
+                  style={{ background: "#fff4f4", marginTop: 8 }}
+                  role="alertdialog"
+                  aria-label="プラグインの削除確認"
+                >
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                    「{plugin.name}」を削除{foreignInstalls > 0 ? "できません" : "します"}。
+                  </div>
+                  {foreignInstalls > 0 ? (
+                    <div style={{ fontSize: 12.5, marginBottom: 6 }}>
+                      このプラグインには作者以外の導入が {foreignInstalls}{" "}
+                      件あります。削除すると導入している利用者にも影響するため、削除はできません。
+                      <br />
+                      代わりに「停止（キルスイッチ）」を使ってください（導入は残ったまま効果だけ止まります）。
+                    </div>
+                  ) : (
+                    <ul style={{ margin: "0 0 6px", paddingLeft: 18, fontSize: 12 }}>
+                      <li>すべての導入（個人・板・サイト全体）から外れます</li>
+                      <li>バージョン・審査記録・共有データも削除されます</li>
+                      <li>削除したプラグインを元に戻すことはできません（もう一度作り直す必要があります）</li>
+                    </ul>
+                  )}
+                  <div className="oc-row">
+                    <button
+                      type="button"
+                      className="oc-btn oc-btn-danger"
+                      disabled={busy || foreignInstalls > 0}
+                      onClick={() =>
+                        void run(async () => {
+                          await pluginApi.remove(plugin.id);
+                          window.location.href = "/plugins/";
+                          return "削除しました";
+                        }, false)
+                      }
+                    >
+                      削除する
+                    </button>
+                    <button type="button" className="oc-btn" disabled={busy} onClick={() => setDeleteConfirm(false)}>
+                      やめる
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </Card>
           ) : null}
 
@@ -623,12 +855,15 @@ export default function PluginViewPage() {
 
 function InstallRow(props: {
   install: PluginInstallInfo;
+  /** プラグイン本体のレジストリ状態（B5: 全体停止中表示に使う） */
+  pluginStatus: string;
   busy: boolean;
   onUpdate: () => void;
   onUninstall: () => void;
   onToggle: () => void;
 }) {
   const { install } = props;
+  const globallyDisabled = props.pluginStatus === "disabled";
   return (
     <li style={{ borderTop: "1px solid #eee", padding: "6px 0" }}>
       <div className="oc-row">
@@ -641,17 +876,30 @@ function InstallRow(props: {
         </Badge>
         <span>v{install.version}</span>
         {install.pinned ? <Badge tone="warn">固定</Badge> : null}
-        <Badge tone={install.enabled ? "ok" : "danger"}>{install.enabled ? "有効" : "停止中"}</Badge>
+        {globallyDisabled ? (
+          <Badge tone="danger">停止中（効果なし）</Badge>
+        ) : (
+          <Badge tone={install.enabled ? "ok" : "danger"}>{install.enabled ? "有効" : "無効"}</Badge>
+        )}
         <button type="button" className="oc-btn" disabled={props.busy} onClick={props.onUpdate}>
           更新
         </button>
         <button type="button" className="oc-btn" disabled={props.busy} onClick={props.onToggle}>
-          {install.scope === "board" ? "板内で停止" : "無効化"}
+          {/* B6/R2: 導入単位の有効・無効トグル。ラベルは常に実際の操作と一致させる。 */}
+          {install.enabled ? "無効化" : "有効化"}
         </button>
         <button type="button" className="oc-btn oc-btn-danger" disabled={props.busy} onClick={props.onUninstall}>
           アンインストール
         </button>
       </div>
+      {globallyDisabled ? (
+        <div className="oc-muted oc-small">
+          プラグイン全体が停止（キルスイッチ）中のため、この導入は
+          {install.enabled
+            ? "有効化されていますが効果がありません。停止が解除されれば自動的に効き始めます。"
+            : "無効化されています。停止が解除されても自動では戻りません。必要に応じて「有効化」を押してください。"}
+        </div>
+      ) : null}
     </li>
   );
 }

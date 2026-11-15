@@ -49,25 +49,22 @@ export async function listThreads(
   boardId: number,
   query: ThreadListQuery,
 ): Promise<{ items: ThreadSummary[]; nextCursor: string | null }> {
+  // SQL 内の `?` は WHERE 句 → ORDER BY → LIMIT の順に出現するため、バインド値も
+  // この順で並べる。sort=speed の ORDER BY は `?`（現在時刻）を 1 つ持つが、
+  // これを WHERE のバインド（LIKE など）より先に push すると番号がずれて
+  // 検索語が勢いの式に束縛され、検索結果が 0 件になる（レビュー B1）。
   const conditions = ["t.board_id = ?", "t.status = 'active'"];
-  const bindings: unknown[] = [boardId];
-  let orderBy = "t.pinned DESC, t.bump_at DESC, t.id DESC";
-  if (query.sort === "created") orderBy = "t.pinned DESC, t.created_at DESC, t.id DESC";
-  if (query.sort === "posts") orderBy = "t.pinned DESC, t.post_count DESC, t.id DESC";
-  if (query.sort === "speed") {
-    orderBy = "t.pinned DESC, (t.post_count * 3600.0 / MAX(1, ? - t.created_at)) DESC, t.id DESC";
-    bindings.push(Math.floor(Date.now() / 1000));
-  }
+  const whereBindings: unknown[] = [boardId];
 
   if (query.q) {
     conditions.push("t.title LIKE ? ESCAPE '\\'");
-    bindings.push(likeContains(query.q));
+    whereBindings.push(likeContains(query.q));
   }
   if (query.tag) {
     conditions.push(
       "EXISTS (SELECT 1 FROM thread_tags tt JOIN tags g ON g.id = tt.tag_id WHERE tt.thread_id = t.id AND g.name = ?)",
     );
-    bindings.push(query.tag.toLowerCase());
+    whereBindings.push(query.tag.toLowerCase());
   }
 
   const cursor = decodeCursor(query.cursor);
@@ -76,14 +73,24 @@ export async function listThreads(
     const id = Number(cursor["id"] ?? 0);
     if (query.sort === "created") {
       conditions.push("(t.created_at < ? OR (t.created_at = ? AND t.id < ?))");
-      bindings.push(at, at, id);
+      whereBindings.push(at, at, id);
     } else if (query.sort === "posts") {
       conditions.push("(t.post_count < ? OR (t.post_count = ? AND t.id < ?))");
-      bindings.push(at, at, id);
+      whereBindings.push(at, at, id);
     } else {
       conditions.push("(t.bump_at < ? OR (t.bump_at = ? AND t.id < ?))");
-      bindings.push(at, at, id);
+      whereBindings.push(at, at, id);
     }
+  }
+
+  // ORDER BY は WHERE の後に置く（bindings の順をプレースホルダ出現順に保つ）。
+  let orderBy = "t.pinned DESC, t.bump_at DESC, t.id DESC";
+  const orderBindings: unknown[] = [];
+  if (query.sort === "created") orderBy = "t.pinned DESC, t.created_at DESC, t.id DESC";
+  if (query.sort === "posts") orderBy = "t.pinned DESC, t.post_count DESC, t.id DESC";
+  if (query.sort === "speed") {
+    orderBy = "t.pinned DESC, (t.post_count * 3600.0 / MAX(1, ? - t.created_at)) DESC, t.id DESC";
+    orderBindings.push(Math.floor(Date.now() / 1000));
   }
 
   const limit = Math.min(Math.max(query.limit, 1), PAGE_LIMIT_MAX);
@@ -92,7 +99,7 @@ export async function listThreads(
       `SELECT ${THREAD_COLUMNS} FROM threads t JOIN boards b ON b.id = t.board_id
        WHERE ${conditions.join(" AND ")} ORDER BY ${orderBy} LIMIT ?`,
     )
-    .bind(...bindings, limit + 1)
+    .bind(...whereBindings, ...orderBindings, limit + 1)
     .all<ThreadRow>();
 
   const rows = result.results.slice(0, limit);

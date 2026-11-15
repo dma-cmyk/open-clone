@@ -830,6 +830,90 @@ export async function setInstallEnabled(db: D1Database, installId: string, enabl
     .run();
 }
 
+/**
+ * 作者自身の導入の条件（R1-N: NULL 安全）。
+ * 「scope=personal かつ 作者IDが非NULL かつ installed_byが非NULL かつ 両者が一致」
+ * だけを作者本人とみなす。owner=NULL・installed_by=NULL・帰属不明は全て他者扱い。
+ * SQLite で `installed_by <> ?`（NULL で UNKNOWN）にならないよう、NULL は先に分岐で落とす。
+ */
+export const OWN_INSTALL_CONDITION = `scope = 'personal' AND installed_by IS NOT NULL AND ? IS NOT NULL AND installed_by = ?`;
+
+/**
+ * 作者以外の導入の件数（レビュー B4-R1 の削除保護。R1-N: NULL 安全版）。
+ * - board / site スコープは常に「他者への影響がある導入」として数える。
+ * - personal は OWN_INSTALL_CONDITION を満たすものだけを作者自身とみなす。
+ *   匿名端末（device:）・installed_by=NULL・owner=NULL（公式）は全て保護対象。
+ */
+export async function countForeignInstalls(
+  db: D1Database,
+  pluginId: string,
+  ownerAccountId: string | null,
+): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM plugin_installs
+       WHERE plugin_id = ?
+         AND NOT (${OWN_INSTALL_CONDITION})`,
+    )
+    .bind(pluginId, ownerAccountId, ownerAccountId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/**
+ * プラグインの実削除（レビュー B4/R1-C: 判定と削除の原子化）。
+ *
+ * すべての削除文に「他者の導入が存在しない」こと（NULL 安全な R1-N 条件）を
+ * 付けて 1 つの D1 バッチ（= 1 トランザクション）で実行する:
+ * - トランザクション開始後に他者の導入が 1 件でも存在すれば（含む: 判定直前に
+ *   確定した新規導入）、どの文も条件を満たさず何も削除されない。
+ * - 本体（plugins）の削除結果の行数で成否を返す。0 行なら 409 にする。
+ * - トランザクション外で本体削除の後に挟まった新規導入は、子テーブルの FK
+ *   （plugin_installs.plugin_id REFERENCES plugins(id)）により INSERT 時点で失敗する。
+ *
+ * plugin_net_log / plugin_ai_log は監査証跡として残す。監査ログ（audit_log）は
+ * writeAudit で残るため、削除操作自体は追跡可能。
+ *
+ * @returns deleted: 本体を削除できたか。false は他者の導入があって拒否された場合。
+ */
+export async function deletePlugin(
+  db: D1Database,
+  pluginId: string,
+  ownerAccountId: string | null,
+): Promise<{ deleted: boolean }> {
+  // 「他者の導入が 1 件も存在しない」こと（R1-N の NULL 安全条件）。
+  const noForeign = `NOT EXISTS (
+    SELECT 1 FROM plugin_installs
+    WHERE plugin_id = ? AND NOT (${OWN_INSTALL_CONDITION})
+  )`;
+
+  // 1 バッチ = 1 トランザクション。各文が同じ条件を再判定するため、
+  // 途中の文で保護条件が変わっても（並行導入）、以降の文は何も消さない。
+  const results = await db.batch([
+    db
+      .prepare(`DELETE FROM plugin_installs WHERE plugin_id = ? AND ${noForeign}`)
+      .bind(pluginId, pluginId, ownerAccountId, ownerAccountId),
+    db
+      .prepare(`DELETE FROM plugin_state WHERE plugin_id = ? AND ${noForeign}`)
+      .bind(pluginId, pluginId, ownerAccountId, ownerAccountId),
+    db
+      .prepare(`DELETE FROM plugin_reviews WHERE plugin_id = ? AND ${noForeign}`)
+      .bind(pluginId, pluginId, ownerAccountId, ownerAccountId),
+    db
+      .prepare(`DELETE FROM plugin_reports WHERE plugin_id = ? AND ${noForeign}`)
+      .bind(pluginId, pluginId, ownerAccountId, ownerAccountId),
+    db
+      .prepare(`DELETE FROM plugin_versions WHERE plugin_id = ? AND ${noForeign}`)
+      .bind(pluginId, pluginId, ownerAccountId, ownerAccountId),
+    db
+      .prepare(`DELETE FROM plugins WHERE id = ? AND ${noForeign}`)
+      .bind(pluginId, pluginId, ownerAccountId, ownerAccountId),
+  ]);
+
+  // 本体（最後の文）が削除できたかで成否を判定する。
+  const parentResult = results[results.length - 1];
+  return { deleted: (parentResult?.meta.changes ?? 0) === 1 };
+}
 /** ページに適用される導入（personal + その板 + site）。停止済みも stopped フラグ付きで返す。 */
 export async function listActiveInstalls(
   db: D1Database,
@@ -869,10 +953,15 @@ export async function listActiveInstalls(
       row.scope === "personal" &&
       params.viewerAccountId != null &&
       row.owner_account_id === params.viewerAccountId;
-    const stopped =
-      row.plugin_status === "disabled" ||
-      !row.version_manifest ||
-      (row.version_status !== "approved" && !ownerPreview);
+    // 停止理由を分けて返す（レビュー B5: 表示と実際の効果を一致させる）。
+    let stoppedReason: string | null = null;
+    if (row.plugin_status === "disabled") {
+      stoppedReason = "プラグイン全体が停止（キルスイッチ）中です。停止が解除されるまで効果はありません";
+    } else if (!row.version_manifest) {
+      stoppedReason = "導入済みバージョンがレジストリに存在しません（版が差し替えられた可能性）";
+    } else if (row.version_status !== "approved" && !ownerPreview) {
+      stoppedReason = "導入済みバージョンは承認されていません（公開申請中か差し戻し中）";
+    }
     return {
       installId: row.id,
       pluginId: row.plugin_id,
@@ -880,7 +969,8 @@ export async function listActiveInstalls(
       version: row.version,
       scope: row.scope,
       scopeRef: row.scope_ref,
-      stopped,
+      stopped: stoppedReason !== null,
+      stoppedReason,
       status: row.plugin_status,
       codeUrl: `/v1/plugins/${row.plugin_id}/code?version=${encodeURIComponent(row.version)}`,
       manifest: parseManifest(row.version_manifest ?? row.plugin_manifest),

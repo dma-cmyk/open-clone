@@ -50,8 +50,10 @@ import {
   addVersion,
   createPlugin,
   decideReview,
+  deletePlugin,
   disablePlugin,
   enablePlugin,
+  countForeignInstalls,
   findInstall,
   forkPlugin,
   getPluginDetail,
@@ -59,6 +61,7 @@ import {
   getReviewRow,
   getVersionRow,
   installPlugin,
+  installRowToInfo,
   listActiveInstalls,
   listPlugins,
   listReports,
@@ -68,6 +71,7 @@ import {
   publishPlugin,
   recordReport,
   resolveInstallVersion,
+  setInstallEnabled,
   setPluginSource,
   stateDelete,
   stateGet,
@@ -789,22 +793,91 @@ app.post("/:id/enable", async (c) => {
   return c.json(ok({ status: "published" }));
 });
 
+/**
+ * 実削除（レビュー B4/R1-N + R1-C）。停止（キルスイッチ）とは別操作。
+ * - R1-N: 作者本人と確実に判定できる導入（scope=personal・ownerID あり・installed_by 一致）
+ *   以外は全て「他者の導入」として保護する（NULL は本人一致にしない）。
+ * - R1-C: 判定と削除を 1 つのアトミックな条件付き DELETE で行う
+ *   （deletePlugin 内）。件数確認→削除の間に挟まった他者の導入も消えない。
+ */
 app.delete("/:id", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
   assertPluginEditor(actor, plugin.owner_account_id);
-  await c.env.DB.prepare(
-    "UPDATE plugins SET visibility = 'private', status = 'disabled', kill_seq = kill_seq + 1, updated_at = ? WHERE id = ?",
-  )
-    .bind(Math.floor(Date.now() / 1000), plugin.id)
-    .run();
+
+  // 原子的な削除（削除できない場合は deleted=false）。管理者操作でも保護は外さない。
+  const result = await deletePlugin(c.env.DB, plugin.id, plugin.owner_account_id);
+  if (!result.deleted) {
+    // 拒否の理由（件数）を付けて案内する。競合で拒否した場合も監査に残す。
+    const foreign = await countForeignInstalls(c.env.DB, plugin.id, plugin.owner_account_id);
+    await writeAudit(c.env.DB, {
+      actorType: actor.isAdmin ? "special_admin" : "account",
+      actorId: actor.accountId,
+      action: "plugin.delete.denied",
+      target: plugin.id,
+      detail: { reason: "foreign_installs_present", foreignInstalls: foreign },
+    });
+    throw ApiError.conflict(
+      `このプラグインには作者以外の導入が ${foreign} 件あります。削除すると導入している利用者にも影響するため削除できません。代わりに「停止（キルスイッチ）」を使ってください（導入は残ったまま効果だけ止まります）`,
+    );
+  }
+
   await writeAudit(c.env.DB, {
-    actorType: "account",
+    actorType: actor.isAdmin ? "special_admin" : "account",
     actorId: actor.accountId,
     action: "plugin.delete",
     target: plugin.id,
+    detail: { name: plugin.name, version: plugin.latest_version },
   });
   return c.json(ok({ deleted: true }));
+});
+
+// ─── 導入の有効/無効（レビュー B6: 無効化≠アンインストール） ──────
+
+/** 導入を残したまま enabled=0 にする（自分の導入だけ。効果は止まる）。 */
+app.post("/:id/disable-install", async (c) => {
+  const actor = pluginActorFrom(getReqCtx(c));
+  const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  const body = pluginUninstallSchema.parse(await c.req.json());
+
+  await assertInstallPermission(c.env.DB, actor, body.scope, body.boardId);
+  const scopeRef = scopeRefFor(body.scope, actor, body.boardId);
+  const install = await findInstall(c.env.DB, plugin.id, body.scope, scopeRef);
+  if (!install) throw ApiError.notFound("このスコープには導入されていません");
+  if (install.enabled !== 1) throw ApiError.conflict("この導入は既に無効です");
+
+  await setInstallEnabled(c.env.DB, install.id, false);
+  await writeAudit(c.env.DB, {
+    actorType: body.scope === "board" ? "board_staff" : "account",
+    actorId: actor.accountId,
+    action: "plugin.install.disable",
+    target: plugin.id,
+    detail: { scope: body.scope, scopeRef },
+  });
+  return c.json(ok({ install: installRowToInfo({ ...install, enabled: 0, updated_at: install.updated_at }), disabled: true }));
+});
+
+/** 無効化した導入を enabled=1 に戻す。 */
+app.post("/:id/enable-install", async (c) => {
+  const actor = pluginActorFrom(getReqCtx(c));
+  const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  const body = pluginUninstallSchema.parse(await c.req.json());
+
+  await assertInstallPermission(c.env.DB, actor, body.scope, body.boardId);
+  const scopeRef = scopeRefFor(body.scope, actor, body.boardId);
+  const install = await findInstall(c.env.DB, plugin.id, body.scope, scopeRef);
+  if (!install) throw ApiError.notFound("このスコープには導入されていません");
+  if (install.enabled === 1) throw ApiError.conflict("この導入は既に有効です");
+
+  await setInstallEnabled(c.env.DB, install.id, true);
+  await writeAudit(c.env.DB, {
+    actorType: body.scope === "board" ? "board_staff" : "account",
+    actorId: actor.accountId,
+    action: "plugin.install.enable",
+    target: plugin.id,
+    detail: { scope: body.scope, scopeRef },
+  });
+  return c.json(ok({ install: installRowToInfo({ ...install, enabled: 1, updated_at: install.updated_at }), enabled: true }));
 });
 
 app.post("/:id/fork", requireAuth, async (c) => {
