@@ -77,6 +77,8 @@ export default function PluginEditorPage() {
   const editId = useQueryParam("id");
 
   const [name, setName] = useState("my-plugin");
+  // B10: 静的検査を押したタイミングで名前欄の妥当性を名前欄のそばに出す。
+  const [nameTouched, setNameTouched] = useState(false);
   const [version, setVersion] = useState("1.0.0");
   const [summary, setSummary] = useState("スレに何かを表示するプラグイン");
   const [description, setDescription] = useState("");
@@ -229,9 +231,15 @@ export default function PluginEditorPage() {
   }, [applyTemplate]);
 
   async function runCheck() {
+    // B10: 名前欄が空・不正なら、名前欄のそばに理由を出して先に止める。
+    setNameTouched(true);
     setError(null);
     setCheckResult(null);
     setCheckWarnings([]);
+    if (!/^([a-z][a-z0-9-]{2,40})$/.test(name)) {
+      setError("名前（slug）を正しく入力してください（英小文字・数字・ハイフンで 3〜41 文字）");
+      return;
+    }
     if (!manifestResult.manifest) {
       setError(manifestResult.error ?? "manifest が不正です");
       return;
@@ -352,7 +360,19 @@ export default function PluginEditorPage() {
                     value={name}
                     disabled={Boolean(pluginId)}
                     onChange={(event) => setName(event.target.value)}
+                    aria-invalid={nameTouched && !/^([a-z][a-z0-9-]{2,40})$/.test(name) ? true : undefined}
+                    aria-describedby={nameTouched && !/^([a-z][a-z0-9-]{2,40})$/.test(name) ? "plugin-name-error" : undefined}
                   />
+                  {/* B10: 名前欄のそばに理由を出す（画面下方の固定エラーだけだと気づけない） */}
+                  {nameTouched && !/^([a-z][a-z0-9-]{2,40})$/.test(name) ? (
+                    <span
+                      id="plugin-name-error"
+                      className="oc-error"
+                      style={{ fontSize: 12, marginTop: 2, display: "block" }}
+                    >
+                      名前は英小文字・数字・ハイフンで 3〜41 文字（英小文字始まり）にしてください。
+                    </span>
+                  ) : null}
                 </Field>
               </div>
               <div style={{ flex: "0 0 120px" }}>

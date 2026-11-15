@@ -211,6 +211,22 @@ export const pluginApi = {
     return request("POST", `/plugins/${encodeURIComponent(id)}/uninstall`, input);
   },
 
+  /** 導入を残したまま無効化（レビュー B6。アンインストールとは別操作）。 */
+  disableInstall(
+    id: string,
+    input: { scope: PluginScope; boardId?: number },
+  ): Promise<{ install: PluginInstallInfo; disabled: boolean }> {
+    return request("POST", `/plugins/${encodeURIComponent(id)}/disable-install`, input);
+  },
+
+  /** 無効化した導入を有効化に戻す（レビュー B6）。 */
+  enableInstall(
+    id: string,
+    input: { scope: PluginScope; boardId?: number },
+  ): Promise<{ install: PluginInstallInfo; enabled: boolean }> {
+    return request("POST", `/plugins/${encodeURIComponent(id)}/enable-install`, input);
+  },
+
   report(
     id: string,
     input: { reason: string; detail?: string; version?: string },

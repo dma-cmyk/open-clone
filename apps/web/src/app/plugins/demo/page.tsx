@@ -78,7 +78,10 @@ export default function PluginDemoPage() {
           </div>
         ) : (
           <p className="oc-muted oc-small">
-            有効なプラグインがありません。`/plugins/` から公式サンプル（spoiler / dice / gallery）を個人用に導入してください。
+            導入済みのプラグインがありません。
+            <a href="/plugins/">プラグイン一覧</a>
+            から公式サンプル（spoiler / dice / gallery）を個人用に導入すると、このデモと実スレに反映されます。
+            個人用の導入はログイン不要です。
           </p>
         )}
         <p className="oc-muted oc-small">

@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PluginActiveInstall, PluginScope, PluginSummary } from "shared";
-import { pluginApi } from "@/features/plugin-host";
+import { PluginApiError, pluginApi } from "@/features/plugin-host";
 import {
   createLatestOnly,
   initialRegistryTab,
@@ -46,6 +46,8 @@ export default function PluginsPage() {
   // タブ確定までの間も「読み込み中」を出す（プリレンダーと初回レンダーを同じ見た目にする）。
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // R4: mine 取得の 401（未ログイン）を通信・サーバエラーと区別する。
+  const [authRequired, setAuthRequired] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [gist, setGist] = useState("");
   const [repo, setRepo] = useState("");
@@ -56,6 +58,7 @@ export default function PluginsPage() {
     const token = latest.current.begin();
     setLoading(true);
     setError(null);
+    setAuthRequired(false);
     try {
       if (tab === "installed") {
         const response = await pluginApi.active();
@@ -76,7 +79,16 @@ export default function PluginsPage() {
       }
     } catch (caught) {
       if (!latest.current.isCurrent(token)) return;
-      setError(errorText(caught));
+      // R4: 失敗時に前のタブ（公開一覧など）の結果を mine の結果として残さない。
+      // 特に未ログインの mine は 401 になるため、ここで結果を空にして
+      // 件数を確定させずログイン案内へ出す。
+      if (tab === "mine") setItems([]);
+      if (tab === "mine" && caught instanceof PluginApiError && caught.status === 401) {
+        setAuthRequired(true);
+        setError(null);
+      } else {
+        setError(errorText(caught));
+      }
     } finally {
       if (latest.current.isCurrent(token)) setLoading(false);
     }
@@ -242,26 +254,56 @@ export default function PluginsPage() {
                     </a>
                     <Badge>{item.scope === "personal" ? "個人用" : item.scope === "board" ? `板用 (${item.scopeRef})` : "サイト全体"}</Badge>
                     <Badge>v{item.version}</Badge>
-                    {item.stopped ? <Badge tone="danger">停止中</Badge> : <Badge tone="ok">有効</Badge>}
+                    {item.stopped ? (
+                      <Badge tone="danger">停止中（効果なし）</Badge>
+                    ) : (
+                      <Badge tone="ok">有効</Badge>
+                    )}
                   </div>
                   <div className="oc-muted oc-small">{item.manifest.summary}</div>
+                  {item.stopped && item.stoppedReason ? (
+                    <div className="oc-muted oc-small">{item.stoppedReason}</div>
+                  ) : null}
                 </li>
               ))}
             </ul>
           )}
         </Card>
       ) : (
-        <Card title={`${tab === "mine" ? "自分のプラグイン" : "公開プラグイン"}（${items.length}）`}>
+        <Card
+          title={`${tab === "mine" ? "自分のプラグイン" : "公開プラグイン"}${
+            authRequired && tab === "mine" ? "" : `（${items.length}）`
+          }`}
+        >
           {items.length === 0 && !loading ? (
-            <p className="oc-muted oc-small">
-              該当するプラグインがありません。
-              {tab === "mine" ? (
-                <>
-                  「<a href="/plugins/templates/">テンプレートから作る</a>」か「
-                  <a href="/plugins/new/">コードを直接書く</a>」から最初のプラグインを作れます。
-                </>
-              ) : null}
-            </p>
+            authRequired && tab === "mine" ? (
+              // B13/R4: 未ログインの 401 では「0 件」という確定値を出さずログイン案内。
+              // 通信・サーバエラー（authRequired=false）は通常のエラー表示のまま。
+              // 個人用導入はログイン不要（B14）だが、作成にはアカウントが必要。
+              <p className="oc-muted oc-small">
+                自分のプラグインを表示するにはログインが必要です。
+                <a href="/account/login?next=%2Fplugins%3Ftab%3Dmine" style={{ marginLeft: 4 }}>
+                  ログイン
+                </a>
+                ・
+                <a href="/account/register" style={{ marginLeft: 4 }}>
+                  新規登録
+                </a>
+                <br />
+                なお、プラグインを個人用に導入して使うだけならログインは不要です。
+                「公開プラグイン」タブから導入できます。
+              </p>
+            ) : (
+              <p className="oc-muted oc-small">
+                該当するプラグインがありません。
+                {tab === "mine" ? (
+                  <>
+                    「<a href="/plugins/templates/">テンプレートから作る</a>」か「
+                    <a href="/plugins/new/">コードを直接書く</a>」から最初のプラグインを作れます。
+                  </>
+                ) : null}
+              </p>
+            )
           ) : (
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
               {items.map((plugin) => (

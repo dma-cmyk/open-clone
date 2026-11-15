@@ -107,6 +107,10 @@ beforeEach(async () => {
     env.DB.prepare("DELETE FROM plugin_ai_usage"),
     env.DB.prepare("DELETE FROM plugin_net_log"),
     env.DB.prepare("DELETE FROM plugin_state"),
+    // plugin_reviews / plugin_reports は plugins への FK を持つため、
+    // plugins を消す前に先に消す（0612 の seed が review 行を作るため必須）。
+    env.DB.prepare("DELETE FROM plugin_reviews"),
+    env.DB.prepare("DELETE FROM plugin_reports"),
     env.DB.prepare("DELETE FROM plugin_installs"),
     env.DB.prepare("DELETE FROM plugin_versions"),
     env.DB.prepare("DELETE FROM plugins"),

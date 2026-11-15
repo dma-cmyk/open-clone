@@ -12,6 +12,7 @@ import { PluginSlot } from "@/components/plugin-slot";
 import { Button, Notice, Spinner, useToast } from "@/components/ui";
 import { Link, navigate, useLocation } from "../router";
 import type { Post } from "@/features/board-ui/types";
+import { buildPreview } from "./board-preview";
 
 const SORTS = [
   { value: "speed", label: "勢い" },
@@ -19,7 +20,6 @@ const SORTS = [
   { value: "created", label: "新スレ" },
   { value: "posts", label: "レス数" },
 ];
-
 export function BoardView({ slug }: { slug: string }) {
   const location = useLocation();
   const params = useMemo(() => {
@@ -54,10 +54,7 @@ export function BoardView({ slug }: { slug: string }) {
         ]);
         return [
           thread.id,
-          {
-            op: opPage.posts.find((post) => post.num === 1),
-            latest: latestPage.posts.filter((post) => post.kind !== "tsubuyaki"),
-          },
+          buildPreview(opPage, latestPage),
         ] as const;
       }),
     ).then((results) => {
@@ -201,7 +198,24 @@ export function BoardView({ slug }: { slug: string }) {
           </div>
         ) : null}
         {threads.data && threads.data.items.length === 0 ? (
-          <div className="oc-empty">スレがありません。最初のスレを立ててみましょう。</div>
+          q ? (
+            <div className="oc-empty">
+              検索語「{q}」に一致するスレがありません。
+              <button
+                type="button"
+                className="oc-btn oc-btn-sm"
+                style={{ marginLeft: 8 }}
+                onClick={() => {
+                  setSearchDraft("");
+                  updateQuery({ q: null });
+                }}
+              >
+                検索を解除
+              </button>
+            </div>
+          ) : (
+            <div className="oc-empty">スレがありません。最初のスレを立ててみましょう。</div>
+          )
         ) : null}
         {threads.data?.items.map((thread, index) => {
           const ngReason = matchNgThread(thread.title, settings.ng);
@@ -298,12 +312,26 @@ export function BoardView({ slug }: { slug: string }) {
                   無視
                 </button>
               </div>
-              <div className="oc-thread-links">
-                <Link href={`${threadPath(slug, thread.id)}?r=1-1000`}>全部</Link>
-                <Link href={`${threadPath(slug, thread.id)}?r=l50`}>最新50</Link>
-                <Link href={`${threadPath(slug, thread.id)}?r=l10`}>最新10</Link>
-                <Link href={`${threadPath(slug, thread.id)}?r=1-100`}>1-100</Link>
-                <Link href={`${threadPath(slug, thread.id)}?r=images`}>画像一覧</Link>
+              {/* B3: 狭幅でも操作領域を 44px 程度に広げる（globals.css は触らない） */}
+              <div className="oc-thread-links" style={{ rowGap: 0 }}>
+                {(
+                  [
+                    ["全部", "1-1000"],
+                    ["最新50", "l50"],
+                    ["最新10", "l10"],
+                    ["1-100", "1-100"],
+                    ["画像一覧", "images"],
+                  ] as const
+                ).map(([label, range]) => (
+                  <Link
+                    key={range}
+                    href={`${threadPath(slug, thread.id)}?r=${range}`}
+                    className="oc-thread-link-target"
+                    style={{ padding: "12px 6px", margin: "-10px 0", lineHeight: 1.2 }}
+                  >
+                    {label}
+                  </Link>
+                ))}
               </div>
             </div>
           );
