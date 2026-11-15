@@ -45,25 +45,41 @@ async function createBoard(request: APIRequestContext, slug: string, description
 }
 
 test.describe("rv-ux C5〜C8（フォームと案内）", () => {
-  test("C5: カテゴリ欄に既存カテゴリの候補と新規カテゴリの案内が出る", async ({ page, context }, info) => {
+  test("C5: カテゴリ欄に既存カテゴリの候補と新規カテゴリの案内が出る", async ({ page, context, request }, info) => {
     await loginAsOwner(context);
+    // 既存カテゴリの候補は実在する板のカテゴリから来るため、テスト自身で1件作る
+    // （新しい D1 状態でも他 spec の残りに依存しないようにする）。
+    const existing = unique("c5cat");
+    const slug = unique("c5board").toLowerCase();
+    const board = await request.post(`${API_BASE}/v1/boards`, {
+      headers: ownerHeaders(),
+      data: {
+        slug,
+        name: `カテゴリ候補板${slug.slice(-4)}`,
+        category: existing,
+        description: "C5 候補検証用",
+        settings: { turnstile: "off", cooldownSeconds: 0 },
+      },
+    });
+    expect(board.status(), await board.text()).toBe(201);
+
     await page.goto("/");
     await page.getByRole("link", { name: /板を作る/ }).first().click();
     await expect(page.getByLabel(/カテゴリ/)).toBeVisible({ timeout: 20_000 });
 
-    // 既存カテゴリが datalist の候補として出る（E2E DB には seed/spec 由来のカテゴリがある）。
+    // 既存カテゴリが datalist の候補として出る。
     const options = page.locator("datalist#oc-categories option");
     await expect(options.first()).toBeAttached({ timeout: 20_000 });
     const values = await options.evaluateAll((elements) =>
       elements.map((element) => (element as HTMLOptionElement).value),
     );
-    expect(values.length).toBeGreaterThan(0);
+    expect(values).toContain(existing);
 
     // 既存カテゴリ名を入れると「既存カテゴリ」の案内、新しい名前なら「新しいカテゴリ」の案内。
     const category = page.getByLabel(/カテゴリ/);
     const note = page.locator("label.oc-field").filter({ hasText: "カテゴリ" }).locator(".oc-note");
-    await category.fill(values[0]!);
-    await expect(note).toContainText(/既存カテゴリ「.+」に分類されます/);
+    await category.fill(existing);
+    await expect(note).toContainText(`既存カテゴリ「${existing}」に分類されます`);
     const fresh = unique("cat");
     await category.fill(fresh);
     await expect(note).toContainText(`「${fresh}」は新しいカテゴリとして作成されます。`);
@@ -113,17 +129,21 @@ test.describe("rv-ux C5〜C8（フォームと案内）", () => {
     await page.goto("/");
     const list = page.locator(".oc-board-list").filter({ hasText: slugA }).first();
     await expect(list).toBeVisible({ timeout: 20_000 });
-    // トップ: 同名の板名が並ぶ中でも、各行に slug が出て区別できる。
+    // トップ: 同名の板名が並ぶ中でも、各行に slug が出て区別できる（全幅で確認）。
     await expect(list.getByText(`/b/${slugA}`)).toBeVisible();
     await expect(list.getByText(`/b/${slugB}`)).toBeVisible();
-    // サイドバー（PC のみ表示）: 省略表示の 2 行目に slug が出る。
-    const sidebar = page.locator(".oc-sidebar");
-    await expect(sidebar.getByText(`/b/${slugA}`)).toBeVisible();
-    await expect(sidebar.getByText(`/b/${slugB}`)).toBeVisible();
-    await page.screenshot({ path: shotPath(info, "c7-after-pc.png"), fullPage: true });
+    // サイドバーは 900px 未満で非表示になる既存仕様のため、広い画面のときだけ確認する
+    // （mobile プロジェクトではトップの一覧のみが検証対象）。
+    if ((page.viewportSize()?.width ?? 0) >= 900) {
+      const sidebar = page.locator(".oc-sidebar");
+      await expect(sidebar.getByText(`/b/${slugA}`)).toBeVisible();
+      await expect(sidebar.getByText(`/b/${slugB}`)).toBeVisible();
+    }
+    await page.screenshot({ path: shotPath(info, "c7-after-wide.png"), fullPage: true });
     await page.setViewportSize({ width: 360, height: 740 });
     // 360px ではサイドバーは非表示。トップの一覧で slug が見えることを確認する。
     await expect(list.getByText(`/b/${slugA}`)).toBeVisible();
+    await expect(list.getByText(`/b/${slugB}`)).toBeVisible();
     await page.screenshot({ path: shotPath(info, "c7-after-360.png"), fullPage: true });
   });
 
