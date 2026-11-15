@@ -60,7 +60,9 @@ describe("テンプレートフォームの結合（7 テンプレート）", ()
       }
 
       if (template.kind === "render") {
-        expect(draft.code.trim()).toBe("register({});");
+        // JS の処理を持たない（コメントを除くと空の register だけ）
+        const statements = draft.code.split("\n").filter((line) => line.trim() && !line.trim().startsWith("//"));
+        expect(statements).toEqual(["register({});"]);
         expect(draft.manifest.render?.post?.length).toBeGreaterThan(0);
       } else {
         expect(draft.manifest.slots.length).toBeGreaterThan(0);

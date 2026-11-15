@@ -142,9 +142,10 @@ describe("generateFromTemplate: 代表パラメータ", () => {
   }
 
   it("render 系のコードは固定文字列（利用者入力を含まない）", () => {
-    for (const id of ["spoiler", "ng-word-mask", "keyword-deco"]) {
-      expect(generateOk(id, representativeParams(id)).code).toBe("register({});");
-    }
+    const codes = ["spoiler", "ng-word-mask", "keyword-deco"].map((id) => generateOk(id, representativeParams(id)).code);
+    expect(new Set(codes).size).toBe(1);
+    // 説明コメントを除くと空の register だけ（JS の処理を持たない）
+    expect(codes[0]!.split("\n").filter((line) => line.trim() && !line.trim().startsWith("//"))).toEqual(["register({});"]);
   });
 
   it("生成コードは JavaScript として構文解析できる", () => {
@@ -239,7 +240,7 @@ describe("generateFromTemplate: 注入耐性", () => {
   it("render 系: メタ文字はエスケープされ、コードは固定のまま", () => {
     for (const injected of INJECTION_STRINGS) {
       const spoiler = generateOk("spoiler", { ...representativeParams("spoiler"), openTag: injected.slice(0, 10), closeTag: injected.slice(0, 10) });
-      expect(spoiler.code).toBe("register({});");
+      expect(spoiler.code).toBe(generateOk("spoiler", representativeParams("spoiler")).code);
       const rule = spoiler.manifest.render?.post?.[0];
       expect(rule).toBeDefined();
       expect(rule!.pattern).toContain(escapeRegExp(injected.slice(0, 10).trim()));

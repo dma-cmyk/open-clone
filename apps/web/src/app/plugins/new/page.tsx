@@ -162,6 +162,8 @@ export default function PluginEditorPage() {
         }
         if (!cancelled) {
           setPreviewSlot(detail.manifest.slots[0] ?? "thread-post-inline");
+          // 初回マウント時のプレビューは既定コードで走っているので、読み込んだコードで撮り直す
+          setPreviewRunId((value) => value + 1);
           setNotice(`「${detail.name}」の新バージョンを作成します（v${nextPatch(detail.latestVersion)}）`);
         }
       } catch (caught) {
@@ -189,6 +191,7 @@ export default function PluginEditorPage() {
     setRenderText(JSON.stringify(template.render, null, 2));
     setCode(template.code);
     setPreviewSlot(template.slots[0] ?? "thread-post-inline");
+    setPreviewRunId((value) => value + 1);
     setNotice(`サンプル「${template.label}」を読み込みました`);
     setCheckResult(null);
     setCheckWarnings([]);
@@ -221,6 +224,7 @@ export default function PluginEditorPage() {
       setRenderText(JSON.stringify(draft.manifest.render?.post ?? [], null, 2));
       setCode(draft.code);
       setPreviewSlot(draft.manifest.slots[0] ?? "thread-post-inline");
+      setPreviewRunId((value) => value + 1);
       setNotice("テンプレートの内容を読み込みました。編集して保存できます。");
       return;
     }

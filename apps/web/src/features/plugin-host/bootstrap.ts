@@ -117,7 +117,10 @@ export const PLUGIN_BOOTSTRAP_SCRIPT = String.raw`(function () {
     container.setAttribute('data-oc-slot-view', String(generation));
     el.appendChild(container);
     try {
-      var result = handler({ slot: params.slot, data: params.data, api: api, root: container });
+      // ホストは { data: スロットのデータ, postId / preview } の封筒で送る。
+      // ハンドラには SDK の型どおりスロットのデータ（data.post など）だけを渡す。
+      var payload = params.data || {};
+      var result = handler({ slot: params.slot, data: payload.data, api: api, root: container });
       Promise.resolve(result)
         .then(function (value) {
           if (generation !== renderGeneration) return;
@@ -251,7 +254,9 @@ export function buildPluginSrcdoc(options: {
 <meta http-equiv="Content-Security-Policy" content="${options.csp}">
 <meta name="referrer" content="no-referrer">
 <style>
-  :root { color-scheme: light dark; }
+  /* サイトはライト配色のみ。親と配色が食い違うと、OS がダークモードのとき
+     Chrome が iframe の背景を不透明な黒で塗るため、ライトに固定する。 */
+  :root { color-scheme: light; }
   html, body { margin: 0; padding: 0; background: transparent; color: inherit;
     font-family: inherit; font-size: 13px; line-height: 1.5; overflow: hidden; }
   #root { width: 100%; }

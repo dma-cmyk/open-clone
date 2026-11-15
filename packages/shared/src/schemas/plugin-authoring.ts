@@ -431,7 +431,12 @@ function renderRule(
   return { pattern, flags, template, kind };
 }
 
-const RENDER_CODE = "register({});";
+// 表示ルール系テンプレートは manifest.render.post だけで動き、JS は使わない。
+// エディタで「コードが空」と誤解されないよう、理由をコメントで残す。
+const RENDER_CODE = `// このプラグインは manifest の「宣言的レンダー規則」（render.post）だけで動きます。
+// JavaScript の処理は不要なので、本体は空の register({}) です。
+register({});
+`;
 
 function buildRenderTemplate(
   template: PluginTemplateDefinition,
