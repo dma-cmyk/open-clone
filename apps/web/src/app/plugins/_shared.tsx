@@ -68,9 +68,12 @@ export function PluginShell(props: {
           <Link className="oc-btn oc-btn-sm" href="/plugins/demo/">
             スレ表示デモ
           </Link>
-          <Link className="oc-btn oc-btn-sm" href="/">
+          {/* 掲示板トップ（シェル）へは Next のクライアント遷移を使わず、フルページ読み込みにする。
+              静的エクスポートでは "/" の React ツリー（シェル）へ Next ルーターで移れず、
+              URL だけ "/" に変わって前の画面が残る（F-01）。 */}
+          <a className="oc-btn oc-btn-sm" href="/">
             掲示板トップ
-          </Link>
+          </a>
         </nav>
         <div className="oc-row-between" style={{ alignItems: "flex-start", marginBottom: 6 }}>
           <h1 style={{ fontSize: 18, margin: 0, color: "var(--oc-name)" }}>{props.title}</h1>

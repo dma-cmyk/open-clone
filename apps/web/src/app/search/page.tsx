@@ -1,7 +1,7 @@
 "use client";
 
 // 検索ページ（スレタイ / 全文 / ID / 画像）。`/search?q=...&type=...`。
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatRelative, threadPath } from "@/features/board-ui/format";
 import { Button, Empty, Notice, Spinner } from "@/components/ui";
 import { Wp1ApiError, search, suggest, type SearchItem, type SearchResponse } from "../_wp1/api";
@@ -22,16 +22,57 @@ interface Submitted {
   board: string;
 }
 
+/**
+ * 検索スニペットの描画（C1 / museAI #9）。
+ * API は装飾記法 `[sp]...[/sp]` の中身を伏せ字（█）へマスクして返すため、
+ * ここでは連続する伏せ字を「クリックで中身は出せない伏せ字」として枠表示し、
+ * 生タグがそのまま読者に見えることを防ぐ。
+ */
+function SnippetBody({ body }: { body: string }) {
+  const parts = body.split(/(█{2,})/g);
+  return (
+    <div className="oc-post-main" style={{ whiteSpace: "pre-wrap" }}>
+      {parts.map((part, index) =>
+        /^█{2,}$/.test(part) ? (
+          <span
+            key={index}
+            title="伏せ字（検索結果では中身を表示しません）"
+            style={{ background: "#333", color: "#fff", borderRadius: 2, padding: "0 4px" }}
+          >
+            伏せ字
+          </span>
+        ) : (
+          <span key={index}>{part}</span>
+        ),
+      )}
+    </div>
+  );
+}
+
+/** 検索条件が同一か（C3: 取得中・取得済みの結果がどの条件のものかを判別する） */
+function sameSubmitted(a: Submitted | null, b: Submitted | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.q === b.q && a.type === b.type && a.board === b.board;
+}
+
 export default function SearchPage() {
   const [query, setQuery] = useState("");
   const [type, setType] = useState<SearchType>("thread");
   const [board, setBoard] = useState("");
   const [submitted, setSubmitted] = useState<Submitted | null>(null);
   const [data, setData] = useState<SearchResponse | null>(null);
+  /** `data` がどの検索条件で取得されたか（C3: 種別切替中に古い結果を新種別と組にしない） */
+  const [dataFor, setDataFor] = useState<Submitted | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Array<{ term: string; count: number }>>([]);
   const [cursor, setCursor] = useState<string | null>(null);
+  /**
+   * 検索の世代（UX-R2 / C3）。検索開始・追加読込開始のたびに進め、応答処理は開始時の世代と
+   * 現在が一致するときだけ data / cursor / error / loading を更新する。
+   * 条件切替・再検索・追加読込のいずれよりも古い応答はすべて破棄される。
+   */
+  const generationRef = useRef(0);
 
   // 初回は URL のクエリを復元する（静的エクスポートのため useSearchParams は使わない）。
   useEffect(() => {
@@ -52,10 +93,15 @@ export default function SearchPage() {
 
   useEffect(() => {
     if (!submitted || submitted.q.trim().length === 0) {
+      generationRef.current += 1; // 進行中の応答を無効化
       setData(null);
+      setDataFor(null);
+      setCursor(null);
+      setError(null);
+      setLoading(false);
       return;
     }
-    let alive = true;
+    const generation = ++generationRef.current;
     setLoading(true);
     setError(null);
     search({
@@ -65,20 +111,18 @@ export default function SearchPage() {
       limit: 30,
     })
       .then((result) => {
-        if (!alive) return;
+        if (generation !== generationRef.current) return;
         setData(result);
+        setDataFor(submitted);
         setCursor(result.nextCursor);
       })
       .catch((cause: unknown) => {
-        if (!alive) return;
+        if (generation !== generationRef.current) return;
         setError(cause instanceof Wp1ApiError ? cause.message : cause instanceof Error ? cause.message : "検索に失敗しました");
       })
       .finally(() => {
-        if (alive) setLoading(false);
+        if (generation === generationRef.current) setLoading(false);
       });
-    return () => {
-      alive = false;
-    };
   }, [submitted]);
 
   const runSearch = (next: Submitted, replaceUrl = true) => {
@@ -95,23 +139,27 @@ export default function SearchPage() {
 
   const loadMore = async () => {
     if (!submitted || !cursor) return;
+    const generation = ++generationRef.current;
+    const requested = { submitted, cursor };
     setLoading(true);
     try {
       const next = await search({
-        q: submitted.q.trim(),
-        type: submitted.type,
-        board: submitted.board.trim() || undefined,
+        q: requested.submitted.q.trim(),
+        type: requested.submitted.type,
+        board: requested.submitted.board.trim() || undefined,
         limit: 30,
-        cursor,
+        cursor: requested.cursor,
       });
+      if (generation !== generationRef.current) return;
       setData((current) =>
         current ? { ...next, items: [...current.items, ...next.items] } : next,
       );
       setCursor(next.nextCursor);
     } catch (cause) {
+      if (generation !== generationRef.current) return;
       setError(cause instanceof Error ? cause.message : "追加読み込みに失敗しました");
     } finally {
-      setLoading(false);
+      if (generation === generationRef.current) setLoading(false);
     }
   };
 
@@ -200,10 +248,19 @@ export default function SearchPage() {
         </div>
       ) : null}
 
+      {submitted === null && query.trim().length === 0 ? (
+        <Notice kind="warn">
+          検索語を入力してください。上の欄に語を入れて「検索」を押すと、スレタイ・レス本文・表示 ID・画像から探せます。
+        </Notice>
+      ) : null}
+      {submitted !== null && submitted.q.trim().length === 0 ? (
+        <Notice kind="warn">検索語が空のまま実行されました。検索語を入力してください。</Notice>
+      ) : null}
       {loading && !data ? <Spinner label="検索中…" /> : null}
+      {loading && data ? <Spinner label={`検索中…（種別: ${active.label}）`} /> : null}
       {error ? <Notice kind="error">{error}</Notice> : null}
 
-      {data ? (
+      {data && sameSubmitted(dataFor, submitted) ? (
         <div className="oc-panel">
           <div className="oc-panel-title">
             <span>
@@ -236,9 +293,7 @@ export default function SearchPage() {
                       {item.thread.title} &gt;&gt;{item.post.num}
                     </a>
                   </div>
-                  <div className="oc-post-main" style={{ whiteSpace: "pre-wrap" }}>
-                    {item.post.body.length > 280 ? `${item.post.body.slice(0, 280)}…` : item.post.body}
-                  </div>
+                  <SnippetBody body={item.post.body.length > 280 ? `${item.post.body.slice(0, 280)}…` : item.post.body} />
                   <div className="oc-muted oc-tiny">投稿 {formatRelative(item.post.createdAt)}</div>
                 </div>
               ),

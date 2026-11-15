@@ -37,9 +37,15 @@ export function BoardSidebar() {
               key={board.slug}
               href={`/b/${encodeURIComponent(board.slug)}`}
               className={location.startsWith(`/b/${board.slug}`) ? "oc-sidebar-active" : undefined}
-              title={board.name}
+              title={`${board.name}（/b/${board.slug}）`}
             >
-              {board.name}
+              {/* C7 / museAI #6: 省略表示でも同名板を区別できるよう slug を 2 行目に出す */}
+              <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis" }}>{board.name}</span>
+              <span
+                style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", color: "#666", fontSize: 10 }}
+              >
+                /b/{board.slug}
+              </span>
             </Link>
           ))}
         </div>

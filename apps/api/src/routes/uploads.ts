@@ -301,7 +301,7 @@ app.post("/proxy", async (c) => {
     }
     const upstream = await resolved.adapter.upstream(uploadRequest, ctx);
     const { response } = await sendProxyUpload(upstream, body, maxBytes);
-    assertUpstreamOk(response, resolved.adapter.label);
+    assertUpstreamOk(response, resolved.adapter.label, resolved.adapter.id);
     meta = await resolved.adapter.finalize(response, ctx);
   }
 

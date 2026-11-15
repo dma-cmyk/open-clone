@@ -9,6 +9,7 @@ import { PluginSlot } from "@/components/plugin-slot";
 import { AiBoardPanel } from "@/components/ai-board-panel";
 import { Notice, Spinner } from "@/components/ui";
 import { Link, navigate } from "../router";
+import { usePageTitle } from "@/lib/title";
 import { ManageBoardSettings } from "./manage-settings";
 import { ManageStaff } from "./manage-staff";
 import { ManageReports } from "./manage-reports";
@@ -25,7 +26,9 @@ const TABS = [
 ];
 
 export function ManageView({ slug, tab }: { slug: string; tab: string }) {
+  // 板名が取れるまでは slug で仮のタイトルを出す（前の画面のスレ名を残さない）。
   const info = useApiData(() => api.getBoard(slug), [slug]);
+  usePageTitle(`${info.data?.board.name ?? slug} 板の管理`);
   const [board, setBoard] = useState<BoardDetail | null>(null);
   const [staff, setStaff] = useState<StaffEntry[] | null>(null);
 

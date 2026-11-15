@@ -120,7 +120,7 @@ export function ReportModal({
           rows={3}
         />
       </div>
-      <TurnstileWidget onToken={onToken} resetKey={resetKey} compact />
+      <TurnstileWidget onToken={onToken} resetKey={resetKey} />
       {error ? <Notice kind="error">{error}</Notice> : null}
       <p className="oc-note">虚偽の通報は利用制限の対象になる場合があります。</p>
     </Modal>

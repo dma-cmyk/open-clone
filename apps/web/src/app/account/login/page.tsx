@@ -3,13 +3,12 @@
 // ログイン（TOTP 要求時はコード入力欄を表示）。
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ApiRequestError, api, errorMessage } from "../../../features/account/api";
+import { resolveSafeNext } from "../../../features/account/safe-next";
 import { TurnstileWidget } from "../../../features/account/turnstile";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
@@ -22,8 +21,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const target = params.get("next");
-    if (target && target.startsWith("/")) setNext(target);
+    setNext(resolveSafeNext(params.get("next"), "/account"));
   }, []);
 
   useEffect(() => {
@@ -57,7 +55,10 @@ export default function LoginPage() {
         { email, password, ...(needTotp || totpCode ? { totpCode } : {}) },
         { turnstileToken },
       );
-      router.push(next);
+      // ログイン後の戻り先は Next のクライアント遷移ではシェル画面を描けない
+      // （静的エクスポートには /b/**, /boards/new 等の Next ルートが無い）。
+      // 明示的なフルページ遷移にし、戻り先は検証済みの `next` だけを使う。
+      window.location.assign(next);
     } catch (err) {
       if (err instanceof ApiRequestError && err.code === "TOTP_REQUIRED") {
         setNeedTotp(true);

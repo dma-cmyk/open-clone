@@ -129,6 +129,8 @@ export function HomeView() {
                             {board.threadCount !== undefined ? `${board.threadCount}スレ` : ""}
                           </span>
                         </div>
+                        {/* C7 / museAI #6: 同名板が並んでも区別できるよう slug を必ず併記する */}
+                        <div className="oc-muted oc-tiny">/b/{board.slug}</div>
                         {board.description ? <div className="oc-board-item-desc">{board.description}</div> : null}
                         {board.lastPostAt ? (
                           <div className="oc-muted oc-tiny">最終 {formatRelative(board.lastPostAt)}</div>

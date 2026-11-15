@@ -8,7 +8,8 @@ import "@/features/plugin-host/register";
 import { SiteHeader } from "./site-header";
 import { SiteFooter } from "./site-footer";
 import { BoardSidebar } from "./board-sidebar";
-import { startRouter, useRoute } from "./router";
+import { setShellActive, startRouter, useRoute, type Route } from "./router";
+import { SITE_NAME, usePageTitle } from "@/lib/title";
 import { HomeView } from "./views/home-view";
 import { BoardView } from "./views/board-view";
 import { ThreadView } from "./views/thread-view";
@@ -17,8 +18,42 @@ import { SettingsView } from "./views/settings-view";
 import { ManageView } from "./views/manage-view";
 import { NotFoundView } from "./views/not-found-view";
 
+/**
+ * ルートごとの既定タイトル。データを待たずに切り替えるための保険で、
+ * 詳細（スレタイ・板名）を持つ画面は自分で上書きする（スレ画面など）。
+ * 画面より先に render して effect の順序を前にする（後から来る詳細タイトルが勝つ）。
+ */
+function RouteTitle({ route }: { route: Route }) {
+  const label = (() => {
+    switch (route.name) {
+      case "home":
+        return SITE_NAME;
+      case "board":
+        return `${route.slug} 板`;
+      case "thread":
+        return `スレッド ${route.threadId}`;
+      case "board-new":
+        return "板を作る";
+      case "settings":
+        return "設定";
+      case "manage":
+        return `${route.slug} 板の管理`;
+      default:
+        return "ページが見つかりません";
+    }
+  })();
+  usePageTitle(label);
+  return null;
+}
+
 export function AppShell() {
   useEffect(() => startRouter(), []);
+  // シェルが描画中であることをルーターへ伝える（Next の個別ページ上では false のまま）。
+  // pushState してよいかの判断に使う。アンマウントで false に戻す。
+  useEffect(() => {
+    setShellActive(true);
+    return () => setShellActive(false);
+  }, []);
   // 静的エクスポートでは index.html が常に「/」として生成される。SSR とハイドレーション初回は
   // ホームを描き、マウント後に実際の pathname へ切り替える（直リンク時の不一致を防ぐ）。
   const [mounted, setMounted] = useState(false);
@@ -52,6 +87,8 @@ export function AppShell() {
 
   return (
     <div className="oc-app" id="top">
+      {/* 画面より先に評価して、遷移直後に前のページのタイトルが残らないようにする */}
+      <RouteTitle route={effectiveRoute} />
       <SiteHeader />
       <div className="oc-layout">
         <BoardSidebar />

@@ -13,6 +13,7 @@ import { clearHistory, historyStore } from "@/features/board-ui/history";
 import { formatRelative } from "@/features/board-ui/format";
 import { Button, Notice, Tabs, useToast } from "@/components/ui";
 import { Link } from "../router";
+import { usePageTitle } from "@/lib/title";
 
 const NG_LISTS: { key: keyof Omit<NgConfig, "mode">; label: string; placeholder: string }[] = [
   { key: "words", label: "NG ワード（本文・部分一致）", placeholder: "例: 荒らし / :image / :url" },
@@ -101,6 +102,7 @@ function NgSection() {
 }
 
 export function SettingsView() {
+  usePageTitle("設定");
   const settings = settingsStore.use();
   const history = historyStore.use();
   const toast = useToast();

@@ -82,7 +82,7 @@ function finishThreadSearch(rows: ThreadSearchRow[], limit: number, offset: numb
     type: "thread" as const,
     thread: {
       id: row.id,
-      title: row.title,
+      title: maskSnippetMarkup(row.title),
       postCount: row.post_count,
       lastPostAt: row.last_post_at,
       createdAt: row.created_at,
@@ -280,6 +280,36 @@ interface SearchPostRow {
   board_name: string;
 }
 
+/**
+ * 検索スニペット用の本文マスク（C1 / museAI #9、レビュー UX-R1 で修正）。
+ *
+ * 伏せ字として扱う記法（スレ画面で中身が隠れるものと一致させる）:
+ * - `[sp]...[/sp]` / `[spoiler]...[/spoiler]`: プラグインの装飾記法（公式サンプル spoiler と同じ名前）。
+ *   中身は改行・角括弧を含みうる（プラグイン側の `[\s\S]*?` と同じ範囲）。
+ * - `||...||`: 本文レンダラ組み込みの伏せ字（`post-body.tsx` と同じ範囲）。
+ * これらの中身は伏せ字（█）へ置き換え、検索結果からは読めないようにする。
+ *
+ * それ以外の角括弧タグ（`[b]...[/b]` 等の通常装飾・未知のタグ）は**中身を消さない**。
+ * 記法のマーカだけ除去し、生タグが見えないようにする。閉じタグの無い孤立マーカも同様。
+ * JSON の形（`post.body` / `thread.title` のキー・型）は変えない。
+ */
+const SPOILER_TAG_PAIR = /\[(sp|spoiler)\]([\s\S]{0,4096}?)\[\/\1\]/gi;
+const NATIVE_SPOILER_PAIR = /\|\|([^|\n]{0,4096}?)\|\|/g;
+const DECORATION_TAG = /\[\/?[a-zA-Z][a-zA-Z0-9_-]{0,15}\]/g;
+/** 伏せ字1かたまりの表示上限（検索スニペットは概要なので長くしない） */
+const SPOILER_MASK_MAX = 40;
+
+export function maskSnippetMarkup(body: string): string {
+  return body
+    .replace(SPOILER_TAG_PAIR, (_match, _tag: string, inner: string) =>
+      "█".repeat(Math.min(Math.max(inner.length, 1), SPOILER_MASK_MAX)),
+    )
+    .replace(NATIVE_SPOILER_PAIR, (_match, inner: string) =>
+      "█".repeat(Math.min(Math.max(inner.length, 1), SPOILER_MASK_MAX)),
+    )
+    .replace(DECORATION_TAG, "");
+}
+
 function finishPostSearch(rows: SearchPostRow[], limit: number, offset: number, type: string, more?: boolean) {
   const items = rows.slice(0, limit).map((row) => ({
     type: "post" as const,
@@ -288,13 +318,13 @@ function finishPostSearch(rows: SearchPostRow[], limit: number, offset: number, 
       threadId: row.thread_id,
       num: row.num,
       name: row.name,
-      body: row.body,
+      body: maskSnippetMarkup(row.body),
       createdAt: row.created_at,
       idHash: row.post_id_hash,
     },
     thread: {
       id: row.thread_id,
-      title: row.title,
+      title: maskSnippetMarkup(row.title),
       boardSlug: row.board_slug,
       boardName: row.board_name,
     },

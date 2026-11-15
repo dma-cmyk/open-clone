@@ -341,7 +341,8 @@ test.describe("C-1: アップロードの Turnstile は投稿と同じ板設定"
     await expect(page.locator("#p1")).toBeVisible({ timeout: 15_000 });
     const openbar = page.locator(".oc-form-openbar");
     if (await openbar.isVisible()) await openbar.click();
-    await expect(page.locator(".oc-upload-turnstile .oc-turnstile").first()).toBeVisible();
+    // F-06: 投稿フォームのウィジェットはアップロード用も含めて 1 個だけ。
+    await expect(page.locator(".oc-form .oc-turnstile")).toHaveCount(1);
 
     const prepareResponse = page.waitForResponse(
       (response) => /\/api\/v1\/uploads\/prepare$/.test(response.url()) && response.request().method() === "POST",

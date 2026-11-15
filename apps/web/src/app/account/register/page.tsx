@@ -3,13 +3,12 @@
 // 新規登録。
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage } from "../../../features/account/api";
+import { resolveSafeNext } from "../../../features/account/safe-next";
 import { TurnstileWidget } from "../../../features/account/turnstile";
 
 export default function RegisterPage() {
-  const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,6 +16,13 @@ export default function RegisterPage() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // ログインと同じ戻り先（同一サイト内のローカルパスのみ受理 / レビュー UX-R3）
+  const [next, setNext] = useState("/account");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setNext(resolveSafeNext(params.get("next"), "/account"));
+  }, []);
 
   const onToken = useCallback((token: string | null) => setTurnstileToken(token), []);
 
@@ -30,7 +36,8 @@ export default function RegisterPage() {
     setBusy(true);
     try {
       await api("POST", "/auth/register", { name, email, password }, { turnstileToken });
-      router.push("/account");
+      // 登録後の戻り先も同じ理由でフルページ遷移（`next` は resolveSafeNext で検証済み）。
+      window.location.assign(next);
     } catch (err) {
       setError(errorMessage(err));
     } finally {

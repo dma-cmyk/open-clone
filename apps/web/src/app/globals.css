@@ -1158,7 +1158,11 @@ hr {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   width: min(560px, 96vw);
   max-height: 92vh;
-  overflow: auto;
+  /* 本文だけをスクロールさせ、確定ボタン（footer）は常に画面内に残す。
+     お絵かきの「この絵を添付する」が初期表示で画面外だった問題の修正。 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .oc-modal-head {
   background: linear-gradient(#e9f5e9, #d2ecd2);
@@ -1172,6 +1176,10 @@ hr {
 }
 .oc-modal-body {
   padding: 10px;
+  /* ヘッダとフッタは固定。本文だけが縮んでスクロールする（min-height:0 が無いと縮まない）。 */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 .oc-modal-foot {
   padding: 8px 10px;
@@ -2178,16 +2186,83 @@ body {
      「日時 ID:xxxx」の間隔を保つには空白を保持する（dat 出力の書式は別実装で不変）。 */
   white-space: pre;
 }
+/* Turnstile（A1/A3）: 1 フォーム 1 個。描画は normal（300×65 の 1 行）で、
+   コンテナが 300px 未満のときだけ JS 側が flexible を選ぶ。以前は狭幅で
+   scale(0.72) + height:48px に切り詰めていたため「私はロボットではありません」が
+   折り返して縦 180px になっていた。切り詰めは行わない。 */
 .oc-turnstile {
   margin-top: 3px;
-  transform-origin: top left;
 }
+.oc-turnstile-row {
+  margin: 4px 0;
+}
+.oc-turnstile-slot {
+  min-height: 65px;
+}
+.oc-turnstile-slot iframe {
+  max-width: 100%;
+  border: 0;
+}
+
+/* 投稿本文の文字数カウンタ（A10）。上限は API と同じ 4096 文字。 */
+.oc-form-count {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: #555;
+  margin: 2px 0 4px;
+}
+.oc-form-count.over {
+  color: #b00020;
+  font-weight: 700;
+}
+
+/* アップローダの失敗表示（A5/A6）。ボタンと同じ行に詰めず、必ず独立した行にする。 */
+.oc-uploader-inline {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.oc-upload-bar {
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.oc-upload-pick {
+  min-width: 96px;
+  min-height: 28px;
+  white-space: nowrap;
+}
+.oc-upload-error {
+  flex: 1 0 100%;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: #ffebee;
+  border: 1px solid #e0a0a0;
+  color: #8b1a1a;
+  font-size: 12.5px;
+}
+.oc-upload-error-msg {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.oc-upload-error-file {
+  font-weight: 700;
+}
+.oc-upload-error-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
 @media (max-width: 640px) {
-  .oc-turnstile {
-    transform: scale(0.72);
-    height: 48px;
-    overflow: hidden;
-  }
   .oc-form .oc-form-row {
     gap: 3px;
   }
@@ -2594,5 +2669,45 @@ body {
   }
   .oc-footer {
     color: #5f5f5f;
+  }
+
+  /* F-11（スレ側）: 補助操作を指で選べる 44px 目安の領域にする。
+     対象: 板一覧リンク / スレ内検索 / 解除 / 逆順・自動追尾 / 実況・つぶやき・ブクマ /
+           レス範囲リンク / 引用・通報などのレス操作 / 安価（被参照）。
+     リンクは文字だけだと 16〜22px しかないため、行の高さを確保する。 */
+  .oc-thread-sub a,
+  .oc-thread-head .oc-btn,
+  .oc-panel-title .oc-icon-btn,
+  .oc-panel-title .oc-btn,
+  .oc-thread-toolbar .oc-icon-btn,
+  .oc-thread-toolbar .oc-tool-group a,
+  .oc-range-nav a,
+  .oc-post-actions button,
+  .oc-post-actions a,
+  .oc-backlinks {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 6px 10px;
+  }
+  .oc-thread-sub a {
+    padding: 4px 6px;
+  }
+  .oc-range-nav {
+    gap: 2px 4px;
+  }
+  /* スレナビの 4 分割ボタン（display:table-cell）は行の高さで広げる */
+  .oc-sp-threadnav a {
+    line-height: 44px;
+  }
+  /* 板名帯（板一覧への戻り）も帯全体をタップ領域にする */
+  .oc-sp-maintitle a {
+    display: block;
+    min-height: 44px;
+  }
+  /* 添付エラーが出てもボタンが潰れないよう、狭幅ではアップローダを 1 行占有させる */
+  .oc-form-tools > .oc-uploader {
+    flex: 1 1 100%;
   }
 }
