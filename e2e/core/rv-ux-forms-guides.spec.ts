@@ -149,19 +149,53 @@ test.describe("rv-ux C5〜C8（フォームと案内）", () => {
 
   test("C8: OAuth 未設定時に PAT 代替と管理者設定後の見通しを案内する", async ({ page, context }, info) => {
     await loginAsOwner(context);
+
+    // 案内の表示は API の `oauthAvailable` に従うため、実サーバーの設定
+    // （E2E_GITHUB_STUB=1 だと OAuth 設定済みになる）に依存せず両状態を検査する。
+    const stubStatus = (oauthAvailable: boolean) =>
+      page.route("**/api/v1/github/link", (route) => {
+        if (route.request().method() !== "GET") return route.continue();
+        return route.fulfill({
+          json: {
+            ok: true,
+            data: {
+              linked: false,
+              login: null,
+              userId: null,
+              avatarUrl: null,
+              method: null,
+              scopes: [],
+              linkedAt: null,
+              rate: null,
+              oauthAvailable,
+            },
+          },
+        });
+      });
+
+    // 未設定: 案内（PAT 代替・管理者設定の見通し）が出て、OAuth ボタンは無効。
+    await stubStatus(false);
     await page.goto("/account/github");
     await expect(page.getByText("GitHub OAuth で連携").first()).toBeVisible({ timeout: 20_000 });
-
-    // E2E の API は GitHub OAuth App 未設定（.dev.vars に client id/secret 無し）。
     const guide = page.locator(".oc-warn-box").filter({ hasText: "GitHub OAuth App が未設定のため" });
     await expect(guide).toBeVisible();
     await expect(guide).toContainText("fine-grained PAT を持ち込んで連携する");
     await expect(guide).toContainText("サーバー管理者が GitHub OAuth App を作成し");
-    // OAuth ボタンは無効のまま。
     await expect(page.getByRole("button", { name: "GitHub で連携する" })).toBeDisabled();
-    await page.screenshot({ path: shotPath(info, "c8-after-pc.png"), fullPage: true });
+    await page.screenshot({ path: shotPath(info, "c8-after-unconfigured-pc.png"), fullPage: true });
     await page.setViewportSize({ width: 360, height: 740 });
-    await page.screenshot({ path: shotPath(info, "c8-after-360.png"), fullPage: true });
+    await page.screenshot({ path: shotPath(info, "c8-after-unconfigured-360.png"), fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.unroute("**/api/v1/github/link");
+
+    // 設定済み: 未設定の案内は出さず、OAuth ボタンは有効。
+    await stubStatus(true);
+    await page.goto("/account/github");
+    await expect(page.getByText("GitHub OAuth で連携").first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".oc-warn-box").filter({ hasText: "GitHub OAuth App が未設定のため" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "GitHub で連携する" })).toBeEnabled();
+    await page.screenshot({ path: shotPath(info, "c8-after-configured-pc.png"), fullPage: true });
+    await page.unroute("**/api/v1/github/link");
   });
 
   test("UX-R3: ログインの next は同一サイト内のパスだけを採用する", async ({ page }) => {
