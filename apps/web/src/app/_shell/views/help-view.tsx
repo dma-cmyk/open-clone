@@ -3,7 +3,9 @@
 // ヘルプ（一般向け）。`/help/`。節アンカーは設計50で固定（#basics … #tour）。
 // 本文の数値・挙動はすべて実装から確認したものだけを書く（出典は報告書61の一覧）。
 import { usePageTitle } from "@/lib/title";
+import { startTour } from "@/features/site-tour";
 import { useEffect, type ReactNode } from "react";
+import { navigate } from "../router";
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -49,10 +51,17 @@ export function HelpView() {
     if (target) target.scrollIntoView();
   }, []);
 
-  const startTour = () => {
-    // 仮の呼び出し口。統合時に DeepSeek の site-tour（startTour）へつなぐ（報告書61参照）。
-    const w = window as Window & { __ocStartTour?: (pageKey?: string) => void };
-    if (typeof w.__ocStartTour === "function") w.__ocStartTour();
+  // ヘルプ自体には案内する部品がほとんど無いので、トップへ移ってトップのツアーを始める。
+  // 板一覧は API 取得後に描画されるため、目印が出るまで（最大 3 秒）待ってから開始する。
+  const startTopTour = () => {
+    navigate("/");
+    const deadline = Date.now() + 3000;
+    const attempt = () => {
+      const ready = document.querySelector('[data-tour="home-boards"]') !== null;
+      if ((ready || Date.now() >= deadline) && startTour("home")) return;
+      if (Date.now() < deadline) window.setTimeout(attempt, 100);
+    };
+    window.setTimeout(attempt, 0);
   };
 
   return (
@@ -279,10 +288,10 @@ export function HelpView() {
           最後にこのヘルプの該当節へのリンクが出ます。
         </P>
         <div className="oc-row">
-          <button type="button" className="oc-btn oc-btn-primary" onClick={startTour}>
-            ツアーを始める
+          <button type="button" className="oc-btn oc-btn-primary" onClick={startTopTour}>
+            トップページでツアーを始める
           </button>
-          <span className="oc-note">今いる画面のツアーが始まります（統合後に有効化）。</span>
+          <span className="oc-note">トップページへ移動して、ツアーが始まります。</span>
         </div>
       </Section>
     </div>

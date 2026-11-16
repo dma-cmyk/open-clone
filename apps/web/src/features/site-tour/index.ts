@@ -3,7 +3,7 @@
 // 外から使う場所:
 //  - ヘッダー／フッターの「使い方」ボタン … `startTour()`（今いる画面を自動判定）
 //  - 管理画面・板の管理画面の「使い方」 … `startTour("admin")` / `startTour("manage")`
-//  - ヘルプ画面の「ツアーを始める」ボタン（Qwen 担当）… `startTour("home")` など画面キー指定
+//  - ヘルプ画面の「トップページでツアーを始める」 … トップへ移ってから `startTour("home")`
 //  - 表示本体 … `<TourHost />`（SiteHeader と管理画面レイアウトに置く）
 //
 // 画面キーは `TourPageKey`。URL からの判定は `tourPageKeyForPath(pathname)`。

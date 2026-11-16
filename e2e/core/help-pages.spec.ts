@@ -76,14 +76,12 @@ test.describe("ヘルプ（/help/）", () => {
     await page.screenshot({ path: shotPath(info, "help-after-anchor-360.png") });
   });
 
-  test("ツアーの始め方節にツアー開始ボタンがある（統合前の仮呼び出し口）", async ({ page }) => {
+  test("ツアーの始め方節のボタンでトップへ移り、トップのツアーが始まる", async ({ page }) => {
     await page.goto("/help/#tour");
     await expect(page.locator("section#tour")).toBeVisible({ timeout: 20_000 });
-    const button = page.getByRole("button", { name: "ツアーを始める" });
-    await expect(button).toBeVisible();
-    // 統合前は window.__ocStartTour が無いため押しても何も壊れない（no-op）。
-    await button.click();
-    await expect(page.locator("section#tour")).toBeVisible();
+    await page.getByRole("button", { name: "トップページでツアーを始める" }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("dialog", { name: "トップページの使い方" })).toBeVisible({ timeout: 10_000 });
   });
 
   test("一般ヘルプから管理者ヘルプへリンクしている", async ({ page }) => {
