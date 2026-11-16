@@ -38,6 +38,12 @@ export const boardSettingsSchema = z.object({
   maxPosts: z.number().int().min(10).max(1000).default(1000),
   /** 使用するアップローダアダプタ（null = サイト既定） */
   uploader: z.string().max(32).nullable().default(null),
+  /**
+   * ロボット確認（Turnstile）を省略する時間（分）。
+   * 一度確認に成功した端末は、この時間だけ同じ板で確認を省略する（0 = 毎回確認）。
+   * 対象はレスとつぶやきのみ（スレ立ては毎回確認）。`turnstile: "always"` の板では効かない。
+   */
+  turnstilePassMinutes: z.number().int().min(0).max(1440).default(30),
   /** 強制 sage（板全体） */
   forceSage: z.boolean().default(false),
   /** アカウント作成可能な板数（サイト既定の上書き。null = 既定値） */

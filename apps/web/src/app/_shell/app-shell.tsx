@@ -15,6 +15,8 @@ import { BoardView } from "./views/board-view";
 import { ThreadView } from "./views/thread-view";
 import { BoardNewView } from "./views/board-new-view";
 import { SettingsView } from "./views/settings-view";
+import { HelpView } from "./views/help-view";
+import { HelpAdminView } from "./views/help-admin-view";
 import { ManageView } from "./views/manage-view";
 import { NotFoundView } from "./views/not-found-view";
 
@@ -36,6 +38,10 @@ function RouteTitle({ route }: { route: Route }) {
         return "板を作る";
       case "settings":
         return "設定";
+      case "help":
+        return "ヘルプ";
+      case "help-admin":
+        return "管理者ヘルプ";
       case "manage":
         return `${route.slug} 板の管理`;
       default:
@@ -77,6 +83,12 @@ export function AppShell() {
       break;
     case "settings":
       content = <SettingsView />;
+      break;
+    case "help":
+      content = <HelpView />;
+      break;
+    case "help-admin":
+      content = <HelpAdminView />;
       break;
     case "manage":
       content = <ManageView slug={effectiveRoute.slug} tab={effectiveRoute.tab} />;

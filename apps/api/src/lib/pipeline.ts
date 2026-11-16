@@ -25,7 +25,15 @@ import { planThreadCommands, type CommandActor, type CommandPlan } from "./comma
 import { checkRateLimitMulti } from "./do";
 import type { Env } from "./env";
 import { publishToThreadAndBoard } from "../services/board/realtime";
-import { assertTurnstile, needsTurnstile } from "../services/board/turnstile";
+import {
+  assertTurnstile,
+  canPassTurnstile,
+  grantTurnstilePass,
+  needsTurnstile,
+  readTurnstilePass,
+  revokeTurnstilePass,
+  turnstilePassSeconds,
+} from "../services/board/turnstile";
 import {
   DEFAULT_THREAD_FLAGS,
   DEFAULT_THREAD_STATE,
@@ -73,6 +81,11 @@ export interface CreatePostInput {
   skipGuards?: boolean;
   /** 2ch 互換クライアント（Turnstile 不可）用に Turnstile のみスキップする */
   skipTurnstile?: boolean;
+  /**
+   * プラグイン sandbox からの中継（ホスト側コードが付ける `x-oc-plugin-relay` ヘッダ由来）。
+   * この経路は「確認済みによる省略」を使わず、毎回 Turnstile を検証する（レビュー 82 / R82-01）。
+   */
+  pluginRelay?: boolean;
 }
 
 export interface CreatePostResult {
@@ -167,11 +180,20 @@ async function assertWriteAllowed(params: {
   turnstileToken: string | undefined;
   skipGuards: boolean;
   skipTurnstile?: boolean;
+  /** 一度通ったら一定時間省略してよい経路か（レス・つぶやきのみ true）。 */
+  allowTurnstilePass?: boolean;
   rateScope: "post" | "threadCreate" | "tsubuyaki";
   now: number;
 }): Promise<void> {
   const { env, db, settings, identity, now } = params;
   if (params.skipGuards) return;
+
+  // 省略が使える経路では、制限に当たった時点で「確認済み」を取り消す（次回から確認させる）。
+  const revokeOnAbuse = async () => {
+    // 「この要求で省略してよいか（allowTurnstilePass）」と
+    // 「この端末の確認済みを取り消すか」は別の話。中継（プラグイン）でも取り消す（レビュー 84 / R82-02）。
+    await revokePass(db, { deviceHash: identity.deviceHash, boardId: params.boardId, settings });
+  };
 
   // device 窓と IP 窓の両方を消費する。Cookie を保存しないクライアントは毎回新しい
   // device_hash になるため、IP 窓が無いと無制限に投稿できてしまう（H-3）。
@@ -184,6 +206,7 @@ async function assertWriteAllowed(params: {
       ? await checkRateLimitMulti(env, ipScope, [identity.ipHash])
       : { allowed: true, retryAfterSeconds: 0 };
   if (!rate.allowed || !ipRate.allowed) {
+    await revokeOnAbuse();
     throw new ApiError(429, ErrorCode.RATE_LIMITED, "投稿間隔が短すぎます。しばらく待ってください", {
       retryAfterSeconds: Math.max(rate.retryAfterSeconds, ipRate.retryAfterSeconds),
     });
@@ -201,7 +224,10 @@ async function assertWriteAllowed(params: {
     )
     .bind(params.boardId, now, identity.deviceHash, identity.ipHash, identity.accountId ?? "")
     .first<{ id: string; reason: string }>();
-  if (ban) throw new ApiError(403, ErrorCode.BANNED, "アクセス禁止中です", { reason: ban.reason });
+  if (ban) {
+    await revokeOnAbuse();
+    throw new ApiError(403, ErrorCode.BANNED, "アクセス禁止中です", { reason: ban.reason });
+  }
 
   if (identity.accountId) {
     const account = await db.prepare("SELECT status FROM accounts WHERE id = ?").bind(identity.accountId).first<{
@@ -220,14 +246,46 @@ async function assertWriteAllowed(params: {
       .bind(params.boardId, identity.deviceHash, now - settings.cooldownSeconds)
       .first<{ created_at: number }>();
     if (recent) {
+      await revokeOnAbuse();
       throw new ApiError(429, ErrorCode.RATE_LIMITED, "連投間隔が短すぎます", {
         retryAfterSeconds: settings.cooldownSeconds - (now - recent.created_at),
       });
     }
   }
 
-  if (!params.skipTurnstile) {
-    await assertTurnstile(env, params.turnstileToken, "", needsTurnstile(settings, identity.accountId !== null));
+  if (!params.skipTurnstile && needsTurnstile(settings, identity.accountId !== null)) {
+    const passable = params.allowTurnstilePass === true && canPassTurnstile(settings);
+    const passed = passable
+      ? (await readTurnstilePass(db, identity.deviceHash, params.boardId, now)) !== null
+      : false;
+    if (!passed) {
+      await assertTurnstile(env, params.turnstileToken, "", true);
+      if (passable) {
+        await grantTurnstilePass(db, {
+          deviceHash: identity.deviceHash,
+          boardId: params.boardId,
+          now,
+          seconds: turnstilePassSeconds(settings),
+          ipHash: identity.ipHash,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * 確認済み（Turnstile の省略）を取り消す。制限・NG・スレ主アク禁など「異常」に当たった
+ * リクエストで呼ぶ（レビュー 82 / R82-02）。取得失敗は握りつぶさず警告を残す。
+ */
+async function revokePass(
+  db: D1Database,
+  params: { deviceHash: string; boardId: number; settings: BoardSettings },
+): Promise<void> {
+  if (!canPassTurnstile(params.settings)) return;
+  try {
+    await revokeTurnstilePass(db, params.deviceHash, params.boardId);
+  } catch (error) {
+    console.warn("TURNSTILE_PASS_REVOKE_FAILED", String(error));
   }
 }
 
@@ -402,6 +460,8 @@ export async function createPostInternal(input: CreatePostInput, deps: PipelineD
     turnstileToken: input.turnstileToken,
     skipGuards: input.skipGuards === true,
     skipTurnstile: input.skipTurnstile === true,
+    // プラグイン経由の投稿は毎回確認する（レビュー 82 / R82-01）。
+    allowTurnstilePass: input.pluginRelay !== true,
     rateScope: "post",
     now,
   });
@@ -422,11 +482,22 @@ export async function createPostInternal(input: CreatePostInput, deps: PipelineD
   const requesterIsOwner =
     (thread.owner_account_id !== null && thread.owner_account_id === identity.accountId) ||
     (thread.owner_device_hash !== null && thread.owner_device_hash === identity.deviceHash);
-  if (!requesterIsOwner) assertNotAku(state, identity, displayId, now);
+  if (!requesterIsOwner) {
+    try {
+      assertNotAku(state, identity, displayId, now);
+    } catch (error) {
+      // スレ主アク禁は「異常」なので、確認済みを取り消して次回から確認させる（R82-02）。
+      await revokePass(db, { deviceHash: identity.deviceHash, boardId: board.id, settings });
+      throw error;
+    }
+  }
 
   const rawBody = input.body.replace(/\r\n?/g, "\n");
   const masked = applyNgWords(settings, rawBody);
   if (masked.hit && settings.ngWordAction === "reject") {
+    // NG 拒否も同様に取り消す。初回の拒否でも記録が残らない（R82-02）。
+    // mask 方針は投稿が成立するので取り消さない。
+    await revokePass(db, { deviceHash: identity.deviceHash, boardId: board.id, settings });
     throw ApiError.validation("NGワードが含まれています");
   }
 
@@ -897,6 +968,7 @@ export async function createTsubuyakiInternal(input: CreateTsubuyakiInput, deps:
     turnstileToken: input.turnstileToken,
     skipGuards: input.skipGuards === true,
     skipTurnstile: input.skipTurnstile === true,
+    allowTurnstilePass: true,
     rateScope: "tsubuyaki",
     now,
   });
@@ -904,7 +976,12 @@ export async function createTsubuyakiInternal(input: CreateTsubuyakiInput, deps:
   const state = await loadThreadState(db, thread.id);
   const baseId = await computeDisplayId({ salt: env.ID_SALT, boardId: board.id, ipHash: identity.ipHash, now });
   const displayId = settings.noId ? "???" : state.jien ? jienDisplayId(baseId, identity.ipHash, 1) : baseId;
-  assertNotAku(state, identity, displayId, now);
+  try {
+    assertNotAku(state, identity, displayId, now);
+  } catch (error) {
+    await revokePass(db, { deviceHash: identity.deviceHash, boardId: board.id, settings });
+    throw error;
+  }
 
   const body = input.body.replace(/\r\n?/g, "\n").trim();
   if (body.length === 0) throw ApiError.validation("コメントが空です");
@@ -912,7 +989,10 @@ export async function createTsubuyakiInternal(input: CreateTsubuyakiInput, deps:
     throw ApiError.validation(`つぶやきは ${TSUBUYAKI_MAX_CHARS} 文字までです`);
   }
   const masked = applyNgWords(settings, body);
-  if (masked.hit && settings.ngWordAction === "reject") throw ApiError.validation("NGワードが含まれています");
+  if (masked.hit && settings.ngWordAction === "reject") {
+    await revokePass(db, { deviceHash: identity.deviceHash, boardId: board.id, settings });
+    throw ApiError.validation("NGワードが含まれています");
+  }
 
   const parsedName = parseNameCommands(input.name ?? "");
   const { name: rawName } = parseTripName(parsedName.name);

@@ -46,7 +46,7 @@ export default function AdminDashboardPage() {
   const cards = CARDS.filter((card) => (card.ownerOnly ? role === "owner" : true));
 
   return (
-    <div className="oc-stack">
+    <div className="oc-stack" data-tour="admin-dashboard">
       <h1 style={{ fontSize: 18, margin: 0 }}>
         {role === "special_admin" ? "特別管理人ダッシュボード" : "管理ダッシュボード"}
       </h1>

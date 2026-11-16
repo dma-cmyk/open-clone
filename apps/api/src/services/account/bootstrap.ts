@@ -41,6 +41,14 @@ export async function bootstrapOwner(
   if (await ownerExists(db)) {
     throw new ApiError(409, ErrorCode.OWNER_SETUP_CLOSED, "サイト所有者は既に設定済みです");
   }
+  // 一般アカウントと同じメールは accounts.email の UNIQUE で INSERT が落ちて 500 になるため先に弾く。
+  // キー検証の後なので、キーを持たない人がメールの登録有無を調べる手段にはならない。
+  const emailTaken = await db.prepare("SELECT 1 AS one FROM accounts WHERE email = ?").bind(input.email).first();
+  if (emailTaken) {
+    throw ApiError.conflict(
+      "このメールアドレスは一般アカウントで登録済みです。所有者には別のメールアドレスを使ってください",
+    );
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const totpOk = await verifyTotp(input.totpSecret, input.totpCode, {

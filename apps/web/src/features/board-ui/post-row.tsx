@@ -168,7 +168,7 @@ export function PostRow({
         <Attachments items={post.attachments} showImages={showImages} />
       ) : null}
 
-      <div className="oc-post-actions">
+      <div className="oc-post-actions" data-tour="thread-post-actions">
         <button type="button" className={post.liked ? "oc-like-on" : undefined} onClick={() => onLike(post)}>
           {post.liked ? "♥" : "♡"} いいね{post.likeCount ? ` ${post.likeCount}` : ""}
         </button>

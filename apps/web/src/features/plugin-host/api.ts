@@ -66,10 +66,17 @@ export function invalidateActiveInstalls(): void {
   activeCache.clear();
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  extraHeaders?: Record<string, string>,
+): Promise<T> {
+  const headers: Record<string, string> = { ...(extraHeaders ?? {}) };
+  if (body !== undefined) headers["content-type"] = "application/json";
   const response = await fetch(`${API_BASE}${path}`, {
     method,
-    headers: body === undefined ? undefined : { "content-type": "application/json" },
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "include",
   });
@@ -437,6 +444,9 @@ export const pluginApi = {
     mail?: string;
     body: string;
   }): Promise<{ postId: number; num: number }> {
-    return request("POST", "/posts", draft);
+    // プラグインからの投稿であることを **ホスト側で必ず** 示す（レビュー 82 / R82-01）。
+    // サーバーはこのヘッダが付いた投稿では「確認済みによる省略」をせず、毎回 Turnstile を検証する。
+    // draft はプラグインが渡す値なので、ここでヘッダに混ぜない（偽装不可）。
+    return request("POST", "/posts", draft, { "x-oc-plugin-relay": "1" });
   },
 };

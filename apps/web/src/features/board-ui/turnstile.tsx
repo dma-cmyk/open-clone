@@ -85,6 +85,8 @@ export function TurnstileWidget({
   const onInvalidateRef = useRef(onInvalidate);
   onInvalidateRef.current = onInvalidate;
   const [failed, setFailed] = useState(false);
+  // interaction-only では普段ウィジェットが見えない。操作が必要になったときだけ枠を出す。
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -113,7 +115,10 @@ export function TurnstileWidget({
           size: sizeOf(container.current),
           theme: "light",
           language: "ja",
+          // ふだんは裏で自動的に検証し、操作が必要なときだけ見せる（報告書 81 / B）。
+          appearance: "interaction-only",
           callback: (token: string) => onToken(token),
+          "before-interactive-callback": () => setVisible(true),
           "expired-callback": () => onToken(""),
           "error-callback": () => setFailed(true),
         });
@@ -144,7 +149,7 @@ export function TurnstileWidget({
 
   return (
     <div className="oc-turnstile">
-      <div ref={container} className="oc-turnstile-slot" />
+      <div ref={container} className="oc-turnstile-slot" style={visible ? undefined : { minHeight: 0 }} />
       {failed ? (
         <p className="oc-note" role="status">
           Bot 確認を読み込めませんでした（ネットワークまたは Turnstile 設定を確認してください）。
@@ -171,14 +176,28 @@ export function TurnstileWidget({
 export interface TurnstileTokenController {
   /** このフォームで Bot 確認が必要か（ウィジェットを描くかの判断に使う）。 */
   needed: boolean;
+  /**
+   * 板・ログイン状態から見た「確認が要るか」（省略 pass を考慮しない）。
+   * 添付のトークン要求はこれに従う（レビュー 84 / R82-05 の回帰修正）。
+   */
+  policyNeeds: boolean;
   /** ウィジェットの `resetKey`。 */
   resetKey: number;
   /** ウィジェットの成功／失効コールバック。 */
   accept: (token: string) => void;
-  /** トークンを 1 つ取り出す（必要ない設定なら undefined）。 */
-  take: () => Promise<string | undefined>;
+  /**
+   * トークンを 1 つ取り出す（必要ない設定なら undefined）。
+   * `forUpload: true` は添付用。添付は「確認済みの省略」の対象外なので、
+   * 期限内でも新しいトークンを待つ（レビュー 82 / R82-05）。
+   */
+  take: (options?: { forUpload?: boolean }) => Promise<string | undefined>;
   /** 保持しているトークンを捨てる（ウィジェットの削除・リセット時に呼ぶ）。 */
   invalidate: () => void;
+  /**
+   * 添付のためにウィジェットをマウントすべきか（省略中は false のまま＝DOM にも出さない）。
+   * 添付が始まると true になる（レビュー 82 / R82-05）。
+   */
+  uploadWidget: boolean;
 }
 
 /** ウィジェットの成功を待つ上限。超えたら「確認を完了してください」と伝える。 */
@@ -190,9 +209,19 @@ interface Waiter {
   timer: number;
 }
 
-export function useTurnstileToken(policy: "off" | "anonymous" | "always"): TurnstileTokenController {
-  const [needed, setNeeded] = useState(policy !== "off");
+export function useTurnstileToken(
+  policy: "off" | "anonymous" | "always",
+  /**
+   * サーバーが「この端末は期限内の確認済み」と答えた場合 true。
+   * そのときはウィジェットを出さず、トークンも要求しない（サーバー側で省略される）。
+   */
+  alreadyPassed = false,
+): TurnstileTokenController {
+  const [needed, setNeeded] = useState(policy !== "off" && !alreadyPassed);
+  // 省略 pass を除いた「確認そのものが必要か」。添付（アップロード）はこちらで判断する。
+  const [policyNeeds, setPolicyNeeds] = useState(policy !== "off");
   const [resetKey, setResetKey] = useState(0);
+  const [uploadWidget, setUploadWidget] = useState(false);
   /** 未消費のトークン（高々 1 個）。 */
   const tokenRef = useRef("");
   /** 直前に受け取った値。同じ値の二重通知（同じ callback の再入）を無視するために使う。 */
@@ -200,6 +229,8 @@ export function useTurnstileToken(policy: "off" | "anonymous" | "always"): Turns
   const waitersRef = useRef<Waiter[]>([]);
   const policyRef = useRef(policy);
   policyRef.current = policy;
+  const policyNeedsRef = useRef(policy !== "off");
+  policyNeedsRef.current = policyNeeds;
 
   // 要否の判定。判定中にアップロードが始まっても取りこぼさないよう、結果を待たせる。
   const decisionRef = useRef<{ promise: Promise<boolean>; resolve: (value: boolean) => void } | null>(null);
@@ -211,6 +242,9 @@ export function useTurnstileToken(policy: "off" | "anonymous" | "always"): Turns
     const settle = (value: boolean) => {
       decision.resolve(value);
       setNeeded(value);
+      setPolicyNeeds(value);
+      // 添付の判断は非同期の take() から読むので、ref も同時に更新する。
+      policyNeedsRef.current = value;
     };
     if (policy === "off") {
       settle(false);
@@ -218,6 +252,15 @@ export function useTurnstileToken(policy: "off" | "anonymous" | "always"): Turns
     }
     if (policy === "always") {
       settle(true);
+      return;
+    }
+    if (alreadyPassed) {
+      // 期限内の確認済み（サーバーが判定）。ウィジェットもトークンも不要。
+      // ただし「確認そのものが必要か」は true のまま（添付はトークンが要る）。
+      decision.resolve(false);
+      setNeeded(false);
+      setPolicyNeeds(true);
+      policyNeedsRef.current = true;
       return;
     }
     let alive = true;
@@ -233,7 +276,7 @@ export function useTurnstileToken(policy: "off" | "anonymous" | "always"): Turns
       alive = false;
       decision.resolve(fallback);
     };
-  }, [policy]);
+  }, [policy, alreadyPassed]);
 
   // アンマウント時は待ち手を必ず終わらせる（タイマーだけ消すと Promise が宙に浮く）。
   useEffect(
@@ -271,9 +314,16 @@ export function useTurnstileToken(policy: "off" | "anonymous" | "always"): Turns
     waiter.resolve(token);
   };
 
-  const take = async (): Promise<string | undefined> => {
+  const take = async (options: { forUpload?: boolean } = {}): Promise<string | undefined> => {
     const neededNow = decisionRef.current ? await decisionRef.current.promise : policyRef.current !== "off";
-    if (!neededNow) return undefined;
+    // 投稿の省略（alreadyPassed）でも、添付は「板・ログインの要否」に従ってトークンを取る。
+    if (options.forUpload === true) {
+      // 添付の要否は「板・ログインから見た確認の要否」（pass を除く）だけで決める。
+      if (!policyNeedsRef.current) return undefined;
+      setUploadWidget(true);
+    } else if (!neededNow) {
+      return undefined;
+    }
     const current = tokenRef.current;
     if (current) {
       tokenRef.current = "";
@@ -293,5 +343,5 @@ export function useTurnstileToken(policy: "off" | "anonymous" | "always"): Turns
     tokenRef.current = "";
   };
 
-  return { needed, resetKey, accept, take, invalidate };
+  return { needed, policyNeeds, resetKey, accept, take, invalidate, uploadWidget };
 }

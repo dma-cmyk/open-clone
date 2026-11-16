@@ -1,7 +1,7 @@
 "use client";
 
 // 板管理画面のシェル。ルール・デザイン・スタッフ・プラグイン・AI・通報。
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/features/board-ui/api";
 import { boardPath } from "@/features/board-ui/format";
 import { useApiData, errorMessage } from "@/features/board-ui/use-api-data";
@@ -14,6 +14,7 @@ import { ManageBoardSettings } from "./manage-settings";
 import { ManageStaff } from "./manage-staff";
 import { ManageReports } from "./manage-reports";
 import type { BoardDetail, StaffEntry } from "@/features/board-ui/types";
+import { setTourContext, startTour } from "@/features/site-tour";
 
 const TABS = [
   { value: "basic", label: "基本設定" },
@@ -36,6 +37,27 @@ export function ManageView({ slug, tab }: { slug: string; tab: string }) {
   const currentStaff = staff ?? info.data?.staff ?? [];
   const canManage = info.data?.canManage ?? false;
   const active = TABS.some((item) => item.value === tab) ? tab : "basic";
+  // 板の管理画面の権限をツアーへ知らせる（ヘッダー／フッターから開始されても同じ手順にする）。
+  const [accountId, setAccountId] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api
+      .getSession()
+      .then((session) => {
+        if (alive) setAccountId(session?.id ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const myLevel = accountId
+    ? currentStaff.find((entry) => entry.accountId === accountId)?.level
+    : undefined;
+  const isStaff = canManage || myLevel === "deputy" || myLevel === "moderator";
+  useEffect(() => {
+    setTourContext({ boardStaff: isStaff, canManageBoard: canManage });
+  }, [isStaff, canManage]);
 
   if (info.loading && !info.data) {
     return <Spinner label="板情報を読み込み中…" />;
@@ -62,6 +84,27 @@ export function ManageView({ slug, tab }: { slug: string; tab: string }) {
           </Link>
         </div>
         <div className="oc-panel-inner">
+          {canManage ? (
+            <div className="oc-row oc-mb" style={{ gap: 6, alignItems: "center" }}>
+              {/* 板の管理画面の使い方（ツアー）と管理者向けヘルプへの導線。
+                  管理権限が無い人には、管理操作の案内を出さない。 */}
+              <button
+                type="button"
+                className="oc-btn oc-btn-sm"
+                data-tour="manage-help"
+                onClick={() => startTour("manage")}
+                title="この板の管理画面の使い方を順に案内します"
+              >
+                使い方ツアー
+              </button>
+              <a className="oc-btn oc-btn-sm" href="/help/admin/#board-staff">
+                板の管理のヘルプ
+              </a>
+              <a className="oc-btn oc-btn-sm" href="/help/admin/#board-staff">
+                通報の対応
+              </a>
+            </div>
+          ) : null}
           {!canManage ? (
             <Notice kind="warn">
               この板の管理には板スタッフ（管理人/副管理人/モデレーター）権限が必要です。
@@ -69,13 +112,14 @@ export function ManageView({ slug, tab }: { slug: string; tab: string }) {
             </Notice>
           ) : null}
 
-          <div className="oc-tabs" role="tablist">
+          <div className="oc-tabs" role="tablist" data-tour="manage-tabs">
             {TABS.map((item) => (
               <button
                 key={item.value}
                 type="button"
                 role="tab"
                 aria-selected={active === item.value}
+                data-tour={`manage-tab-${item.value}`}
                 className={active === item.value ? "active" : undefined}
                 onClick={() => navigate(`${boardPath(slug)}/manage/${item.value}`)}
               >
@@ -84,10 +128,13 @@ export function ManageView({ slug, tab }: { slug: string; tab: string }) {
             ))}
           </div>
 
+          <div data-tour="manage-panel">
+
           {active === "basic" || active === "rules" || active === "design" ? (
             <ManageBoardSettings
               board={current}
               mode={active}
+              canManage={canManage}
               onSaved={(updated) => {
                 setBoard(updated);
                 info.reload();
@@ -129,6 +176,7 @@ export function ManageView({ slug, tab }: { slug: string; tab: string }) {
           ) : null}
 
           {active === "reports" ? <ManageReports slug={slug} /> : null}
+          </div>
         </div>
       </div>
     </div>

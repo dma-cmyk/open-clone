@@ -51,6 +51,26 @@ function bootstrapBody(secret: string, code: string): Record<string, unknown> {
   };
 }
 
+describe("所有者ブートストラップ: 一般アカウントと同じメール", () => {
+  it("500 ではなく 409 CONFLICT で理由を返し、所有者は作られない", async () => {
+    const existingOwner = await env.DB.prepare("SELECT 1 AS one FROM accounts WHERE role = 'owner' LIMIT 1").first();
+    if (existingOwner) return; // 先行テストで owner がいる場合は 409 OWNER_SETUP_CLOSED が先に返るため対象外
+    await env.DB.prepare(
+      "INSERT INTO accounts (id, name, email, password_hash, role, status, created_at) VALUES ('dup-email-user', 'u', 'dup-owner@example.com', 'x', 'user', 'active', 0)",
+    ).run();
+    const secret = generateTotpSecret();
+    const code = await generateTotp(secret, { time: Math.floor(Date.now() / 1000) });
+    const result = await request("/v1/admin/owner/setup", {
+      body: { ...bootstrapBody(secret, code), email: "dup-owner@example.com" },
+      ip: "203.0.113.30",
+    });
+    expect(result.status, JSON.stringify(result.body)).toBe(409);
+    expect(result.body?.code).toBe("CONFLICT");
+    const owners = await env.DB.prepare("SELECT COUNT(*) AS n FROM accounts WHERE role = 'owner'").first<{ n: number }>();
+    expect(owners?.n).toBe(0);
+  });
+});
+
 describe("L-1: 所有者ブートストラップの試行回数制限", () => {
   it("誤キーは IP 単位で 5 回まで 403、6 回目は 429。正しいキーは別 IP から 1 回で通る", async () => {
     const secret = generateTotpSecret();
