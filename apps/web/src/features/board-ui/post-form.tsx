@@ -10,6 +10,7 @@ import { TurnstileWidget, useTurnstileToken } from "./turnstile";
 import { UploaderMount, type UploaderHandle } from "./uploader-mount";
 import { onQuote } from "./quote-bus";
 import { settingsStore } from "./settings";
+import { getTurnstilePass, setTurnstilePass, useTurnstilePass } from "./turnstile-pass-store";
 import { recordWrite } from "./history";
 import { THREAD_MODES, type AttachmentRef, type Post } from "./types";
 
@@ -65,8 +66,56 @@ export function PostForm({
   const uploaderRef = useRef<UploaderHandle>(null);
   const toast = useToast();
 
+  // サーバーが「この端末は期限内の確認済み」と答えていれば、ウィジェットもトークンも不要
+  // （報告書 81 / A・B。レスだけが対象で、スレ立ては常に確認する）。
+  // 板ごとの共有状態（つぶやきで確認済みになった場合も反映される。R82-04）。
+  const sharedPass = useTurnstilePass(boardSlug);
+  // `always` の板では省略しない（古い共有 pass が残っていても使わない。レビュー 84 / R82-03）。
+  const turnstilePassed = turnstile === "anonymous" && sharedPass.passed;
+  // 期限（秒）。過ぎたら「確認済み」を捨てて部品を戻す（レビュー 82 / R82-03）。
+  const turnstilePassExpiresAt = sharedPass.expiresAt;
+  const setTurnstilePassed = (passed: boolean) => {
+    setTurnstilePass(boardSlug, { passed, expiresAt: passed ? getTurnstilePass(boardSlug).expiresAt : null });
+  };
+  const setTurnstilePassExpiresAt = (expiresAt: number | null) => {
+    setTurnstilePass(boardSlug, { passed: expiresAt !== null ? true : getTurnstilePass(boardSlug).passed, expiresAt });
+  };
+  useEffect(() => {
+    if (mode !== "post" || turnstile !== "anonymous") return;
+    let alive = true;
+    api
+      .getTurnstileStatus(boardSlug)
+      .then((status) => {
+        if (!alive) return;
+        setTurnstilePassed(status.passed);
+        setTurnstilePassExpiresAt(status.passExpiresAt);
+      })
+      .catch(() => {
+        /* 取得できなければ従来どおり確認を出す */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [boardSlug, mode, turnstile]);
+
+  // 期限が来たら「確認済み」を捨てる（部品が戻る）。
+  useEffect(() => {
+    if (!turnstilePassed || !turnstilePassExpiresAt) return;
+    const remainMs = turnstilePassExpiresAt * 1000 - Date.now();
+    if (remainMs <= 0) {
+      setTurnstilePassed(false);
+      setTurnstilePassExpiresAt(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setTurnstilePassed(false);
+      setTurnstilePassExpiresAt(null);
+    }, remainMs);
+    return () => window.clearTimeout(timer);
+  }, [turnstilePassed, turnstilePassExpiresAt]);
+
   // Turnstile はフォームで 1 個だけ。投稿もアップロードも同じトークン供給元を使う（F-06）。
-  const turnstileToken = useTurnstileToken(turnstile);
+  const turnstileToken = useTurnstileToken(turnstile, mode === "post" && turnstilePassed);
   const needsTurnstile = turnstileToken.needed;
 
   const draftKey = useMemo(
@@ -195,9 +244,36 @@ export function PostForm({
         window.localStorage.removeItem(draftKey);
         setDraftSavedAt(null);
       }
+      // 送信できた＝確認済みが記録された（または省略された）。次回のために状態を取り直す。
+      if (mode === "post" && turnstile === "anonymous") {
+        void api
+          .getTurnstileStatus(boardSlug)
+          .then((status) => {
+            setTurnstilePassed(status.passed);
+            setTurnstilePassExpiresAt(status.passExpiresAt);
+          })
+          .catch(() => undefined);
+      }
     } catch (cause) {
       if (cause instanceof ApiError) {
         setError(cause.message);
+        // サーバー側で取消・期限切れになっていたら、確認済みを捨てて部品を戻す（R82-03）。
+        if (cause.code === "TURNSTILE_FAILED" || cause.status === 403) {
+          // TURNSTILE_FAILED は「確認が必要」の意味なので、ローカルの省略状態は捨てる
+          // （ここで状態を取り直すと、サーバー側の取消が遅れている場合に再び隠れてしまう）。
+          setTurnstilePassed(false);
+          setTurnstilePassExpiresAt(null);
+        } else if (mode === "post" && turnstile === "anonymous") {
+          // NG（400 VALIDATION）や 429 でもサーバーは確認済みを取り消している。
+          // 画面を追随させるため状態を取り直す（レビュー 84 / R82-03）。
+          void api
+            .getTurnstileStatus(boardSlug)
+            .then((status) => {
+              setTurnstilePassed(status.passed);
+              setTurnstilePassExpiresAt(status.passExpiresAt);
+            })
+            .catch(() => undefined);
+        }
       } else {
         setError(cause instanceof Error ? cause.message : "投稿に失敗しました");
       }
@@ -368,8 +444,10 @@ export function PostForm({
           </button>
         </div>
 
-        {/* Bot 確認はフォームに 1 個だけ（投稿・添付で同じトークンを使い回さない）。 */}
-        {needsTurnstile ? (
+        {/* Bot 確認はフォームに 1 個だけ（投稿・添付で同じトークンを使い回さない）。
+            投稿が省略されている間も、添付にはトークンが必要なのでウィジェットは描いておく
+            （appearance: interaction-only なので普段は見えない。レビュー 82 / R82-05）。 */}
+        {needsTurnstile || turnstileToken.uploadWidget ? (
           <div className="oc-turnstile-row" data-tour="post-form-turnstile">
             <TurnstileWidget
               onToken={turnstileToken.accept}

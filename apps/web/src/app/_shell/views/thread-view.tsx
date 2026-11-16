@@ -731,6 +731,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
 
       <TsubuyakiOverlay
         threadId={threadId}
+        boardSlug={slug}
         open={tsubuyakiOpen}
         onClose={() => setTsubuyakiOpen(false)}
         comments={tsubuyakiComments}

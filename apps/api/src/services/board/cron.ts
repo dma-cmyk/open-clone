@@ -59,6 +59,8 @@ export async function runPrune(env: Env): Promise<{
   deletedBoards: number;
   closedThreads: number;
   expiredBans: number;
+  /** 期限切れの「ロボット確認済み」行の削除（レビュー 82 / R82-06）。 */
+  expiredTurnstilePasses: number;
 }> {
   const db = env.DB;
   const now = Math.floor(Date.now() / 1000);
@@ -86,9 +88,21 @@ export async function runPrune(env: Env): Promise<{
     .bind(now)
     .run();
 
+  // 「確認済み」の期限切れ行を定期削除（アクセスが来ない端末×板の行が永久に残らないように）。
+  // 索引 idx_turnstile_passes_expires を使い、1 回の削除は 500 件まで（無料枠の書き込みを抑える）。
+  const expiredPasses = await db
+    .prepare(
+      `DELETE FROM turnstile_passes WHERE rowid IN (
+         SELECT rowid FROM turnstile_passes WHERE expires_at <= ? LIMIT 500
+       )`,
+    )
+    .bind(now)
+    .run();
+
   return {
     deletedBoards: boards.meta.changes ?? 0,
     closedThreads: threads.meta.changes ?? 0,
     expiredBans: bans.meta.changes ?? 0,
+    expiredTurnstilePasses: expiredPasses.meta.changes ?? 0,
   };
 }
