@@ -64,7 +64,8 @@
 | scope | window | max |
 |---|---|---|
 | post | 30s | 3 |
-| threadCreate | 300s | 2 |
+| postEdit | 30s | 5 |
+| postEditIp | 300s | 30 |
 | tsubuyaki | 10s | 5 |
 | login | 300s | 10 |
 | register | 86400s | 5 |
@@ -170,20 +171,20 @@
 | GET | `/github/start` | — | `auth.ts` | 381 |
 | POST | `/github/callback` | — | `auth.ts` | 387 |
 | POST | `/step-up` | `requireAuth` | `auth.ts` | 422 |
-| GET | `/` | — | `boards.ts` | 43 |
-| POST | `/` | `requireAuth` | `boards.ts` | 99 |
-| GET | `/:slug` | — | `boards.ts` | 170 |
-| GET | `/:slug/turnstile` | — | `boards.ts` | 224 |
-| PATCH | `/:slug` | `requireAuth` | `boards.ts` | 250 |
-| DELETE | `/:slug` | `requireAuth` | `boards.ts` | 289 |
-| GET | `/:slug/threads` | — | `boards.ts` | 312 |
-| POST | `/:slug/threads` | — | `boards.ts` | 336 |
-| GET | `/:slug/staff` | — | `boards.ts` | 364 |
-| POST | `/:slug/staff` | `requireAuth` | `boards.ts` | 387 |
-| DELETE | `/:slug/staff/:accountId` | `requireAuth` | `boards.ts` | 420 |
-| GET | `/:slug/bans` | `requireAuth` | `boards.ts` | 449 |
-| POST | `/:slug/bans` | `requireAuth` | `boards.ts` | 486 |
-| DELETE | `/:slug/bans/:id` | `requireAuth` | `boards.ts` | 523 |
+| GET | `/` | — | `boards.ts` | 44 |
+| POST | `/` | `requireAuth` | `boards.ts` | 100 |
+| GET | `/:slug` | — | `boards.ts` | 171 |
+| GET | `/:slug/turnstile` | — | `boards.ts` | 225 |
+| PATCH | `/:slug` | `requireAuth` | `boards.ts` | 251 |
+| DELETE | `/:slug` | `requireAuth` | `boards.ts` | 290 |
+| GET | `/:slug/threads` | — | `boards.ts` | 313 |
+| POST | `/:slug/threads` | — | `boards.ts` | 337 |
+| GET | `/:slug/staff` | — | `boards.ts` | 383 |
+| POST | `/:slug/staff` | `requireAuth` | `boards.ts` | 406 |
+| DELETE | `/:slug/staff/:accountId` | `requireAuth` | `boards.ts` | 439 |
+| GET | `/:slug/bans` | `requireAuth` | `boards.ts` | 468 |
+| POST | `/:slug/bans` | `requireAuth` | `boards.ts` | 505 |
+| DELETE | `/:slug/bans/:id` | `requireAuth` | `boards.ts` | 542 |
 | GET | `/:slug/subject.txt` | — | `compat.ts` | 59 |
 | GET | `/:slug/dat/:file` | — | `compat.ts` | 105 |
 | GET | `/bbsmenu.html` | — | `compat.ts` | 143 |
@@ -254,17 +255,19 @@
 | POST | `/:id/export/gist` | `requireAuth` | `plugins.ts` | 1241 |
 | POST | `/:id/export/repo` | `requireAuth` | `plugins.ts` | 1268 |
 | POST | `/:id/sync` | `requireAuth` | `plugins.ts` | 1308 |
-| GET | `/:id` | — | `posts.ts` | 46 |
-| POST | `/` | — | `posts.ts` | 68 |
-| POST | `/tsubuyaki` | — | `posts.ts` | 101 |
-| POST | `/:id/like` | — | `posts.ts` | 131 |
-| GET | `/:id/like` | — | `posts.ts` | 164 |
-| POST | `/:id/hide` | `requireAuth` | `posts.ts` | 181 |
-| POST | `/:id/restore` | `requireAuth` | `posts.ts` | 190 |
-| DELETE | `/:id` | `requireAuth` | `posts.ts` | 199 |
-| GET | `/:id/poll` | — | `posts.ts` | 211 |
-| POST | `/:id/poll/vote` | — | `posts.ts` | 250 |
-| GET | `/:id/backlinks` | — | `posts.ts` | 277 |
+| GET | `/:id` | — | `posts.ts` | 56 |
+| POST | `/` | — | `posts.ts` | 82 |
+| POST | `/tsubuyaki` | — | `posts.ts` | 115 |
+| POST | `/:id/like` | — | `posts.ts` | 145 |
+| GET | `/:id/like` | — | `posts.ts` | 178 |
+| POST | `/:id/hide` | `requireAuth` | `posts.ts` | 195 |
+| POST | `/:id/restore` | `requireAuth` | `posts.ts` | 204 |
+| DELETE | `/:id` | — | `posts.ts` | 216 |
+| PATCH | `/:id` | — | `posts.ts` | 265 |
+| GET | `/:id/history` | — | `posts.ts` | 311 |
+| GET | `/:id/poll` | — | `posts.ts` | 343 |
+| POST | `/:id/poll/vote` | — | `posts.ts` | 382 |
+| GET | `/:id/backlinks` | — | `posts.ts` | 409 |
 | GET | `/` | — | `ranking.ts` | 210 |
 | POST | `/` | — | `reports.ts` | 125 |
 | GET | `/` | `requireAuth` | `reports.ts` | 178 |
@@ -277,14 +280,16 @@
 | GET | `/` | — | `search.ts` | 98 |
 | GET | `/suggest` | — | `search.ts` | 337 |
 | GET | `/stats` | — | `search.ts` | 350 |
-| GET | `/` | — | `threads.ts` | 39 |
-| GET | `/:id` | — | `threads.ts` | 58 |
-| GET | `/:id/posts` | — | `threads.ts` | 86 |
-| POST | `/:id/posts` | — | `threads.ts` | 110 |
-| POST | `/:id/tsubuyaki` | — | `threads.ts` | 135 |
-| PATCH | `/:id` | `requireAuth` | `threads.ts` | 164 |
-| DELETE | `/:id` | `requireAuth` | `threads.ts` | 190 |
-| GET | `/:id/range` | — | `threads.ts` | 206 |
+| GET | `/` | — | `threads.ts` | 47 |
+| GET | `/:id` | — | `threads.ts` | 66 |
+| GET | `/:id/card` | — | `threads.ts` | 103 |
+| GET | `/:id/posts` | — | `threads.ts` | 185 |
+| POST | `/:id/posts` | — | `threads.ts` | 209 |
+| POST | `/:id/tsubuyaki` | — | `threads.ts` | 234 |
+| PATCH | `/:id` | — | `threads.ts` | 267 |
+| DELETE | `/:id` | — | `threads.ts` | 335 |
+| GET | `/:id/quotes` | — | `threads.ts` | 391 |
+| GET | `/:id/range` | — | `threads.ts` | 399 |
 | GET | `/adapters` | — | `uploads.ts` | 167 |
 | POST | `/prepare` | — | `uploads.ts` | 178 |
 | POST | `/proxy` | — | `uploads.ts` | 239 |
@@ -4489,6 +4494,32 @@
               "type": "null"
             }
           ]
+        },
+        "allowPostEdit": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowPostDelete": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowThreadEdit": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowThreadDelete": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowQuoteThread": {
+          "default": true,
+          "type": "boolean"
+        },
+        "selfEditWindowMinutes": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 525600
         }
       }
     },
@@ -4636,6 +4667,32 @@
           "type": "null"
         }
       ]
+    },
+    "allowPostEdit": {
+      "default": true,
+      "type": "boolean"
+    },
+    "allowPostDelete": {
+      "default": true,
+      "type": "boolean"
+    },
+    "allowThreadEdit": {
+      "default": true,
+      "type": "boolean"
+    },
+    "allowThreadDelete": {
+      "default": true,
+      "type": "boolean"
+    },
+    "allowQuoteThread": {
+      "default": true,
+      "type": "boolean"
+    },
+    "selfEditWindowMinutes": {
+      "default": 0,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 525600
     }
   }
 }
@@ -5005,6 +5062,32 @@
               "type": "null"
             }
           ]
+        },
+        "allowPostEdit": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowPostDelete": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowThreadEdit": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowThreadDelete": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowQuoteThread": {
+          "default": true,
+          "type": "boolean"
+        },
+        "selfEditWindowMinutes": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 525600
         }
       }
     },
@@ -5212,6 +5295,32 @@
               "type": "null"
             }
           ]
+        },
+        "allowPostEdit": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowPostDelete": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowThreadEdit": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowThreadDelete": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowQuoteThread": {
+          "default": true,
+          "type": "boolean"
+        },
+        "selfEditWindowMinutes": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 525600
         }
       }
     }
@@ -11197,6 +11306,29 @@
 }
 ```
 
+#### `editPostRequestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "turnstileToken": {
+      "type": "string",
+      "maxLength": 4096
+    }
+  },
+  "required": [
+    "body"
+  ]
+}
+```
+
 #### `pollResultSchema`
 
 ```json
@@ -11321,6 +11453,41 @@
     "options",
     "endsAt",
     "createdAt"
+  ]
+}
+```
+
+#### `postEditHistoryItemSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "postId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "previousBody": {
+      "type": "string"
+    },
+    "editedAt": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "id",
+    "postId",
+    "previousBody",
+    "editedAt"
   ]
 }
 ```
@@ -11455,6 +11622,20 @@
         "minimum": 0,
         "maximum": 9007199254740991
       }
+    },
+    "editedCount": {
+      "default": 0,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "selfDeleted": {
+      "default": false,
+      "type": "boolean"
+    },
+    "mine": {
+      "default": false,
+      "type": "boolean"
     },
     "hidden": {
       "type": "boolean"
@@ -11758,6 +11939,20 @@
                 "minimum": 0,
                 "maximum": 9007199254740991
               }
+            },
+            "editedCount": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "selfDeleted": {
+              "default": false,
+              "type": "boolean"
+            },
+            "mine": {
+              "default": false,
+              "type": "boolean"
             },
             "hidden": {
               "type": "boolean"
@@ -12224,6 +12419,20 @@
                 "maximum": 9007199254740991
               }
             },
+            "editedCount": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "selfDeleted": {
+              "default": false,
+              "type": "boolean"
+            },
+            "mine": {
+              "default": false,
+              "type": "boolean"
+            },
             "hidden": {
               "type": "boolean"
             },
@@ -12558,6 +12767,48 @@
 
 ### `packages/shared/src/schemas/thread.ts`
 
+#### `createQuotedThreadRequestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "quoteThreadId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "mail": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "turnstileToken": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "quoteThreadId",
+    "title",
+    "body"
+  ]
+}
+```
+
 #### `createThreadRequestSchema`
 
 ```json
@@ -12607,6 +12858,117 @@
   "required": [
     "title",
     "body"
+  ]
+}
+```
+
+#### `editThreadRequestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "turnstileToken": {
+      "type": "string",
+      "maxLength": 4096
+    }
+  },
+  "required": [
+    "title",
+    "body"
+  ]
+}
+```
+
+#### `quotedThreadCardSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "threadId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "boardId": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "boardSlug": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "boardName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "postCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "closed",
+        "deleted"
+      ]
+    },
+    "createdAt": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "unavailable": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "threadId",
+    "boardId",
+    "boardSlug",
+    "boardName",
+    "title",
+    "postCount",
+    "status",
+    "createdAt"
   ]
 }
 ```
@@ -12692,6 +13054,64 @@
       "maximum": 100
     }
   }
+}
+```
+
+#### `threadQuoteRefSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "boardId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "boardSlug": {
+      "type": "string"
+    },
+    "boardName": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "postCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "closed",
+        "deleted"
+      ]
+    },
+    "createdAt": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "id",
+    "boardId",
+    "boardSlug",
+    "boardName",
+    "title",
+    "postCount",
+    "status",
+    "createdAt"
+  ]
 }
 ```
 
@@ -12791,6 +13211,19 @@
         "active",
         "closed",
         "deleted"
+      ]
+    },
+    "quoteSourceId": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "createdAt": {
