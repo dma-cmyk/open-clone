@@ -475,3 +475,56 @@ describe("第2回レビュー修正", () => {
     expect(passAfter?.n ?? 0).toBe(0);
   });
 });
+
+describe("最終レビュー後の修正（オーケストレーター）", () => {
+  it("R74-02 残存: !jien の表示 ID アク禁は、同じ IP・同じ Lv の別端末の編集も止める", async () => {
+    const owner = await authedClient({ name: "r76-jien" });
+    const board = await createBoard(owner.client, { settings: { turnstile: "off", cooldownSeconds: 0 } });
+    const anon = new TestClient();
+    const thread = await createThread(anon, board.board.slug, { title: "jien のスレ", body: "本文" });
+    await postReply(anon, thread.threadId, "!jien");
+
+    // 同じ IP の 2 端末。どちらも忍法帖 Lv2（投稿数 50 以上）にしてから書く。
+    const a = new TestClient();
+    const b = new TestClient();
+    const a1 = await postReply(a, thread.threadId, "A の最初のレス");
+    const b1 = await postReply(b, thread.threadId, "B の最初のレス");
+    for (const postId of [a1.post.id, b1.post.id]) {
+      await env.DB.prepare(
+        "UPDATE devices SET post_count = 60 WHERE device_hash = (SELECT device_hash FROM posts WHERE id = ?)",
+      )
+        .bind(postId)
+        .run();
+    }
+    const a2 = await postReply(a, thread.threadId, "A の Lv2 のレス");
+    const b2 = await postReply(b, thread.threadId, "B の Lv2 のレス");
+    expect(a2.post.idHash).toBe(b2.post.idHash);
+    expect(a2.post.idHash).toContain(".L2");
+
+    // スレ主が A のレスをアク禁 → 同じ表示 ID の B も、新規投稿・編集とも止まる。
+    await postReply(anon, thread.threadId, `!aku >>${a2.post.num}`);
+    const posted = await b.post(`/v1/threads/${thread.threadId}/posts`, { body: "アク禁中の投稿" });
+    expect(posted.status).toBe(403);
+    const edited = await b.patch(`/v1/posts/${b2.post.id}`, { body: "アク禁中の編集" });
+    expect(edited.status).toBe(403);
+  });
+
+  it("R74-05 残存: インラインカード用の API はスレ本体を返さず、削除板では中身を隠す", async () => {
+    const owner = await authedClient({ name: "r76-card" });
+    const board = await createBoard(owner.client, { settings: { turnstile: "off", cooldownSeconds: 0 } });
+    const thread = await createThread(owner.client, board.board.slug, { title: "秘密のタイトル", body: "秘密の本文" });
+    const viewer = new TestClient();
+
+    const visible = await viewer.get<{ card: { title: string; unavailable: boolean } }>(`/v1/threads/${thread.threadId}/card`);
+    expect(visible.status).toBe(200);
+    expect(JSON.stringify(visible.body)).not.toContain("秘密の本文");
+
+    await env.DB.prepare("UPDATE boards SET status = 'deleted' WHERE slug = ?").bind(board.board.slug).run();
+    const hidden = await viewer.get<{ card: { title: string; unavailable: boolean } }>(`/v1/threads/${thread.threadId}/card`);
+    expect(hidden.status).toBe(200);
+    const text = JSON.stringify(hidden.body);
+    expect(text).not.toContain("秘密のタイトル");
+    expect(text).not.toContain("秘密の本文");
+    expect(hidden.body.ok && hidden.body.data.card.unavailable).toBe(true);
+  });
+});

@@ -391,6 +391,11 @@ export const api = {
     );
   },
 
+  /** レス内のスレ URL 用の最小限のカード（本文やレスは取得しない。R74-05）。 */
+  getThreadCard(threadId: number): Promise<QuotedThreadCard | null> {
+    return get<{ card?: unknown }>(`/threads/${threadId}/card`).then((data) => normalizeQuotedCard(data.card));
+  },
+
   getStaff(slug: string): Promise<StaffEntry[]> {
     return get<{ items?: (StaffEntry & { accountName?: string })[] }>(
       `/boards/${encodeURIComponent(slug)}/staff`,

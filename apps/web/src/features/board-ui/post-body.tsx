@@ -62,24 +62,22 @@ function InlineUrl({ url, showImages }: { url: string; showImages: boolean }) {
 
 /**
  * レス内のこのサイトのスレ URL をスレカードとして表示する（引用スレ機能 (2)）。
- * カード情報は GET /v1/threads/:id から非同期で取得する。外部サイトの URL は対象外。
+ * カード情報は GET /v1/threads/:id/card（タイトル・件数などの最小限）から取得する。
+ * スレ本体を取得すると、削除板のスレのタイトル・本文が表示しなくてもブラウザへ届くため使わない（R74-05）。
  */
 function ThreadLinkCard({ url, boardSlug, threadId }: { url: string; boardSlug: string; threadId: number }) {
   const [card, setCard] = useState<{ title: string; postCount: number; unavailable: boolean } | null>(null);
   useEffect(() => {
     let cancelled = false;
     void api
-      .getThread(threadId, {})
-      .then((page) => {
+      .getThreadCard(threadId)
+      .then((data) => {
         if (cancelled) return;
-        // 明示的な引用元カードと同じ基準（R74-05）: 削除スレ・削除板はタイトル・件数を出さない。
-        const threadDeleted = page.thread.status === "deleted";
-        const boardUnavailable = page.thread.boardStatus !== undefined && page.thread.boardStatus !== "active";
-        setCard({
-          title: threadDeleted || boardUnavailable ? "削除されたスレ" : page.thread.title,
-          postCount: threadDeleted || boardUnavailable ? 0 : page.thread.postCount,
-          unavailable: threadDeleted || boardUnavailable,
-        });
+        setCard(
+          data && !data.unavailable
+            ? { title: data.title, postCount: data.postCount, unavailable: false }
+            : { title: "削除されたスレ", postCount: 0, unavailable: true },
+        );
       })
       .catch(() => {
         if (!cancelled) setCard({ title: "削除されたスレ", postCount: 0, unavailable: true });

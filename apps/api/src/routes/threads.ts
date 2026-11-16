@@ -95,6 +95,16 @@ app.get("/:id", async (c) => {
   );
 });
 
+/**
+ * レス内のスレ URL のインラインカード用（R74-05）。スレ本体（本文・レス）は返さず、
+ * 引用元カードと同じ基準の最小限の情報だけを返す。削除スレ・見られない板も 200 で
+ * 「削除されたスレ」のカードになる（存在しないスレも同じ形）。
+ */
+app.get("/:id/card", async (c) => {
+  const card = await loadQuotedThreadCard(c.env.DB, parseThreadId(c.req.param("id")));
+  return c.json(ok({ card }));
+});
+
 /** 引用元スレのカード。非公開板・削除済みは限られた情報だけを返す（見られない板の情報を漏らさない）。 */
 async function loadQuotedThreadCard(db: D1Database, threadId: number | null): Promise<QuotedThreadCard | null> {
   if (threadId === null) return null;

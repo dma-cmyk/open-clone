@@ -1192,7 +1192,19 @@ export async function editPostInternal(input: EditPostInput, deps: PipelineDeps)
         (value) => threadTitleFlagsSchema.parse(value),
         DEFAULT_THREAD_FLAGS,
       );
-      const displayId = settings.noId || threadFlags.noId ? "???" : state.jien ? jienDisplayId(baseId, input.identity.ipHash, 1) : baseId;
+      // !jien の表示 ID は忍法帖 Lv を含む。新規投稿と同じ計算（端末の投稿数 + 1）で Lv を求め、
+      // 「いま書き込んだら止められる人は編集でも止める」に揃える（Lv を固定すると、
+      // Lv2 以上でアク禁された表示 ID を編集ですり抜けられた。R74-02）。
+      let displayId = baseId;
+      if (settings.noId || threadFlags.noId) {
+        displayId = "???";
+      } else if (state.jien) {
+        const deviceRow = await db
+          .prepare("SELECT post_count FROM devices WHERE device_hash = ?")
+          .bind(input.identity.deviceHash)
+          .first<{ post_count: number }>();
+        displayId = jienDisplayId(baseId, input.identity.ipHash, ninjaLevelFor((deviceRow?.post_count ?? 0) + 1));
+      }
       try {
         assertNotAku(state, input.identity, displayId, now);
       } catch (error) {

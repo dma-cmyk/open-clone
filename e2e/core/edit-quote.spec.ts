@@ -2,7 +2,7 @@
 // 匿名ブラウザ（Cookie のみ）で書いたレスを編集→履歴→本人削除、別ブラウザからは不可、
 // スレの編集・削除、引用して新スレ（カードと引用一覧）、レス内スレ URL カード、板設定の不許可。
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { ALLOWED_ORIGIN, apiUrl } from "../helpers/api";
+import { ALLOWED_ORIGIN, WEB_BASE, apiUrl } from "../helpers/api";
 import { unique } from "../helpers/ids";
 import { stubTurnstile } from "./rv-core-helpers";
 
@@ -516,14 +516,13 @@ test.describe("第2回レビュー修正", () => {
     await createThreadApi(request, slug, { title: "カード対象スレ", body: "本文" });
 
     // 外部 URL（userinfo 付き・origin を先頭に含む）を貼る。web のオリジンを使う（about:blank では壊れる）。
-    const webOrigin = process.env.E2E_WEB_URL ?? "http://localhost:3203";
-    const evil = `${webOrigin}@outside.invalid/b/${slug}/t/999`;
+    const evil = `${WEB_BASE}@outside.invalid/b/${slug}/t/999`;
     await request.post(apiUrl(`/v1/threads/${threadId}/posts`), {
       headers: { Origin: ALLOWED_ORIGIN, "content-type": "application/json", "x-real-ip": "203.0.113.81" },
       data: { body: `外部 ${evil}` },
     });
 
-    await page.goto(`http://localhost:3203/b/${slug}/t/${threadId}?r=l50`);
+    await page.goto(`/b/${slug}/t/${threadId}?r=l50`);
     // 外部 URL はカード化されず、通常のリンクとして表示される。
     const card = page.locator(".oc-thread-link-card");
     await page.waitForTimeout(2_000);
