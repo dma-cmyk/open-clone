@@ -373,13 +373,13 @@ describe("B4/B5/B6/B14: 削除・停止・無効化・匿名導入", () => {
     });
     expect(anonSite.status).toBe(403);
 
-    // 匿名は作成できない（401）
+    // 匿名は personal 専用なら作成できる（0613 以降）。board/site スコープは 403。
     const anonCreate = await call("/v1/plugins", {
       method: "POST",
       cookie: ANON_DEVICE_B,
       body: { manifest: manifest("anon-create"), code: SAMPLE_CODE },
     });
-    expect(anonCreate.status).toBe(401);
+    expect(anonCreate.status).toBe(403); // manifest が board/site を含むため拒否
 
     // 匿名は他人のプラグインを停止・削除できない（403）
     const anonDisable = await call(`/v1/plugins/${plugin.id}/disable`, {

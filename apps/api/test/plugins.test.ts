@@ -400,12 +400,12 @@ describe("プラグインのライフサイクル（GitHub なしで完結）", 
 // ─── 権限・認証 ───────────────────────────────────────────────────
 
 describe("プラグイン API の権限", () => {
-  it("未ログインでは作成できない", async () => {
+  it("未ログインでも personal 専用なら作成できる（0613 以降）", async () => {
     const result = await call("/v1/plugins", {
       method: "POST",
-      body: { manifest: manifest("anon-create"), code: SAMPLE_CODE },
+      body: { manifest: manifest("anon-create", { scope: ["personal"] }), code: SAMPLE_CODE, visibility: "private" },
     });
-    expect(result.status).toBe(401);
+    expect(result.status, JSON.stringify(result.json)).toBe(201);
   });
 
   it("他人のプラグインは編集・公開できない", async () => {

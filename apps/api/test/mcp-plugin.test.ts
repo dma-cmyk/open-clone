@@ -504,7 +504,7 @@ describe("MCP /mcp-plugin のセキュリティ", () => {
     }
   });
 
-  it("失効後は MCP 接続が 401 になり、既存 REST も ocp_ を受け付けない", async () => {
+  it("失効後は MCP 接続が 401 になり、既存 REST は匿名作成として扱われる", async () => {
     const { accountId, pluginToken } = await setup();
     await env.DB.prepare("UPDATE plugin_author_tokens SET status = 'revoked' WHERE id = ?")
       .bind(pluginToken.id)
@@ -512,13 +512,19 @@ describe("MCP /mcp-plugin のセキュリティ", () => {
 
     await expect(connect(pluginToken.token)).rejects.toBeTruthy();
 
+    // 失効トークンは認証されない。personal 専用なら 0613 以降は匿名作成として通る。
+    // このリクエストには端末 Cookie も無いため device_hash は requestContext が新規発行する。
     const rest = await api("/v1/plugins", {
       method: "POST",
       key: pluginToken.token,
-      body: { manifest: manifestFor(uniqueName("rest")), code: "register({});" },
+      body: {
+        manifest: manifestFor(uniqueName("rest"), { scope: ["personal"] }),
+        code: "register({});",
+        visibility: "private",
+      },
       headers: { Origin: "http://localhost:3000" },
     });
-    expect(rest.status).toBe(401);
+    expect(rest.status, JSON.stringify(rest.body)).toBe(201);
     expect(accountId).toBeTruthy();
   });
 });

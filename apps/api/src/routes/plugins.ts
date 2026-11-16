@@ -4,6 +4,9 @@
 
 import { Hono } from "hono";
 import {
+  PLUGIN_ANON_CODE_MAX_BYTES,
+  PLUGIN_ANON_MAX_PER_DEVICE,
+  PLUGIN_CODE_MAX_BYTES,
   ApiError,
   ErrorCode,
   hmacSha256Hex,
@@ -33,7 +36,7 @@ import {
 import type { AppEnv } from "../lib/env";
 import { toErrorResponse } from "../lib/middleware/error";
 import { getReqCtx } from "../lib/context";
-import { assertReadRateLimit } from "../lib/do";
+import { assertReadRateLimit, checkRateLimitMulti } from "../lib/do";
 import { requireAuth, requireRole } from "../lib/middleware/auth";
 import { writeAudit } from "../lib/audit";
 import { manifestPermissionWarnings, runStaticChecks } from "../services/plugins/static-checks";
@@ -41,7 +44,10 @@ import { emitPluginReviewRequested } from "../services/ai/events";
 import {
   assertBoardStopPermission,
   assertInstallPermission,
+  canViewDeviceOwnedPlugin,
   isBoardStaff,
+  isDeviceOwnedPlugin,
+  isPluginOwner,
   pluginActorFrom,
   scopeRefFor,
   type PluginActor,
@@ -79,6 +85,7 @@ import {
   stateSet,
   uninstallPlugin,
   updateInstallVersion,
+  type PluginRow,
   type ReviewRow,
 } from "../services/plugins/registry";
 import {
@@ -107,13 +114,17 @@ async function loadPlugin(db: D1Database, idOrName: string) {
   return plugin;
 }
 
-function isOwner(actor: PluginActor, ownerAccountId: string | null): boolean {
-  return actor.accountId !== null && ownerAccountId === actor.accountId;
+
+/** 端末所有プラグインの閲覧ゲート: 所有端末・サイト運営以外は 404（存在しないものとして扱う）。 */
+function assertCanViewPlugin(actor: PluginActor, plugin: PluginRow): void {
+  if (isDeviceOwnedPlugin(plugin) && !canViewDeviceOwnedPlugin(actor, plugin)) {
+    throw ApiError.notFound("プラグインが見つかりません");
+  }
 }
 
-/** オーナー or サイト管理者でなければ 403。 */
-function assertPluginEditor(actor: PluginActor, ownerAccountId: string | null): void {
-  if (isOwner(actor, ownerAccountId) || actor.isAdmin) return;
+/** 所有者（アカウント or 端末）or サイト管理者でなければ 403。 */
+function assertPluginEditor(actor: PluginActor, plugin: PluginRow): void {
+  if (isPluginOwner(actor, plugin) || actor.isAdmin) return;
   throw ApiError.forbidden("プラグインの所有者またはサイト管理者のみ操作できます");
 }
 
@@ -129,26 +140,28 @@ app.get("", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const mine = query.mine === true;
 
-  if (mine && !actor.accountId) throw ApiError.unauthorized();
-
+  // 匿名でも「自分のプラグイン」（端末所有）は見られる。公開一覧は端末所有を出さない。
   const page = await listPlugins(c.env.DB, {
     q: query.q,
     scope: query.scope,
     sort: query.sort,
     limit: query.limit,
     cursor: query.cursor,
-    ownerAccountId: mine ? (actor.accountId ?? undefined) : undefined,
+    ownerAccountId: mine && actor.accountId ? actor.accountId : undefined,
+    ownerDeviceHash: mine && !actor.accountId ? actor.deviceHash : undefined,
     includeAllStatuses: mine,
   });
   return c.json(ok(page));
 });
 
-app.get("/mine", requireAuth, async (c) => {
+app.get("/mine", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const limit = Math.min(Number(c.req.query("limit") ?? 100) || 100, 100);
+  // 匿名（アカウントなし）は端末所有のプラグインを返す（報告 40 設計）。
   const page = await listPlugins(c.env.DB, {
     limit,
-    ownerAccountId: actor.accountId ?? "",
+    ownerAccountId: actor.accountId ?? undefined,
+    ownerDeviceHash: actor.accountId ? undefined : actor.deviceHash,
     includeAllStatuses: true,
     sort: "updated",
   });
@@ -183,6 +196,7 @@ app.get("/active", async (c) => {
   const items = await listActiveInstalls(c.env.DB, {
     scopeRefs: refs,
     viewerAccountId: actor.accountId,
+    viewerDeviceHash: actor.accountId ? null : actor.deviceHash,
   });
   return c.json(ok({ items, boardId, threadId: query.threadId ?? null }));
 });
@@ -268,7 +282,7 @@ app.get("/reviews", requireRole("owner", "special_admin"), async (c) => {
 
 // ─── エディタ支援・GitHub 取込・webhook ───────────────────────────
 
-app.post("/preview-check", requireAuth, async (c) => {
+app.post("/preview-check", async (c) => {
   const body = pluginPreviewCheckSchema.parse(await c.req.json());
   const checks = await runStaticChecks(body.code, body.manifest);
   const warnings = body.manifest ? manifestPermissionWarnings(body.manifest, body.code) : [];
@@ -416,26 +430,93 @@ function compareVersionStrings(a: string, b: string): number {
 
 // ─── 作成 ──────────────────────────────────────────────────────────
 
-app.post("", requireAuth, async (c) => {
+// 匿名（端末所有）でも personal 専用なら作成できる（報告 40 設計）。
+app.post("", async (c) => {
   const body = pluginCreateSchema.parse(await c.req.json());
   const actor = pluginActorFrom(getReqCtx(c));
+
+  // ─── 匿名（端末所有）の制約（API 側で必ず強制する） ─────────
+  if (actor.accountId === null) {
+    // scope は personal のみ
+    if (body.manifest.scope.length !== 1 || body.manifest.scope[0] !== "personal") {
+      throw ApiError.forbidden(
+        "ログインせずに保存できるプラグインは「個人用（personal）」だけです。板やサイト全体で使うにはアカウントが必要です",
+      );
+    }
+    // visibility は private に固定
+    if (body.visibility && body.visibility !== "private") {
+      throw ApiError.forbidden(
+        "ログインせずに保存したプラグインは非公開になります。公開するにはアカウントで公開申請が必要です",
+      );
+    }
+    // 禁止権限（外部通信・費用が発生するもの）
+    const banned = body.manifest.permissions.filter((permission) =>
+      ["net:fetch", "ai:complete", "upload:start", "github:gist", "github:repo"].includes(permission),
+    );
+    if (banned.length > 0) {
+      throw ApiError.forbidden(
+        `ログインせずに使えない権限が含まれています: ${banned.join(", ")}。外部通信・費用が発生する操作にはアカウントが必要です`,
+      );
+    }
+    // コード上限 64KB
+    const codeBytes = new TextEncoder().encode(body.code).byteLength;
+    if (codeBytes > PLUGIN_ANON_CODE_MAX_BYTES) {
+      throw new ApiError(
+        413,
+        ErrorCode.PAYLOAD_TOO_LARGE,
+        `コードが匿名作成の上限（${Math.floor(PLUGIN_ANON_CODE_MAX_BYTES / 1024)}KB）を超えています（${Math.ceil(codeBytes / 1024)}KB）。ログインすると上限は ${Math.floor(PLUGIN_CODE_MAX_BYTES / 1024)}KB になります`,
+      );
+    }
+    // 端末あたり 10 個まで（R42-01: 実際の保証は createPlugin の INSERT 条件で原子的に行う。
+    // ここでは事前チェックとして早期の分かりやすいエラーも出すが、並行作成で
+    // すり抜けても INSERT 側で必ず止まる）
+    const owned = await c.env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM plugins WHERE owner_device_hash = ?",
+    )
+      .bind(actor.deviceHash)
+      .first<{ n: number }>();
+    if ((owned?.n ?? 0) >= PLUGIN_ANON_MAX_PER_DEVICE) {
+      throw ApiError.forbidden(
+        `このブラウザで作れるプラグインは ${PLUGIN_ANON_MAX_PER_DEVICE} 個までです。不要なものを削除するか、ログインして引き継いでください`,
+      );
+    }
+    // 作成回数: 端末窓と IP 窓の両方（1 日 20 回。Cookie を消しても IP 窓で抑える）
+    const deviceRate = await checkRateLimitMulti(c.env, "pluginAnonCreate", [
+      `device:${actor.deviceHash}`,
+    ]);
+    const ipRate = await checkRateLimitMulti(c.env, "pluginAnonCreateIp", [
+      getReqCtx(c).device.ipHash,
+    ]);
+    if (!deviceRate.allowed || !ipRate.allowed) {
+      throw new ApiError(
+        429,
+        ErrorCode.RATE_LIMITED,
+        "プラグインの作成回数が上限に達しました（1 日 20 回）。明日以降に再度お試しください",
+        { retryAfterSeconds: Math.max(deviceRate.retryAfterSeconds, ipRate.retryAfterSeconds) },
+      );
+    }
+  }
+
   const checks = await runStaticChecks(body.code, body.manifest);
   const warnings = manifestPermissionWarnings(body.manifest, body.code);
 
   const created = await createPlugin(c.env.DB, {
-    ownerAccountId: actor.accountId!,
+    ownerAccountId: actor.accountId,
+    ownerDeviceHash: actor.accountId ? null : actor.deviceHash,
     manifest: body.manifest,
     code: body.code,
     changelog: body.changelog,
-    visibility: body.visibility,
+    visibility: actor.accountId ? body.visibility : "private",
   });
 
   await writeAudit(c.env.DB, {
+    // 匿名（端末所有）も actorType は既存の "account" を使う（actor_type の CHECK 制約を
+    // 変えずに済ませるため。端末は actorId を device:<hash> で識別し、detail.owner にも記録）
     actorType: "account",
-    actorId: actor.accountId,
+    actorId: actor.accountId ?? `device:${actor.deviceHash}`,
     action: "plugin.create",
     target: created.id,
-    detail: { name: body.manifest.name, version: created.version },
+    detail: { name: body.manifest.name, version: created.version, owner: actor.accountId ? "account" : "device" },
   });
 
   return c.json(ok({ id: created.id, name: body.manifest.name, version: created.version, checks, warnings }), 201);
@@ -457,10 +538,12 @@ app.get("/:id", async (c) => {
 app.get("/:id/versions", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
-  const canSeeUnapproved = plugin.status === "published" || isOwner(actor, plugin.owner_account_id) || actor.isAdmin;
+  assertCanViewPlugin(actor, plugin);
+  const canSeeUnapproved =
+    plugin.status === "published" || isPluginOwner(actor, plugin) || actor.isAdmin;
   if (!canSeeUnapproved) throw ApiError.notFound("プラグインが見つかりません");
   const versions = await listVersions(c.env.DB, plugin.id, {
-    includeUnapproved: isOwner(actor, plugin.owner_account_id) || actor.isAdmin,
+    includeUnapproved: isPluginOwner(actor, plugin) || actor.isAdmin,
   });
   return c.json(
     ok({
@@ -479,13 +562,14 @@ app.get("/:id/versions", async (c) => {
 app.get("/:id/code", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
   const requestedVersion = c.req.query("version") ?? plugin.latest_version;
   if (!requestedVersion) throw ApiError.notFound("バージョンが指定されていません");
 
   const row = await getVersionRow(c.env.DB, plugin.id, requestedVersion);
   if (!row) throw ApiError.notFound("バージョンが見つかりません");
 
-  const privileged = isOwner(actor, plugin.owner_account_id) || actor.isAdmin;
+  const privileged = isPluginOwner(actor, plugin) || actor.isAdmin;
   if (plugin.status === "disabled" && !privileged) {
     return c.body("/* plugin disabled */\n", 410, {
       "content-type": "text/javascript; charset=utf-8",
@@ -497,7 +581,25 @@ app.get("/:id/code", async (c) => {
     throw ApiError.notFound("このバージョンは配信されていません");
   }
 
+  // R42-02: 端末所有・未公開（owner 以外は取得できない）コードは共有キャッシュに置かない。
+  // 所有端末しか見られない private コードを public キャッシュに載せると、Cookie を
+  // 変えた後もブラウザキャッシュから 200 が返り、隔離が破れる。
+  // 公開・承認済み（誰でも取得できる）コードは従来どおり immutable キャッシュ。
+  const deviceOwned = isDeviceOwnedPlugin(plugin);
+  const unpublished = plugin.status !== "published" || row.status !== "approved";
+  const privateCode = deviceOwned || unpublished;
+
   const etag = `"${row.code_hash}"`;
+  if (privateCode) {
+    // 非公開コード: ブラウザキャッシュにも保存させない（no-store）
+    return c.body(row.code, 200, {
+      "content-type": "text/javascript; charset=utf-8",
+      "cache-control": "no-store",
+      etag,
+      "x-plugin-code-hash": row.code_hash,
+      "x-content-type-options": "nosniff",
+    });
+  }
   if (c.req.header("if-none-match") === etag) {
     return c.body(null, 304, { etag });
   }
@@ -514,33 +616,76 @@ app.get("/:id/code", async (c) => {
   });
 });
 
-app.post("/:id/versions", requireAuth, async (c) => {
+// 匿名（端末所有）の自分のプラグインにも版を追加できる（報告 40 設計）。
+app.post("/:id/versions", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
-  assertPluginEditor(actor, plugin.owner_account_id);
+  assertCanViewPlugin(actor, plugin);
+  assertPluginEditor(actor, plugin);
 
   const body = pluginVersionCreateSchema.parse(await c.req.json());
   if (body.manifest && body.manifest.name !== plugin.name) {
     throw ApiError.validation("manifest.name は変更できません");
   }
 
-  const checks = await runStaticChecks(body.code, body.manifest ?? parseManifest(plugin.manifest_json));
-  const warnings = manifestPermissionWarnings(body.manifest ?? parseManifest(plugin.manifest_json), body.code);
+  // 匿名所有のプラグインは personal 専用・private 固定を版追加でも維持する
+  const nextManifest = body.manifest ?? parseManifest(plugin.manifest_json);
+  if (isDeviceOwnedPlugin(plugin)) {
+    if (nextManifest.scope.length !== 1 || nextManifest.scope[0] !== "personal") {
+      throw ApiError.forbidden(
+        "ログインせずに保存したプラグインは「個人用（personal）」専用です。他のスコープにはアカウントが必要です",
+      );
+    }
+    const banned = nextManifest.permissions.filter((permission) =>
+      ["net:fetch", "ai:complete", "upload:start", "github:gist", "github:repo"].includes(permission),
+    );
+    if (banned.length > 0) {
+      throw ApiError.forbidden(
+        `ログインせずに使えない権限が含まれています: ${banned.join(", ")}`,
+      );
+    }
+    const codeBytes = new TextEncoder().encode(body.code).byteLength;
+    if (codeBytes > PLUGIN_ANON_CODE_MAX_BYTES) {
+      throw new ApiError(
+        413,
+        ErrorCode.PAYLOAD_TOO_LARGE,
+        `コードが匿名作成の上限（${Math.floor(PLUGIN_ANON_CODE_MAX_BYTES / 1024)}KB）を超えています（${Math.ceil(codeBytes / 1024)}KB）`,
+      );
+    }
+    // 版追加も作成と同じ回数窓（端末・IP それぞれ 1 日 20 回の合算）
+    const deviceRate = await checkRateLimitMulti(c.env, "pluginAnonCreate", [
+      `device:${actor.deviceHash}`,
+    ]);
+    const ipRate = await checkRateLimitMulti(c.env, "pluginAnonCreateIp", [
+      getReqCtx(c).device.ipHash,
+    ]);
+    if (!deviceRate.allowed || !ipRate.allowed) {
+      throw new ApiError(
+        429,
+        ErrorCode.RATE_LIMITED,
+        "プラグインの作成・版追加の回数が上限に達しました（1 日 20 回）",
+        { retryAfterSeconds: Math.max(deviceRate.retryAfterSeconds, ipRate.retryAfterSeconds) },
+      );
+    }
+  }
+
+  const checks = await runStaticChecks(body.code, nextManifest);
+  const warnings = manifestPermissionWarnings(nextManifest, body.code);
 
   const result = await addVersion(c.env.DB, plugin, {
     version: body.version,
     manifest: body.manifest,
     code: body.code,
     changelog: body.changelog,
-    actorAccountId: actor.accountId!,
+    actorAccountId: actor.accountId,
   });
 
   await writeAudit(c.env.DB, {
     actorType: "account",
-    actorId: actor.accountId,
+    actorId: actor.accountId ?? `device:${actor.deviceHash}`,
     action: "plugin.version.create",
     target: plugin.id,
-    detail: { version: result.version },
+    detail: { version: result.version, owner: actor.accountId ? "account" : "device" },
   });
 
   return c.json(ok({ version: result.version, checks, warnings }), 201);
@@ -549,8 +694,14 @@ app.post("/:id/versions", requireAuth, async (c) => {
 app.post("/:id/publish", requireAuth, async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
-  assertPluginEditor(actor, plugin.owner_account_id);
-
+  assertCanViewPlugin(actor, plugin);
+  assertPluginEditor(actor, plugin);
+  // 端末所有のプラグインはログインして引き継いでからでないと公開できない
+  if (isDeviceOwnedPlugin(plugin)) {
+    throw ApiError.forbidden(
+      "ログインせずに保存したプラグインは公開できません。ログインすると引き継いで公開申請できます",
+    );
+  }
   const body = pluginPublishSchema.parse(await c.req.json());
   if (!plugin.latest_version) throw ApiError.validation("公開するバージョンがありません");
   const versionRow = await getVersionRow(c.env.DB, plugin.id, plugin.latest_version);
@@ -593,7 +744,20 @@ app.post("/:id/publish", requireAuth, async (c) => {
 app.post("/:id/install", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
   const body = pluginInstallSchema.parse(await c.req.json());
+
+  // 端末所有のプラグインは所有端末の個人用導入のみ（板・サイトは不可）
+  if (isDeviceOwnedPlugin(plugin)) {
+    if (body.scope !== "personal") {
+      throw ApiError.forbidden(
+        "ログインせずに保存したプラグインは個人用にしか導入できません。板やサイト全体にはアカウントが必要です",
+      );
+    }
+    if (actor.accountId === null && actor.deviceHash !== plugin.owner_device_hash) {
+      throw ApiError.notFound("プラグインが見つかりません");
+    }
+  }
 
   await assertInstallPermission(c.env.DB, actor, body.scope, body.boardId);
   const scopeRef = scopeRefFor(body.scope, actor, body.boardId);
@@ -609,7 +773,7 @@ app.post("/:id/install", async (c) => {
     }
   }
 
-  const ownerPreview = body.scope === "personal" && isOwner(actor, plugin.owner_account_id);
+  const ownerPreview = body.scope === "personal" && isPluginOwner(actor, plugin);
   const version = await resolveInstallVersion(c.env.DB, plugin, body.version, {
     requireApproved: !ownerPreview,
     allowUnpublished: ownerPreview,
@@ -660,6 +824,7 @@ app.post("/:id/install", async (c) => {
 app.post("/:id/update", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
   const body = pluginUpdateSchema.parse(await c.req.json());
 
   await assertInstallPermission(c.env.DB, actor, body.scope, body.boardId);
@@ -691,6 +856,7 @@ app.post("/:id/update", async (c) => {
 app.post("/:id/uninstall", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
   const body = pluginUninstallSchema.parse(await c.req.json());
 
   await assertInstallPermission(c.env.DB, actor, body.scope, body.boardId);
@@ -712,6 +878,7 @@ app.post("/:id/uninstall", async (c) => {
 app.post("/:id/report", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
   const body = pluginReportSchema.parse(await c.req.json());
 
   const report = await recordReport(c.env.DB, plugin, {
@@ -735,7 +902,8 @@ app.post("/:id/report", async (c) => {
 app.get("/:id/reports", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
-  if (!isOwner(actor, plugin.owner_account_id) && !actor.isAdmin) {
+  assertCanViewPlugin(actor, plugin);
+  if (!isPluginOwner(actor, plugin) && !actor.isAdmin) {
     throw ApiError.forbidden();
   }
   const items = await listReports(c.env.DB, plugin.id);
@@ -746,6 +914,7 @@ app.get("/:id/reports", async (c) => {
 app.post("/:id/disable", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
   const body = pluginDisableSchema.parse(await c.req.json());
 
   if (body.boardId) {
@@ -765,7 +934,7 @@ app.post("/:id/disable", async (c) => {
     return c.json(ok({ stopped: "board-install", boardId: body.boardId }));
   }
 
-  if (!isOwner(actor, plugin.owner_account_id) && !actor.isAdmin) {
+  if (!isPluginOwner(actor, plugin) && !actor.isAdmin) {
     throw ApiError.forbidden("プラグインの停止は所有者またはサイト管理者のみ可能です");
   }
   await disablePlugin(c.env.DB, plugin.id, body.reason);
@@ -782,7 +951,8 @@ app.post("/:id/disable", async (c) => {
 app.post("/:id/enable", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
-  if (!isOwner(actor, plugin.owner_account_id) && !actor.isAdmin) throw ApiError.forbidden();
+  assertCanViewPlugin(actor, plugin);
+  if (!isPluginOwner(actor, plugin) && !actor.isAdmin) throw ApiError.forbidden();
   await enablePlugin(c.env.DB, plugin.id);
   await writeAudit(c.env.DB, {
     actorType: actor.isAdmin ? "special_admin" : "account",
@@ -803,16 +973,21 @@ app.post("/:id/enable", async (c) => {
 app.delete("/:id", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
-  assertPluginEditor(actor, plugin.owner_account_id);
+  assertCanViewPlugin(actor, plugin);
+  assertPluginEditor(actor, plugin);
 
   // 原子的な削除（削除できない場合は deleted=false）。管理者操作でも保護は外さない。
-  const result = await deletePlugin(c.env.DB, plugin.id, plugin.owner_account_id);
+  const ownership = {
+    ownerAccountId: plugin.owner_account_id,
+    ownerDeviceHash: plugin.owner_device_hash,
+  };
+  const result = await deletePlugin(c.env.DB, plugin.id, ownership);
   if (!result.deleted) {
     // 拒否の理由（件数）を付けて案内する。競合で拒否した場合も監査に残す。
-    const foreign = await countForeignInstalls(c.env.DB, plugin.id, plugin.owner_account_id);
+    const foreign = await countForeignInstalls(c.env.DB, plugin.id, ownership);
     await writeAudit(c.env.DB, {
       actorType: actor.isAdmin ? "special_admin" : "account",
-      actorId: actor.accountId,
+      actorId: actor.accountId ?? `device:${actor.deviceHash}`,
       action: "plugin.delete.denied",
       target: plugin.id,
       detail: { reason: "foreign_installs_present", foreignInstalls: foreign },
@@ -824,7 +999,7 @@ app.delete("/:id", async (c) => {
 
   await writeAudit(c.env.DB, {
     actorType: actor.isAdmin ? "special_admin" : "account",
-    actorId: actor.accountId,
+    actorId: actor.accountId ?? `device:${actor.deviceHash}`,
     action: "plugin.delete",
     target: plugin.id,
     detail: { name: plugin.name, version: plugin.latest_version },
@@ -838,6 +1013,7 @@ app.delete("/:id", async (c) => {
 app.post("/:id/disable-install", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
   const body = pluginUninstallSchema.parse(await c.req.json());
 
   await assertInstallPermission(c.env.DB, actor, body.scope, body.boardId);
@@ -861,6 +1037,7 @@ app.post("/:id/disable-install", async (c) => {
 app.post("/:id/enable-install", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
   const body = pluginUninstallSchema.parse(await c.req.json());
 
   await assertInstallPermission(c.env.DB, actor, body.scope, body.boardId);
@@ -883,7 +1060,8 @@ app.post("/:id/enable-install", async (c) => {
 app.post("/:id/fork", requireAuth, async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
-  if (plugin.visibility === "private" && !isOwner(actor, plugin.owner_account_id) && !actor.isAdmin) {
+  assertCanViewPlugin(actor, plugin);
+  if (plugin.visibility === "private" && !isPluginOwner(actor, plugin) && !actor.isAdmin) {
     throw ApiError.notFound("プラグインが見つかりません");
   }
   const body = pluginForkSchema.parse(await c.req.json().catch(() => ({})));
@@ -915,20 +1093,21 @@ async function isPluginActiveFor(
   actor: PluginActor,
   scope: PluginScope,
   boardId: number | undefined,
-  ownerAccountId: string | null,
+  plugin: PluginRow,
 ): Promise<boolean> {
   const scopeRef = scopeRefFor(scope, actor, boardId);
   const install = await findInstall(db, pluginId, scope, scopeRef);
   if (install) return true;
-  return scope === "personal" && isOwner(actor, ownerAccountId);
+  return scope === "personal" && isPluginOwner(actor, plugin);
 }
 
 app.get("/:id/state", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
   const query = pluginStateQuerySchema.parse(queryObject(c.req.url));
 
-  if (!(await isPluginActiveFor(c.env.DB, plugin.id, actor, query.scope, query.boardId, plugin.owner_account_id))) {
+  if (!(await isPluginActiveFor(c.env.DB, plugin.id, actor, query.scope, query.boardId, plugin))) {
     throw ApiError.forbidden("このスコープにプラグインが導入されていません");
   }
   const scopeRef = scopeRefFor(query.scope, actor, query.boardId);
@@ -949,10 +1128,11 @@ app.get("/:id/state", async (c) => {
 app.post("/:id/state", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  // R42-03: state の書き込みも閲覧ゲートを先に通す（存在が漏れないように 404）
+  assertCanViewPlugin(actor, plugin);
   const body = pluginStateSetSchema.parse(await c.req.json());
-
-  const ownerPreview = body.scope === "personal" && isOwner(actor, plugin.owner_account_id);
-  if (!(await isPluginActiveFor(c.env.DB, plugin.id, actor, body.scope, body.boardId, plugin.owner_account_id))) {
+  const ownerPreview = body.scope === "personal" && isPluginOwner(actor, plugin);
+  if (!(await isPluginActiveFor(c.env.DB, plugin.id, actor, body.scope, body.boardId, plugin))) {
     throw ApiError.forbidden("このスコープにプラグインが導入されていません");
   }
 
@@ -984,13 +1164,15 @@ app.post("/:id/state", async (c) => {
 app.delete("/:id/state", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  // R42-03: state の削除も閲覧ゲートを先に通す（存在が漏れないように 404）
+  assertCanViewPlugin(actor, plugin);
   const query = pluginStateQuerySchema.parse(queryObject(c.req.url));
   if (!query.key) throw ApiError.validation("key が必要です");
 
-  if (!(await isPluginActiveFor(c.env.DB, plugin.id, actor, query.scope, query.boardId, plugin.owner_account_id))) {
+  if (!(await isPluginActiveFor(c.env.DB, plugin.id, actor, query.scope, query.boardId, plugin))) {
     throw ApiError.forbidden("このスコープにプラグインが導入されていません");
   }
-  const ownerPreview = query.scope === "personal" && isOwner(actor, plugin.owner_account_id);
+  const ownerPreview = query.scope === "personal" && isPluginOwner(actor, plugin);
   if (!ownerPreview) {
     if (query.scope === "board" && !actor.isAdmin) {
       if (!actor.accountId || !(await isBoardStaff(c.env.DB, actor.accountId, query.boardId ?? 0))) {
@@ -1059,7 +1241,8 @@ app.get("/:id/review", requireRole("owner", "special_admin"), async (c) => {
 app.post("/:id/export/gist", requireAuth, async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
-  assertPluginEditor(actor, plugin.owner_account_id);
+  assertCanViewPlugin(actor, plugin);
+  assertPluginEditor(actor, plugin);
   const body = pluginGistExportSchema.parse(await c.req.json().catch(() => ({})));
 
   const version = plugin.latest_version;
@@ -1085,7 +1268,8 @@ app.post("/:id/export/gist", requireAuth, async (c) => {
 app.post("/:id/export/repo", requireAuth, async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
-  assertPluginEditor(actor, plugin.owner_account_id);
+  assertCanViewPlugin(actor, plugin);
+  assertPluginEditor(actor, plugin);
   const body = pluginExportRepoSchema.parse(await c.req.json());
 
   const version = plugin.latest_version;
@@ -1124,7 +1308,8 @@ app.post("/:id/export/repo", requireAuth, async (c) => {
 app.post("/:id/sync", requireAuth, async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
-  assertPluginEditor(actor, plugin.owner_account_id);
+  assertCanViewPlugin(actor, plugin);
+  assertPluginEditor(actor, plugin);
   if (plugin.source === "local") throw ApiError.validation("GitHub の取得元が設定されていません");
 
   const source = await fetchSourceByRef(plugin.source, plugin.source_ref);

@@ -348,10 +348,10 @@ test.describe("R3: 200 件より古い板も検索で選べる", () => {
   });
 });
 
-test.describe("R4: 匿名で公開一覧→mine 切替時の表示", () => {
-  test("旧公開結果が残らず、ログイン案内が出る", async ({ page, context }) => {
+test.describe("R4: 匿名で公開一覧→mine 切替時の表示（40 以降: 端末の一覧）", () => {
+  test("旧公開結果が残らず、自分の端末の一覧（空なら空の案内）になる", async ({ page, context }) => {
     test.setTimeout(120_000);
-    // Cookie なしで開始
+    // Cookie なしで開始（端末 Cookie は API が発行する）
     await context.clearCookies();
 
     await page.goto("/plugins/");
@@ -361,29 +361,70 @@ test.describe("R4: 匿名で公開一覧→mine 切替時の表示", () => {
     const publicLink = page.getByRole("link", { name: "spoiler", exact: true });
     const hasSpoiler = (await publicLink.count()) > 0;
 
-    // mine タブへ切り替え
+    // mine タブへ切り替え（0613 以降は 200 で自分の端末の一覧を返す）
     await page.getByRole("button", { name: "自分のプラグイン" }).click();
 
     // 旧公開結果（spoiler のリンク）が mine の結果として残っていない
     if (hasSpoiler) {
       await expect(publicLink).toHaveCount(0, { timeout: 15_000 });
     }
-    // ログイン案内が出る
-    await expect(page.getByText("自分のプラグインを表示するにはログインが必要です。")).toBeVisible({
+    // 空の一覧の案内が出る（ログイン案内ではなく「該当するプラグインがありません」）
+    await expect(page.getByText("該当するプラグインがありません。")).toBeVisible({
       timeout: 15_000,
     });
-    // 件数の確定値（0）を出さない
-    await expect(page.getByRole("heading", { name: /自分のプラグイン（0）/ })).toHaveCount(0);
+    // 公開プラグイン（他の端末・アカウントのもの）は出ない
+    await expect(publicLink).toHaveCount(0);
     await page.screenshot({ path: "test-results-rv-plugins/shots/r4-mine-switch-pc.png" });
   });
 
-  test("mine 直開きでも同じログイン案内が出る（回帰）", async ({ page, context }) => {
+  test("mine 直開きでも自分の端末の一覧になる（回帰）", async ({ page, context }) => {
     test.setTimeout(120_000);
     await context.clearCookies();
     await page.goto("/plugins/?tab=mine");
-    await expect(page.getByText("自分のプラグインを表示するにはログインが必要です。")).toBeVisible({
+    await expect(page.getByText("該当するプラグインがありません。")).toBeVisible({
       timeout: 15_000,
     });
     await page.screenshot({ path: "test-results-rv-plugins/shots/r4-mine-direct-pc.png" });
+  });
+
+  test("匿名の mine に他の端末・アカウントのプラグインが出ない", async ({ page, request, context }) => {
+    test.setTimeout(120_000);
+    await context.clearCookies();
+
+    // 別のアカウント（e2e-user）のプラグインを作っておく
+    const name = unique("other-owner").toLowerCase().slice(0, 41);
+    const createResponse = await request.post(`${API_BASE}/v1/plugins`, {
+      headers: userHeaders(),
+      data: {
+        manifest: {
+          name,
+          version: "1.0.0",
+          summary: "他人のプラグイン",
+          scope: ["personal"],
+          permissions: [],
+          connectAllowlist: [],
+          entry: "plugin.js",
+          slots: [],
+          hooks: [],
+        },
+        code: "register({});",
+        visibility: "private",
+      },
+    });
+    expect(createResponse.status(), await createResponse.text()).toBe(201);
+
+    // 匿名で mine を開く: 他人のプラグインは出ない（空の一覧）
+    await page.goto("/plugins/?tab=mine");
+    await expect(page.getByText("該当するプラグインがありません。")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
+
+    // 後始末
+    const createdEnvelope = await readEnvelope<{ id: string }>(createResponse);
+    const createdId = createdEnvelope && createdEnvelope.ok ? createdEnvelope.data.id : "";
+    await request.delete(`${API_BASE}/v1/plugins/${createdId}`, {
+      headers: userHeaders(),
+    });
   });
 });

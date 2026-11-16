@@ -234,7 +234,11 @@ export function HelpView() {
           <a href="/plugins/demo/">スレ表示デモ</a>で試せます。
         </P>
         <P>
-          <b>作る</b>: 作成と公開にはログインが必要です。書き方や仕様は
+          <b>作る</b>: ログインしていなくても、<b>自分専用（個人用）</b>のプラグインなら作成・保存・新しい版の追加ができます
+          （1つのブラウザで10個まで、コード64KBまで、作成と版の追加は1日20回まで）。ログインせずに作ったものは
+          <b>そのブラウザでだけ</b>編集でき、Cookie を消すと編集できなくなります。同じブラウザでログイン・新規登録すると
+          アカウントに引き継がれます。公開申請・板やサイト全体への導入・外部通信やAIなどの権限にはログインが必要です。
+          書き方や仕様は
           <a href="https://github.com/dma-cmyk/open-clone/blob/main/docs/plugin-guide.md" target="_blank" rel="noreferrer noopener">
             docs/plugin-guide.md
           </a>

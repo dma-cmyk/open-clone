@@ -646,6 +646,8 @@ export interface PluginSummary {
   source: "local" | "gist" | "github";
   sourceRef: string | null;
   owner: PluginOwnerInfo | null;
+  /** 所有者の種別（UI 表示分け用）: account=アカウント所有 / device=端末所有（匿名作成） / official=公式（運営） */
+  ownership: "account" | "device" | "official";
   createdAt: number;
   updatedAt: number;
   publishedAt: number | null;

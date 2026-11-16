@@ -39,6 +39,48 @@ export function scopeRefFor(
   }
 }
 
+// ─── 端末所有プラグイン（匿名作成・報告40 設計） ──────────────────
+
+/** プラグイン行の所有者カラム（最低限の形。registry.PluginRow と同じ並び）。 */
+export interface PluginOwnership {
+  owner_account_id: string | null;
+  owner_device_hash: string | null;
+}
+
+/** 公式（運営）プラグイン = 両方 NULL。端末所有（owner_device_hash 非 NULL）とは区別する。 */
+export function isOfficialPlugin(plugin: PluginOwnership): boolean {
+  return plugin.owner_account_id === null && plugin.owner_device_hash === null;
+}
+
+/** 端末所有プラグインか。 */
+export function isDeviceOwnedPlugin(plugin: PluginOwnership): boolean {
+  return plugin.owner_account_id === null && plugin.owner_device_hash !== null;
+}
+
+/** アクターがこのプラグインの所有者か（アカウント所有 or 端末所有）。 */
+export function isPluginOwner(actor: PluginActor, plugin: PluginOwnership): boolean {
+  if (plugin.owner_account_id !== null) {
+    return actor.accountId !== null && actor.accountId === plugin.owner_account_id;
+  }
+  if (plugin.owner_device_hash !== null) {
+    return actor.accountId === null && actor.deviceHash === plugin.owner_device_hash;
+  }
+  return false; // 公式は誰のものでもない（運営のみ管理）
+}
+
+/**
+ * 端末所有プラグインの閲覧可否。
+ * - 所有端末 → 見える
+ * - サイト運営（actor.isAdmin）→ 見える（停止・削除など管理のため）
+ * - それ以外（別端末・板管理人を含む全員）→ 存在しないものとして扱う（404）
+ */
+export function canViewDeviceOwnedPlugin(actor: PluginActor, plugin: PluginOwnership): boolean {
+  if (!isDeviceOwnedPlugin(plugin)) return true;
+  return (
+    (actor.accountId === null && actor.deviceHash === plugin.owner_device_hash) || actor.isAdmin
+  );
+}
+
 /**
  * 板の管理人（admin 以上）か。board_staff テーブルが無い環境では false（403 相当）。
  * owner / special_admin は全板で管理人相当。

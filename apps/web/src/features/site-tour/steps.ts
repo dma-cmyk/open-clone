@@ -45,7 +45,7 @@ const HOME: TourDefinition = {
       id: "site-account",
       selector: '[data-tour="site-account"]',
       title: "ログインしなくても使えます",
-      body: "スレを読む・レスを書く・スレを立てるはログインなしでできます。ここからログインすると板の管理やプラグイン作成ができます。",
+      body: "スレを読む・レスを書く・スレを立てる・自分専用のプラグインを作るはログインなしでできます。ここからログインすると板の作成・管理やプラグインの公開ができます。",
       helpAnchor: "#account",
     },
     {
