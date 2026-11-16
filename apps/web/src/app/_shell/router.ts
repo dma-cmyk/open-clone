@@ -20,6 +20,8 @@ export type Route =
   | { name: "thread"; slug: string; threadId: number }
   | { name: "board-new" }
   | { name: "settings" }
+  | { name: "help" }
+  | { name: "help-admin" }
   | { name: "manage"; slug: string; tab: string }
   | { name: "unknown"; pathname: string };
 
@@ -162,6 +164,13 @@ export function parseRoute(pathname: string): Route {
   }
   if (path === "/settings") {
     return { name: "settings" };
+  }
+  // ヘルプ（設計50: /help/ と /help/admin/。シェル内で描画する）
+  if (path === "/help") {
+    return { name: "help" };
+  }
+  if (path === "/help/admin") {
+    return { name: "help-admin" };
   }
   return { name: "unknown", pathname: path };
 }
