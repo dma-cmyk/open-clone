@@ -313,8 +313,16 @@ app.get("/:id/history", async (c) => {
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
   const reqCtx = getReqCtx(c);
   const actor = actorFrom(reqCtx.session?.account);
-  const restricted = row.deleted === 1 || row.hidden === 1 || row.self_deleted === 1;
-  if (restricted) {
+  // レス自身の状態（本人削除・スタッフ削除・非表示）に加え、親スレ・板の閲覧状態も見る
+  //（スレ本人削除・スタッフ削除・板削除の後は旧本文を返さない。R74-01）。
+  // closed のスレは閲覧可能（投稿だけ止まっている状態）なので履歴は出す。
+  const restricted =
+    row.deleted === 1 || row.hidden === 1 || row.self_deleted === 1;
+  const thread = await getThreadRow(db, row.thread_id);
+  const threadUnavailable = !thread || thread.status === "deleted";
+  const board = await getBoardRow(db, row.board_id);
+  const boardUnavailable = !board || board.status !== "active";
+  if (restricted || threadUnavailable || boardUnavailable) {
     const canSeeDeleted = actor.accountId !== null && (await hasBoardStaff(db, actor, row.board_id, "moderator"));
     if (!canSeeDeleted) throw ApiError.notFound("レスが見つかりません");
   }

@@ -72,10 +72,13 @@ function ThreadLinkCard({ url, boardSlug, threadId }: { url: string; boardSlug: 
       .getThread(threadId, {})
       .then((page) => {
         if (cancelled) return;
+        // 明示的な引用元カードと同じ基準（R74-05）: 削除スレ・削除板はタイトル・件数を出さない。
+        const threadDeleted = page.thread.status === "deleted";
+        const boardUnavailable = page.thread.boardStatus !== undefined && page.thread.boardStatus !== "active";
         setCard({
-          title: page.thread.title,
-          postCount: page.thread.postCount,
-          unavailable: page.thread.status === "deleted",
+          title: threadDeleted || boardUnavailable ? "削除されたスレ" : page.thread.title,
+          postCount: threadDeleted || boardUnavailable ? 0 : page.thread.postCount,
+          unavailable: threadDeleted || boardUnavailable,
         });
       })
       .catch(() => {
@@ -130,10 +133,22 @@ function renderTokens(
       );
     } else if (urlToken) {
       // このサイトのスレ URL（自オリジン or 相対パスを含む /b/<slug>/t/<id>）は引用スレカード。
+      // 判定は URL を解析して origin を完全一致で比較する（前方一致は userinfo 付き外部 URL
+      // （例: https://origin@evil.example/…）を内部と誤認する。R74-06）。
       const threadMatch = THREAD_URL.exec(urlToken);
-      const isLocalThread =
-        threadMatch !== null &&
-        (urlToken.startsWith("/") || (typeof location !== "undefined" && urlToken.startsWith(location.origin)));
+      let isLocalThread = false;
+      if (threadMatch !== null) {
+        if (urlToken.startsWith("/")) {
+          isLocalThread = true;
+        } else if (typeof location !== "undefined") {
+          try {
+            const parsed = new URL(urlToken, location.origin);
+            isLocalThread = parsed.origin === location.origin;
+          } catch {
+            isLocalThread = false;
+          }
+        }
+      }
       if (isLocalThread && threadMatch) {
         nodes.push(
           <ThreadLinkCard

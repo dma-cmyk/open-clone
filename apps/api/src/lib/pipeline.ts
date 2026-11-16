@@ -1094,10 +1094,19 @@ export async function editPostInternal(input: EditPostInput, deps: PipelineDeps)
   const now = Math.floor(Date.now() / 1000);
   const settings = boardSettingsOf(input.board);
 
-  // 投稿経路と同じ本文検査（NG ワード・文字数・空チェック）。
+  // ---- 確認済みの取消し（投稿側の revokePass と同じ条件・R74-03） ----
+  // NG 拒否・回数制限・アク禁など「異常」に当たったときに取り消す。
+  const revokeEditPass = async () => {
+    if (canPassTurnstile(settings)) {
+      await revokeTurnstilePass(db, input.identity.deviceHash, input.board.id).catch(() => undefined);
+    }
+  };
+
+  // 投稿経路と同じ本文検査（NG ワード・文字数・空チェック）。NG 拒否も「確認済み」を取り消す（R74-03）。
   const rawBody = input.newBody.replace(/\r\n?/g, "\n");
   const masked = applyNgWords(settings, rawBody);
   if (masked.hit && settings.ngWordAction === "reject") {
+    await revokeEditPass();
     throw ApiError.validation("NGワードが含まれています");
   }
   const finalBody = masked.body;
@@ -1110,11 +1119,6 @@ export async function editPostInternal(input: EditPostInput, deps: PipelineDeps)
   // レート制限は投稿と別窓（postEdit）: 本人が直後にレスできなくなる問題を避けつつ、
   // 1 レスの高速連続書き換え（荒らし路）は同じ窓で頭打ちにする。
   // 制限・アク禁に当たったら「確認済み」を取り消す（レス投稿と同じ扱い。レビュー 72 M3 + 設計 80）。
-  const revokeEditPass = async () => {
-    if (canPassTurnstile(settings)) {
-      await revokeTurnstilePass(db, input.identity.deviceHash, input.board.id).catch(() => undefined);
-    }
-  };
   const editRate = await checkRateLimitMulti(env, "postEdit", [input.identity.deviceHash]);
   const editIpRate =
     input.identity.accountId === null
@@ -1127,6 +1131,21 @@ export async function editPostInternal(input: EditPostInput, deps: PipelineDeps)
     });
   }
 
+  // 板の連投秒数（cooldown）も投稿と同じ判定で通す（R74-02）。
+  if (settings.cooldownSeconds > 0) {
+    const recent = await db
+      .prepare(
+        "SELECT created_at FROM posts WHERE board_id = ? AND device_hash = ? AND kind = 'post' AND created_at > ? ORDER BY created_at DESC LIMIT 1",
+      )
+      .bind(input.board.id, input.identity.deviceHash, now - settings.cooldownSeconds)
+      .first<{ created_at: number }>();
+    if (recent) {
+      await revokeEditPass();
+      throw new ApiError(429, ErrorCode.RATE_LIMITED, "連投間隔が短すぎます", {
+        retryAfterSeconds: settings.cooldownSeconds - (now - recent.created_at),
+      });
+    }
+  }
   // アク禁・アカウント停止（投稿と同じ判定）。
   const ban = await db
     .prepare(
@@ -1152,6 +1171,34 @@ export async function editPostInternal(input: EditPostInput, deps: PipelineDeps)
     if (account && account.status !== "active") {
       await revokeEditPass();
       throw new ApiError(403, ErrorCode.BANNED, "アカウントが停止されています");
+    }
+  }
+
+  // スレ主アク禁（!aku）も投稿と同じ判定で通す（R74-02）。スレ主自身は対象にならない（open2ch 準拠）。
+  {
+    const state = await loadThreadState(db, input.thread.id);
+    const requesterIsOwner =
+      (input.thread.owner_account_id !== null && input.thread.owner_account_id === input.identity.accountId) ||
+      (input.thread.owner_device_hash !== null && input.thread.owner_device_hash === input.identity.deviceHash);
+    if (!requesterIsOwner) {
+      const baseId = await computeDisplayId({
+        salt: env.ID_SALT,
+        boardId: input.board.id,
+        ipHash: input.identity.ipHash,
+        now,
+      });
+      const threadFlags = parseJsonColumn(
+        input.thread.title_flags,
+        (value) => threadTitleFlagsSchema.parse(value),
+        DEFAULT_THREAD_FLAGS,
+      );
+      const displayId = settings.noId || threadFlags.noId ? "???" : state.jien ? jienDisplayId(baseId, input.identity.ipHash, 1) : baseId;
+      try {
+        assertNotAku(state, input.identity, displayId, now);
+      } catch (error) {
+        await revokeEditPass();
+        throw error;
+      }
     }
   }
 
@@ -1314,34 +1361,54 @@ export async function editThreadInternal(input: EditThreadInput, deps: PipelineD
   const now = Math.floor(Date.now() / 1000);
   const settings = boardSettingsOf(input.board);
 
+  // 確認済みの取消し（投稿側と同じ条件・R74-03）。NG 拒否・回数制限・アク禁で呼ぶ。
+  const revokeThreadEditPass = async () => {
+    if (canPassTurnstile(settings)) {
+      await revokeTurnstilePass(db, input.identity.deviceHash, input.board.id).catch(() => undefined);
+    }
+  };
+
   const parsedTitle = parseTitleFlags(input.newTitle.replace(/[\r\n]+/g, " "));
   if (parsedTitle.title.trim().length === 0) throw ApiError.validation("スレタイが空です");
   if (Array.from(parsedTitle.title).length > 120) throw ApiError.validation("スレタイが長すぎます");
 
   const rawBody = input.newBody.replace(/\r\n?/g, "\n");
   const masked = applyNgWords(settings, rawBody);
-  if (masked.hit && settings.ngWordAction === "reject") throw ApiError.validation("NGワードが含まれています");
+  if (masked.hit && settings.ngWordAction === "reject") {
+    await revokeThreadEditPass();
+    throw ApiError.validation("NGワードが含まれています");
+  }
   if (masked.body.trim().length === 0) throw ApiError.validation("本文が空です");
   if (utf8Length(masked.body) > POST_BODY_MAX_BYTES) {
     throw new ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, "本文が長すぎます");
   }
 
-  // ---- 投稿経路と同じ検査（設計 70 重点 2。スレ編集にも連投・アク禁・アカウント停止・確認済み省略） ----
-  const revokeEditPass = async () => {
-    if (canPassTurnstile(settings)) {
-      await revokeTurnstilePass(db, input.identity.deviceHash, input.board.id).catch(() => undefined);
-    }
-  };
   const editRate = await checkRateLimitMulti(env, "postEdit", [input.identity.deviceHash]);
   const editIpRate =
     input.identity.accountId === null
       ? await checkRateLimitMulti(env, "postEditIp", [input.identity.ipHash])
       : { allowed: true, retryAfterSeconds: 0 };
   if (!editRate.allowed || !editIpRate.allowed) {
-    await revokeEditPass();
+    await revokeThreadEditPass();
     throw new ApiError(429, ErrorCode.RATE_LIMITED, "編集間隔が短すぎます。しばらく待ってください", {
       retryAfterSeconds: Math.max(editRate.retryAfterSeconds, editIpRate.retryAfterSeconds),
     });
+  }
+
+  // 板の連投秒数（cooldown）も投稿と同じ判定で通す（R74-02）。
+  if (settings.cooldownSeconds > 0) {
+    const recent = await db
+      .prepare(
+        "SELECT created_at FROM posts WHERE board_id = ? AND device_hash = ? AND kind = 'post' AND created_at > ? ORDER BY created_at DESC LIMIT 1",
+      )
+      .bind(input.board.id, input.identity.deviceHash, now - settings.cooldownSeconds)
+      .first<{ created_at: number }>();
+    if (recent) {
+      await revokeThreadEditPass();
+      throw new ApiError(429, ErrorCode.RATE_LIMITED, "連投間隔が短すぎます", {
+        retryAfterSeconds: settings.cooldownSeconds - (now - recent.created_at),
+      });
+    }
   }
   const ban = await db
     .prepare(
@@ -1356,7 +1423,7 @@ export async function editThreadInternal(input: EditThreadInput, deps: PipelineD
     .bind(input.board.id, now, input.identity.deviceHash, input.identity.ipHash, input.identity.accountId ?? "")
     .first<{ id: string }>();
   if (ban) {
-    await revokeEditPass();
+    await revokeThreadEditPass();
     throw new ApiError(403, ErrorCode.BANNED, "アクセス禁止中です");
   }
   if (input.identity.accountId) {
@@ -1365,7 +1432,7 @@ export async function editThreadInternal(input: EditThreadInput, deps: PipelineD
       .bind(input.identity.accountId)
       .first<{ status: string }>();
     if (account && account.status !== "active") {
-      await revokeEditPass();
+      await revokeThreadEditPass();
       throw new ApiError(403, ErrorCode.BANNED, "アカウントが停止されています");
     }
   }

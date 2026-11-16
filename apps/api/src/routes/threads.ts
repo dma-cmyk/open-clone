@@ -82,9 +82,12 @@ app.get("/:id", async (c) => {
   const board = await getBoardRow(db, thread.board_id);
   const mapped = mapThread(thread);
   const quoteSource = await loadQuotedThreadCard(db, thread.quote_source_id);
+  // 本文 URL のインラインカード（R74-05）が板の閲覧可否を同じ基準で判定できるように、
+  // スレ詳細の応答に板の状態も出す（deleted 板のスレタイ・件数をカードへ出さない）。
+  const boardStatus = board ? board.status : "deleted";
   return c.json(
     ok({
-      thread: { ...mapped, design: board ? boardDesignOf(board) : undefined },
+      thread: { ...mapped, design: board ? boardDesignOf(board) : undefined, boardStatus },
       posts: loaded.posts,
       hasMore: loaded.hasMore,
       quoteSource,

@@ -158,6 +158,9 @@ function normalizeThread(raw: unknown): ThreadDetail {
     live: Boolean(record.live),
     pinned: Boolean(record.pinned),
     quoteSourceId: record.quoteSourceId === undefined ? undefined : Number(record.quoteSourceId),
+    status: typeof record.status === "string" ? record.status : undefined,
+    /** 板の状態（R74-05: インラインカードが板の閲覧可否を同じ基準で判定するため） */
+    boardStatus: typeof record.boardStatus === "string" ? record.boardStatus : undefined,
     createdAt: record.createdAt === undefined ? undefined : toSeconds(record.createdAt),
     lastPostAt: record.lastPostAt === undefined ? undefined : toSeconds(record.lastPostAt),
   };

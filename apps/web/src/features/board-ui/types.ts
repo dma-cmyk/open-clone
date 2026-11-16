@@ -86,6 +86,8 @@ export interface ThreadDetail {
   pinned?: boolean;
   status?: string;
   quoteSourceId?: number | null;
+  /** 板の状態（active/deleted。R74-05: インラインカードの閲覧ゲート用） */
+  boardStatus?: string;
   createdAt?: number;
   lastPostAt?: number;
 }

@@ -457,3 +457,79 @@ test.describe("編集・削除・引用スレ", () => {
     ).toBeVisible({ timeout: 15_000 });
   });
 });
+
+test.describe("第2回レビュー修正", () => {
+  test("R74-05: 削除板のスレ URL カードはタイトル・件数を出さない", async ({ page, request }) => {
+    // 板 A（後で削除）と板 B（公開）を立て、板 A のスレを板 B のレスで参照する。
+    const headers = ownerHeaders();
+    const slugA = unique("r74a").toLowerCase();
+    const slugB = unique("r74b").toLowerCase();
+    const createBoard = async (slug: string) => {
+      const response = await request.post(apiUrl("/v1/boards"), {
+        headers,
+        data: { slug, name: `R74 ${slug}`, category: "E2E", description: "", settings: { turnstile: "off", cooldownSeconds: 0 } },
+      });
+      expect(response.status(), await response.text()).toBe(201);
+    };
+    await createBoard(slugA);
+    await createBoard(slugB);
+
+    const createThreadIn = async (slug: string, title: string) => {
+      const response = await request.post(apiUrl(`/v1/boards/${slug}/threads`), {
+        headers,
+        data: { title, body: "本文", turnstileToken: "1x00000000000000000000AA" },
+      });
+      expect(response.status()).toBe(201);
+      const body = (await response.json()) as { data?: { threadId?: number } };
+      return body.data?.threadId ?? 0;
+    };
+    const threadA = await createThreadIn(slugA, "PRIVATE74 source title");
+    const threadB = await createThreadIn(slugB, "参照する公開スレ");
+
+    // 板 B のレスに板 A のスレ URL を貼る。
+    const posted = await request.post(apiUrl(`/v1/threads/${threadB}/posts`), {
+      headers: { Origin: ALLOWED_ORIGIN, "content-type": "application/json", "x-real-ip": "203.0.113.80" },
+      data: { body: `参照 /b/${slugA}/t/${threadA}` },
+    });
+    expect(posted.status()).toBe(201);
+
+    // 板 A を削除。
+    const deleted = await request.delete(apiUrl(`/v1/boards/${slugA}?confirm=1`), { headers });
+    expect(deleted.status()).toBe(200);
+
+    // 板 B の画面で URL カードが「削除されたスレ」になる（実タイトル・件数を出さない）。
+    await page.goto(`/b/${slugB}/t/${threadB}?r=l50`);
+    const card = page.locator(".oc-thread-link-card").first();
+    await expect(card).toBeVisible({ timeout: 15_000 });
+    await expect(card).toContainText("削除されたスレ");
+    await expect(card).not.toContainText("PRIVATE74");
+    await expect(card).not.toContainText("(1)");
+  });
+
+  test("R74-06: userinfo 付き外部 URL は内部カードにならない", async ({ page, request }) => {
+    const slug = unique("r74c").toLowerCase();
+    await request.post(apiUrl("/v1/boards"), {
+      headers: ownerHeaders(),
+      data: { slug, name: `R74 ${slug}`, category: "E2E", description: "", settings: { turnstile: "off", cooldownSeconds: 0 } },
+    });
+    const threadId = await createThreadApi(request, slug, { title: "外部 URL のスレ", body: "本文" });
+    await createThreadApi(request, slug, { title: "カード対象スレ", body: "本文" });
+
+    // 外部 URL（userinfo 付き・origin を先頭に含む）を貼る。web のオリジンを使う（about:blank では壊れる）。
+    const webOrigin = process.env.E2E_WEB_URL ?? "http://localhost:3203";
+    const evil = `${webOrigin}@outside.invalid/b/${slug}/t/999`;
+    await request.post(apiUrl(`/v1/threads/${threadId}/posts`), {
+      headers: { Origin: ALLOWED_ORIGIN, "content-type": "application/json", "x-real-ip": "203.0.113.81" },
+      data: { body: `外部 ${evil}` },
+    });
+
+    await page.goto(`http://localhost:3203/b/${slug}/t/${threadId}?r=l50`);
+    // 外部 URL はカード化されず、通常のリンクとして表示される。
+    const card = page.locator(".oc-thread-link-card");
+    await page.waitForTimeout(2_000);
+    await expect(card).toHaveCount(0);
+    // リンクは存在する（外部リンクとして）。
+    const link = page.locator("a").filter({ hasText: "outside.invalid" });
+    await expect(link).toBeVisible({ timeout: 15_000 });
+  });
+});

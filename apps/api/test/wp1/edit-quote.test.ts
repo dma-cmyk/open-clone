@@ -363,3 +363,115 @@ describe("第1回レビュー修正", () => {
   });
 });
 
+
+describe("第2回レビュー修正", () => {
+  it("R74-01: スレ本人削除後の履歴は 404（板スタッフには見える）", async () => {
+    const owner = await authedClient({ name: "r74-admin" });
+    const board = await createBoard(owner.client, { settings: { turnstile: "off", cooldownSeconds: 0 } });
+    const anon = new TestClient();
+    // 匿名スレ主がスレを立てて >>1 を編集 → スレ本人削除。
+    const thread = await createThread(anon, board.board.slug, { title: "消すスレ", body: "本文" });
+    await anon.patch(`/v1/threads/${thread.threadId}`, {
+      title: "消すスレ",
+      body: "編集後の本文（履歴に残る）",
+      turnstileToken: "1x00000000000000000000AA",
+    });
+    const firstPost = await env.DB
+      .prepare("SELECT id FROM posts WHERE thread_id = ? AND num = 1")
+      .bind(thread.threadId)
+      .first<{ id: number }>();
+
+    await anon.delete(`/v1/threads/${thread.threadId}`);
+
+    // 他人（未ログイン）の履歴は 404（スレ削除後）。
+    const other = new TestClient();
+    const history = await other.get(`/v1/posts/${firstPost!.id}/history`);
+    expect(history.status).toBe(404);
+    // 板スタッフには見える。
+    const staffHistory = await owner.client.get<{ items: unknown[] }>(`/v1/posts/${firstPost!.id}/history`);
+    expect(staffHistory.status).toBe(200);
+  });
+
+  it("R74-01: 板削除後の履歴も 404", async () => {
+    const ownerA = await authedClient({ name: "r74-admin-a" });
+    const boardA = await createBoard(ownerA.client, { settings: { turnstile: "off", cooldownSeconds: 0 } });
+    const anon = new TestClient();
+    const thread = await createThread(anon, boardA.board.slug, { title: "板ごと消えるスレ", body: "本文" });
+    const reply = await postReply(anon, thread.threadId, "レス本文");
+    await anon.patch(`/v1/posts/${reply.post.id}`, { body: "編集後（履歴に残る）" });
+
+    await ownerA.client.delete(`/v1/boards/${boardA.board.slug}?confirm=1`);
+
+    const other = new TestClient();
+    const history = await other.get(`/v1/posts/${reply.post.id}/history`);
+    expect(history.status).toBe(404);
+  });
+
+  it("R74-02: cooldown 中の編集は 429（レス・スレ両方）", async () => {
+    const owner = await authedClient({ name: "r74-cooldown" });
+    const board = await createBoard(owner.client, { settings: { turnstile: "off", cooldownSeconds: 3600 } });
+    const anon = new TestClient();
+    // スレ立て（>>1 の投稿）直後 = cooldown 内。レスの投稿は別端末に任せる。
+    const thread = await createThread(anon, board.board.slug, { title: "cooldown 板のスレ", body: "本文" });
+    const other = new TestClient();
+    const reply = await postReply(other, thread.threadId, "他人のレス");
+
+    // 投稿直後（cooldown 内）の本人（>>1 投稿者）のスレ編集は 429。
+    const editThread = await anon.patch(`/v1/threads/${thread.threadId}`, {
+      title: "cooldown 中のスレタイ",
+      body: "cooldown 中の本文",
+    });
+    expect(editThread.status).toBe(429);
+
+    // レス側も同様: other の投稿直後の編集は 429。
+    const editPost = await other.patch(`/v1/posts/${reply.post.id}`, { body: "cooldown 中の編集" });
+    expect(editPost.status).toBe(429);
+  });
+
+  it("R74-02: !aku された端末の編集は 403", async () => {
+    const owner = await authedClient({ name: "r74-aku" });
+    const board = await createBoard(owner.client, { settings: { turnstile: "off", cooldownSeconds: 0 } });
+    // スレ主（anon）と、アク禁される第三者（victim）を分ける。
+    const anon = new TestClient();
+    const thread = await createThread(anon, board.board.slug, { title: "aku のスレ", body: "本文" });
+    const victim = new TestClient();
+    const reply = await postReply(victim, thread.threadId, "aku される前のレス");
+
+    // スレ主が victim を !aku でアク禁（>>2 は victim のレス）。
+    const aku = await postReply(anon, thread.threadId, "!aku >>2");
+    expect(aku.post.num).toBe(3);
+
+    // アク禁後のレス投稿は 403、編集も 403。
+    const posted = await victim.post(`/v1/threads/${thread.threadId}/posts`, { body: "アク禁中の投稿" });
+    expect(posted.status).toBe(403);
+    const edited = await victim.patch(`/v1/posts/${reply.post.id}`, { body: "アク禁中の編集" });
+    expect(edited.status).toBe(403);
+  });
+
+  it("R74-03: NG 拒否で確認済み（pass）が取り消される", async () => {
+    const owner = await authedClient({ name: "r74-ng" });
+    const board = await createBoard(owner.client, {
+      settings: { turnstile: "anonymous", cooldownSeconds: 0, ngWords: ["禁止語"], ngWordAction: "reject" },
+    });
+    const anon = new TestClient();
+    const thread = await createThread(owner.client, board.board.slug, { title: "NG のスレ", body: "本文" });
+    // 匿名がトークン付きで投稿 → 確認済み（pass）が付く。
+    const reply = await postReply(anon, thread.threadId, "匿名の投稿", { turnstileToken: "1x00000000000000000000AA" });
+
+    // device_hash は Cookie から計算されるため直接は引けない。板単位で存在を確認。
+    const passCount = await env.DB
+      .prepare("SELECT COUNT(*) AS n FROM turnstile_passes WHERE board_id = (SELECT id FROM boards WHERE slug = ?)")
+      .bind(board.board.slug)
+      .first<{ n: number }>();
+    expect(passCount?.n ?? 0).toBeGreaterThan(0);
+
+    // NG 拒否（400）で確認済みが取り消される。
+    const ng = await anon.patch(`/v1/posts/${reply.post.id}`, { body: "禁止語入り" });
+    expect(ng.status).toBe(400);
+    const passAfter = await env.DB
+      .prepare("SELECT COUNT(*) AS n FROM turnstile_passes WHERE board_id = (SELECT id FROM boards WHERE slug = ?)")
+      .bind(board.board.slug)
+      .first<{ n: number }>();
+    expect(passAfter?.n ?? 0).toBe(0);
+  });
+});

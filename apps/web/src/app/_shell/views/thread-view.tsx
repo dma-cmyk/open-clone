@@ -383,18 +383,34 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
       // Bot 確認が必要な板ではトークンを添える（レス投稿と同じ条件。確認済みなら take は省略扱い）。
       const token = await editTurnstileToken.take();
       const updated = await api.editPost(editTarget.id, editBody, token || undefined);
-      // 初回の確認に成功したら「確認済み」を共有状態に反映（レスフォームの部品も消える）。
-      if (editTurnstilePolicy === "anonymous" && !editTurnstilePassed) {
-        setTurnstilePass(slug, { passed: true, expiresAt: null });
+      // 成功した＝確認済みが記録された（または省略された）。サーバーから実際の状態と期限を
+      // 取り直す（expiresAt: null の代用は期限タイマーが動かず、期限切れ後に抜けられなくなる。R74-04）。
+      if (editTurnstilePolicy === "anonymous") {
+        void api
+          .getTurnstileStatus(slug)
+          .then((status) => {
+            setTurnstilePass(slug, { passed: status.passed, expiresAt: status.passExpiresAt });
+          })
+          .catch(() => undefined);
       }
       setPosts((prev) => prev.map((item) => (item.id === updated.id ? { ...item, ...updated, mine: true } : item)));
       setEditTarget(null);
       setEditBody("");
       toast.show("編集しました");
     } catch (cause) {
-      // 回数制限・アク禁に当たったら「確認済み」を取り消す（次回から確認を求める。設計 80）。
-      if (cause instanceof ApiError && (cause.status === 429 || cause.status === 403)) {
+      // 確認失敗（400 TURNSTILE_FAILED）・取消しに当たったらローカルの省略状態を捨てて部品を戻す
+      //（サーバーの状態を取り直すより確実。期限切れ・取消しの両方に効く。R74-04）。
+      if (cause instanceof ApiError && (cause.status === 400 || cause.status === 429 || cause.status === 403)) {
         setTurnstilePass(slug, { passed: false, expiresAt: null });
+      }
+      // NG など他の失敗でもサーバー側は取消している可能性があるため状態を取り直す（R74-03）。
+      if (editTurnstilePolicy === "anonymous" && cause instanceof ApiError && cause.status === 400) {
+        void api
+          .getTurnstileStatus(slug)
+          .then((status) => {
+            setTurnstilePass(slug, { passed: status.passed, expiresAt: status.passExpiresAt });
+          })
+          .catch(() => undefined);
       }
       setEditError(cause instanceof Error ? cause.message : "編集に失敗しました");
     } finally {
@@ -446,16 +462,31 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
       // Bot 確認が必要な板ではトークンを添える（レス編集と同じ条件）。
       const token = await editTurnstileToken.take();
       await api.editThread(thread.id, threadEditTitle, threadEditBody, token || undefined);
-      if (editTurnstilePolicy === "anonymous" && !editTurnstilePassed) {
-        setTurnstilePass(slug, { passed: true, expiresAt: null });
+      // 成功した＝確認済みが記録された（または省略された）。実際の期限をサーバーから取り直す（R74-04）。
+      if (editTurnstilePolicy === "anonymous") {
+        void api
+          .getTurnstileStatus(slug)
+          .then((status) => {
+            setTurnstilePass(slug, { passed: status.passed, expiresAt: status.passExpiresAt });
+          })
+          .catch(() => undefined);
       }
       setThreadEditOpen(false);
       page.reload();
       toast.show("スレを編集しました");
     } catch (cause) {
-      // 回数制限・アク禁に当たったら「確認済み」を取り消す。
-      if (cause instanceof ApiError && (cause.status === 429 || cause.status === 403)) {
+      // 確認失敗・取消し・期限切れでローカルの省略状態を捨てて部品を戻す（R74-04）。
+      if (cause instanceof ApiError && (cause.status === 400 || cause.status === 429 || cause.status === 403)) {
         setTurnstilePass(slug, { passed: false, expiresAt: null });
+      }
+      // NG でもサーバー側は取消している可能性があるため状態を取り直す（R74-03）。
+      if (editTurnstilePolicy === "anonymous" && cause instanceof ApiError && cause.status === 400) {
+        void api
+          .getTurnstileStatus(slug)
+          .then((status) => {
+            setTurnstilePass(slug, { passed: status.passed, expiresAt: status.passExpiresAt });
+          })
+          .catch(() => undefined);
       }
       setEditError(cause instanceof Error ? cause.message : "編集に失敗しました");
     } finally {
