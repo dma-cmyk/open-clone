@@ -127,6 +127,8 @@ export type CreateQuotedThreadRequest = z.infer<typeof createQuotedThreadRequest
 export const editThreadRequestSchema = z.object({
   title: z.string().min(1).max(120),
   body: z.string().min(1).max(4096),
+  /** 板が Turnstile always のとき編集にも要求される（投稿と同じ条件・設計 80） */
+  turnstileToken: z.string().max(4096).optional(),
 });
 export type EditThreadRequest = z.infer<typeof editThreadRequestSchema>;
 

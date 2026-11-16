@@ -342,8 +342,10 @@ export const api = {
   },
 
   /** レス本文の本人編集（名前・メール・添付は対象外）。 */
-  editPost(postId: number, body: string): Promise<Post> {
-    return patch<{ post?: unknown }>(`/posts/${postId}`, { body }).then((data) => normalizePost(data.post));
+  editPost(postId: number, body: string, turnstileToken?: string): Promise<Post> {
+    return patch<{ post?: unknown }>(`/posts/${postId}`, { body, turnstileToken }).then((data) =>
+      normalizePost(data.post),
+    );
   },
 
   /** レスの本人削除（「投稿者により削除されました」表示。レス番号は残る）。 */
@@ -362,8 +364,8 @@ export const api = {
   },
 
   /** スレ（タイトル + >>1 本文）の本人編集。 */
-  editThread(threadId: number, title: string, body: string): Promise<ThreadDetail> {
-    return patch<{ thread?: unknown }>(`/threads/${threadId}`, { title, body }).then((data) =>
+  editThread(threadId: number, title: string, body: string, turnstileToken?: string): Promise<ThreadDetail> {
+    return patch<{ thread?: unknown }>(`/threads/${threadId}`, { title, body, turnstileToken }).then((data) =>
       normalizeThread(data.thread),
     );
   },

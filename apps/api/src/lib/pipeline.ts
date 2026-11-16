@@ -1106,15 +1106,22 @@ export async function editPostInternal(input: EditPostInput, deps: PipelineDeps)
     throw new ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, "本文が長すぎます");
   }
 
-  // ---- 投稿経路と同じ検査（設計 70 重点 2。連投・回数制限・アク禁・Turnstile） ----
+  // ---- 投稿経路と同じ検査（設計 70 重点 2。連投・回数制限・アク禁・Turnstile・確認済み省略） ----
   // レート制限は投稿と別窓（postEdit）: 本人が直後にレスできなくなる問題を避けつつ、
   // 1 レスの高速連続書き換え（荒らし路）は同じ窓で頭打ちにする。
+  // 制限・アク禁に当たったら「確認済み」を取り消す（レス投稿と同じ扱い。レビュー 72 M3 + 設計 80）。
+  const revokeEditPass = async () => {
+    if (canPassTurnstile(settings)) {
+      await revokeTurnstilePass(db, input.identity.deviceHash, input.board.id).catch(() => undefined);
+    }
+  };
   const editRate = await checkRateLimitMulti(env, "postEdit", [input.identity.deviceHash]);
   const editIpRate =
     input.identity.accountId === null
       ? await checkRateLimitMulti(env, "postEditIp", [input.identity.ipHash])
       : { allowed: true, retryAfterSeconds: 0 };
   if (!editRate.allowed || !editIpRate.allowed) {
+    await revokeEditPass();
     throw new ApiError(429, ErrorCode.RATE_LIMITED, "編集間隔が短すぎます。しばらく待ってください", {
       retryAfterSeconds: Math.max(editRate.retryAfterSeconds, editIpRate.retryAfterSeconds),
     });
@@ -1133,20 +1140,40 @@ export async function editPostInternal(input: EditPostInput, deps: PipelineDeps)
     )
     .bind(input.board.id, now, input.identity.deviceHash, input.identity.ipHash, input.identity.accountId ?? "")
     .first<{ id: string }>();
-  if (ban) throw new ApiError(403, ErrorCode.BANNED, "アクセス禁止中です");
+  if (ban) {
+    await revokeEditPass();
+    throw new ApiError(403, ErrorCode.BANNED, "アクセス禁止中です");
+  }
   if (input.identity.accountId) {
     const account = await db
       .prepare("SELECT status FROM accounts WHERE id = ?")
       .bind(input.identity.accountId)
       .first<{ status: string }>();
     if (account && account.status !== "active") {
+      await revokeEditPass();
       throw new ApiError(403, ErrorCode.BANNED, "アカウントが停止されています");
     }
   }
 
   // Turnstile: 「その板でレスに確認が必要か」と同じ条件（always は編集も要求。anonymous はログイン済み免除）。
-  await assertTurnstile(env, input.turnstileToken, "", needsTurnstile(settings, input.identity.accountId !== null));
-
+  // 「確認済み（板ごと 30 分）」の省略はレスと同じ扱い（設計 80）: 期限内なら siteverify を省略し、
+  // 初回の確認に成功したら grant する。off と always と 0 分設定は省略しない。
+  if (needsTurnstile(settings, input.identity.accountId !== null)) {
+    const passable = canPassTurnstile(settings);
+    const passed = passable ? (await readTurnstilePass(db, input.identity.deviceHash, input.board.id, now)) !== null : false;
+    if (!passed) {
+      await assertTurnstile(env, input.turnstileToken, "", true);
+      if (passable) {
+        await grantTurnstilePass(db, {
+          deviceHash: input.identity.deviceHash,
+          boardId: input.board.id,
+          now,
+          seconds: turnstilePassSeconds(settings),
+          ipHash: input.identity.ipHash,
+        });
+      }
+    }
+  }
   const post = input.post;
   const previousBody = post.body;
   const previousName = post.name;
@@ -1277,6 +1304,8 @@ export interface EditThreadInput {
   identity: Identity;
   newTitle: string;
   newBody: string;
+  /** 板が Turnstile always のとき編集にも要求する（投稿と同じ条件・設計 80） */
+  turnstileToken?: string;
 }
 
 export async function editThreadInternal(input: EditThreadInput, deps: PipelineDeps): Promise<{ thread: Thread }> {
@@ -1297,13 +1326,19 @@ export async function editThreadInternal(input: EditThreadInput, deps: PipelineD
     throw new ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, "本文が長すぎます");
   }
 
-  // ---- 投稿経路と同じ検査（設計 70 重点 2。スレ編集にも連投・アク禁・アカウント停止を適用） ----
+  // ---- 投稿経路と同じ検査（設計 70 重点 2。スレ編集にも連投・アク禁・アカウント停止・確認済み省略） ----
+  const revokeEditPass = async () => {
+    if (canPassTurnstile(settings)) {
+      await revokeTurnstilePass(db, input.identity.deviceHash, input.board.id).catch(() => undefined);
+    }
+  };
   const editRate = await checkRateLimitMulti(env, "postEdit", [input.identity.deviceHash]);
   const editIpRate =
     input.identity.accountId === null
       ? await checkRateLimitMulti(env, "postEditIp", [input.identity.ipHash])
       : { allowed: true, retryAfterSeconds: 0 };
   if (!editRate.allowed || !editIpRate.allowed) {
+    await revokeEditPass();
     throw new ApiError(429, ErrorCode.RATE_LIMITED, "編集間隔が短すぎます。しばらく待ってください", {
       retryAfterSeconds: Math.max(editRate.retryAfterSeconds, editIpRate.retryAfterSeconds),
     });
@@ -1320,14 +1355,35 @@ export async function editThreadInternal(input: EditThreadInput, deps: PipelineD
     )
     .bind(input.board.id, now, input.identity.deviceHash, input.identity.ipHash, input.identity.accountId ?? "")
     .first<{ id: string }>();
-  if (ban) throw new ApiError(403, ErrorCode.BANNED, "アクセス禁止中です");
+  if (ban) {
+    await revokeEditPass();
+    throw new ApiError(403, ErrorCode.BANNED, "アクセス禁止中です");
+  }
   if (input.identity.accountId) {
     const account = await db
       .prepare("SELECT status FROM accounts WHERE id = ?")
       .bind(input.identity.accountId)
       .first<{ status: string }>();
     if (account && account.status !== "active") {
+      await revokeEditPass();
       throw new ApiError(403, ErrorCode.BANNED, "アカウントが停止されています");
+    }
+  }
+  // Turnstile: レス編集と同じ条件・同じ省略扱い（設計 80）。
+  if (needsTurnstile(settings, input.identity.accountId !== null)) {
+    const passable = canPassTurnstile(settings);
+    const passed = passable ? (await readTurnstilePass(db, input.identity.deviceHash, input.board.id, now)) !== null : false;
+    if (!passed) {
+      await assertTurnstile(env, input.turnstileToken, "", true);
+      if (passable) {
+        await grantTurnstilePass(db, {
+          deviceHash: input.identity.deviceHash,
+          boardId: input.board.id,
+          now,
+          seconds: turnstilePassSeconds(settings),
+          ipHash: input.identity.ipHash,
+        });
+      }
     }
   }
   const post = input.firstPost;

@@ -15,6 +15,8 @@ import { useApiData, errorMessage } from "@/features/board-ui/use-api-data";
 import { useThreadLive, type LiveStatus } from "@/features/board-ui/use-thread-live";
 import { pageLinks, parseRange, rangeLabel, rangeQuery } from "@/features/board-ui/range";
 import { quotePost } from "@/features/board-ui/quote-bus";
+import { TurnstileWidget, useTurnstileToken } from "@/features/board-ui/turnstile";
+import { setTurnstilePass, useTurnstilePass } from "@/features/board-ui/turnstile-pass-store";
 import type { AttachmentRef, Post, PostEditHistoryItem, ThreadQuoteRef } from "@/features/board-ui/types";
 import { Button, Modal, Notice, Spinner, useToast } from "@/components/ui";
 import { usePageTitle } from "@/lib/title";
@@ -82,6 +84,12 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   // 板設定（本人編集・本人削除・引用スレの許可）。ボタン表示は補助で、最終判定は API 側。
   const boardSettings = boardInfo.data?.board.settings;
   const allowQuoteThread = boardSettings?.allowQuoteThread !== false;
+  // 編集の Bot 確認（レスと同じ扱い・設計 80）: 板ごとの「確認済み」状態を共有し、
+  // 未確認なら編集モーダルに Turnstile 部品を出してトークンを送る。
+  const editTurnstilePolicy = boardSettings?.turnstile ?? "anonymous";
+  const editPass = useTurnstilePass(slug);
+  const editTurnstilePassed = editTurnstilePolicy === "anonymous" && editPass.passed;
+  const editTurnstileToken = useTurnstileToken(editTurnstilePolicy, editTurnstilePassed);
   // スレ主かどうかは >>1 の mine フラグで判定（API が端末・アカウント一致を計算する）。
   const isThreadOwner = useMemo(() => posts.some((post) => post.num === 1 && post.mine === true), [posts]);
   const renderRules = usePluginPostRenderRules({
@@ -372,12 +380,22 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
     setEditSaving(true);
     setEditError(null);
     try {
-      const updated = await api.editPost(editTarget.id, editBody);
+      // Bot 確認が必要な板ではトークンを添える（レス投稿と同じ条件。確認済みなら take は省略扱い）。
+      const token = await editTurnstileToken.take();
+      const updated = await api.editPost(editTarget.id, editBody, token || undefined);
+      // 初回の確認に成功したら「確認済み」を共有状態に反映（レスフォームの部品も消える）。
+      if (editTurnstilePolicy === "anonymous" && !editTurnstilePassed) {
+        setTurnstilePass(slug, { passed: true, expiresAt: null });
+      }
       setPosts((prev) => prev.map((item) => (item.id === updated.id ? { ...item, ...updated, mine: true } : item)));
       setEditTarget(null);
       setEditBody("");
       toast.show("編集しました");
     } catch (cause) {
+      // 回数制限・アク禁に当たったら「確認済み」を取り消す（次回から確認を求める。設計 80）。
+      if (cause instanceof ApiError && (cause.status === 429 || cause.status === 403)) {
+        setTurnstilePass(slug, { passed: false, expiresAt: null });
+      }
       setEditError(cause instanceof Error ? cause.message : "編集に失敗しました");
     } finally {
       setEditSaving(false);
@@ -425,11 +443,20 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
     setEditSaving(true);
     setEditError(null);
     try {
-      await api.editThread(thread.id, threadEditTitle, threadEditBody);
+      // Bot 確認が必要な板ではトークンを添える（レス編集と同じ条件）。
+      const token = await editTurnstileToken.take();
+      await api.editThread(thread.id, threadEditTitle, threadEditBody, token || undefined);
+      if (editTurnstilePolicy === "anonymous" && !editTurnstilePassed) {
+        setTurnstilePass(slug, { passed: true, expiresAt: null });
+      }
       setThreadEditOpen(false);
       page.reload();
       toast.show("スレを編集しました");
     } catch (cause) {
+      // 回数制限・アク禁に当たったら「確認済み」を取り消す。
+      if (cause instanceof ApiError && (cause.status === 429 || cause.status === 403)) {
+        setTurnstilePass(slug, { passed: false, expiresAt: null });
+      }
       setEditError(cause instanceof Error ? cause.message : "編集に失敗しました");
     } finally {
       setEditSaving(false);
@@ -928,6 +955,15 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
               aria-label="編集本文"
             />
             <div className="oc-muted oc-small">編集すると「編集済み」と表示され、編集前の本文は履歴として誰でも見られます。</div>
+            {editTurnstileToken.needed ? (
+              <div className="oc-turnstile-row">
+                <TurnstileWidget
+                  onToken={editTurnstileToken.accept}
+                  onInvalidate={editTurnstileToken.invalidate}
+                  resetKey={editTurnstileToken.resetKey}
+                />
+              </div>
+            ) : null}
             {editError ? <Notice kind="error">{editError}</Notice> : null}
             <div className="oc-row">
               <Button variant="primary" disabled={editSaving} onClick={() => void submitSelfEdit()}>
@@ -983,6 +1019,15 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
               aria-label="1の本文"
             />
           </label>
+          {editTurnstileToken.needed ? (
+            <div className="oc-turnstile-row">
+              <TurnstileWidget
+                onToken={editTurnstileToken.accept}
+                onInvalidate={editTurnstileToken.invalidate}
+                resetKey={editTurnstileToken.resetKey}
+              />
+            </div>
+          ) : null}
           {editError ? <Notice kind="error">{editError}</Notice> : null}
           <div className="oc-row">
             <Button variant="primary" disabled={editSaving} onClick={() => void submitThreadEdit()}>

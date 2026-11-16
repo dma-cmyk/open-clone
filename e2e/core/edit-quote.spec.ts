@@ -4,6 +4,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { ALLOWED_ORIGIN, apiUrl } from "../helpers/api";
 import { unique } from "../helpers/ids";
+import { stubTurnstile } from "./rv-core-helpers";
 
 const OWNER_COOKIE = "oc_sess=e2e-owner-session-token";
 function ownerHeaders(): Record<string, string> {
@@ -15,7 +16,10 @@ function ownerHeaders(): Record<string, string> {
   };
 }
 
-async function createBoardApi(request: APIRequestContext): Promise<string> {
+async function createBoardApi(
+  request: APIRequestContext,
+  extraSettings: { turnstile?: "off" | "anonymous" | "always" } = {},
+): Promise<string> {
   const slug = unique("eq").toLowerCase();
   const response = await request.post(apiUrl("/v1/boards"), {
     headers: ownerHeaders(),
@@ -24,7 +28,7 @@ async function createBoardApi(request: APIRequestContext): Promise<string> {
       name: `編集引用 ${slug}`,
       category: "E2E",
       description: "編集・削除・引用の E2E",
-      settings: { turnstile: "off", cooldownSeconds: 0 },
+      settings: { turnstile: "off", cooldownSeconds: 0, ...extraSettings },
     },
   });
   if (response.status() !== 201) {
@@ -40,7 +44,13 @@ async function createThreadApi(
 ): Promise<number> {
   const response = await request.post(apiUrl(`/v1/boards/${slug}/threads`), {
     headers: ownerHeaders(),
-    data: { title: input.title ?? `スレ ${Date.now()}`, body: input.body ?? "1げっと", quoteThreadId: input.quoteThreadId },
+    data: {
+      title: input.title ?? `スレ ${Date.now()}`,
+      body: input.body ?? "1げっと",
+      quoteThreadId: input.quoteThreadId,
+      // always 板でもスレ立てられるように公式テストトークンを添える（スタブは受理する）。
+      turnstileToken: "1x00000000000000000000AA",
+    },
   });
   if (response.status() !== 201) {
     throw new Error(`スレ作成失敗: ${response.status()} ${await response.text()}`);
@@ -357,5 +367,93 @@ test.describe("編集・削除・引用スレ", () => {
     expect(detail.status()).toBe(200);
     const board = (await detail.json()) as { data?: { board?: { settings?: { maxPosts?: number } } } };
     expect(board.data?.board?.settings?.maxPosts).toBe(500);
+  });
+
+  test("anonymous 板: 編集も確認済みの省略に乗る（部品が出ずトークン無しで 200）", async ({ page, request }) => {
+    const slug = await createBoardApi(request, { turnstile: "anonymous" });
+    const threadId = await createThreadApi(request, slug, { title: "anonymous 板の編集", body: "1" });
+
+    await stubTurnstile(page);
+    await page.goto(`/b/${slug}/t/${threadId}?r=l50`);
+    await expandForm(page, /投稿する/);
+    const form = page.locator("form").filter({ has: page.getByRole("button", { name: /投稿する/ }) }).first();
+    await form.locator("textarea").first().fill("anonymous 板の自分のレス");
+    await form.getByRole("button", { name: /投稿する/ }).click();
+    await expect(page.locator(".oc-post").filter({ hasText: "anonymous 板の自分のレス" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // 投稿で「確認済み」になったので、編集モーダルに Turnstile 部品は出ない（省略）。
+    await page.locator(".oc-post").filter({ hasText: "anonymous 板の自分のレス" }).getByRole("button", { name: "編集" }).click();
+    const modal = page.locator(".oc-modal").filter({ hasText: "を編集" });
+    await expect(modal).toBeVisible();
+    await expect(modal.locator(".oc-turnstile-row")).toHaveCount(0);
+
+    // 編集はトークン無し（省略）で 200 になる。
+    await modal.locator("textarea").fill("anonymous 板の自分のレス（編集後）");
+    const editResponse = page.waitForResponse(
+      (response) => new RegExp(`/api/v1/posts/\\d+$`).test(new URL(response.url()).pathname) && response.request().method() === "PATCH",
+    );
+    await modal.getByRole("button", { name: /編集を保存/ }).click();
+    const patched = await editResponse;
+    expect(patched.status(), await patched.text()).toBe(200);
+    await expect(
+      page.locator(".oc-post").filter({ hasText: "anonymous 板の自分のレス（編集後）" }),
+    ).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("always 板: 編集モーダルに Turnstile 部品が出て、トークンを送って通る", async ({ page, request }) => {
+    const slug = await createBoardApi(request, { turnstile: "always" });
+    const threadId = await createThreadApi(request, slug, { title: "always 板の編集", body: "1" });
+
+    await stubTurnstile(page);
+    await page.goto(`/b/${slug}/t/${threadId}?r=l50`);
+    await expandForm(page, /投稿する/);
+    const form = page.locator("form").filter({ has: page.getByRole("button", { name: /投稿する/ }) }).first();
+    await form.locator("textarea").first().fill("always 板の自分のレス");
+    await form.getByRole("button", { name: /投稿する/ }).click();
+    await expect(page.locator(".oc-post").filter({ hasText: "always 板の自分のレス" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // always は省略しない: 編集モーダルにも Turnstile 部品が出る。
+    await page.locator(".oc-post").filter({ hasText: "always 板の自分のレス" }).getByRole("button", { name: "編集" }).click();
+    const modal = page.locator(".oc-modal").filter({ hasText: "を編集" });
+    await expect(modal).toBeVisible();
+    await expect(modal.locator(".oc-turnstile-row .stub-turnstile")).toHaveCount(1, { timeout: 10_000 });
+
+    // 編集はトークン付きで 200 になる（スタブが自動で成功トークンを発行）。
+    await modal.locator("textarea").fill("always 板の自分のレス（編集後）");
+    const editResponse = page.waitForResponse(
+      (response) => new RegExp(`/api/v1/posts/\\d+$`).test(new URL(response.url()).pathname) && response.request().method() === "PATCH",
+    );
+    await modal.getByRole("button", { name: /編集を保存/ }).click();
+    const patched = await editResponse;
+    expect(patched.status(), await patched.text()).toBe(200);
+  });
+
+  test("off 板: 編集モーダルに Turnstile 部品が出ない", async ({ page, request }) => {
+    const slug = await createBoardApi(request, { turnstile: "off" });
+    const threadId = await createThreadApi(request, slug, { title: "off 板の編集", body: "1" });
+
+    await page.goto(`/b/${slug}/t/${threadId}?r=l50`);
+    await expandForm(page, /投稿する/);
+    const form = page.locator("form").filter({ has: page.getByRole("button", { name: /投稿する/ }) }).first();
+    await form.locator("textarea").first().fill("off 板の自分のレス");
+    await form.getByRole("button", { name: /投稿する/ }).click();
+    await expect(page.locator(".oc-post").filter({ hasText: "off 板の自分のレス" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // off では編集モーダルに部品が出ない。編集もトークン無しで 200。
+    await page.locator(".oc-post").filter({ hasText: "off 板の自分のレス" }).getByRole("button", { name: "編集" }).click();
+    const modal = page.locator(".oc-modal").filter({ hasText: "を編集" });
+    await expect(modal).toBeVisible();
+    await expect(modal.locator(".oc-turnstile-row")).toHaveCount(0);
+    await modal.locator("textarea").fill("off 板の自分のレス（編集後）");
+    await modal.getByRole("button", { name: /編集を保存/ }).click();
+    await expect(
+      page.locator(".oc-post").filter({ hasText: "off 板の自分のレス（編集後）" }),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });

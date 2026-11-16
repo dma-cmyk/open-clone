@@ -291,7 +291,7 @@ app.patch("/:id", async (c) => {
     if (!firstPost) throw ApiError.notFound(">>1 が見つかりません");
     if (firstPost.self_deleted === 1) throw ApiError.forbidden("削除済みのスレは編集できません");
     const result = await editThreadInternal(
-      { thread, firstPost, board, identity, newTitle: editBody.title, newBody: editBody.body },
+      { thread, firstPost, board, identity, newTitle: editBody.title, newBody: editBody.body, turnstileToken: editBody.turnstileToken },
       { env: c.env, ctx: c.executionCtx },
     );
     return c.json(ok({ thread: result.thread }));
