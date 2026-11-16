@@ -123,25 +123,18 @@ export function TourHost() {
     setShowIntro(shouldShowIntro());
   }, []);
 
-  // 案内はヘッダーのすぐ下に置く（画面下の投稿バー・フッターを覆わない: T02）。
-  // ヘッダーは狭幅で折り返して高さが変わるため、実測して追従する。
-  const [introTop, setIntroTop] = useState(8);
+  // 案内は画面の上に重ねず、ページ先頭の通常の帯として差し込む。重ねると狭幅・広幅とも
+  // スレの操作ボタン（実況・つぶやき・ブクマ）や投稿バーを覆ってしまうため。
+  const [introSlot, setIntroSlot] = useState<HTMLElement | null>(null);
   useEffect(() => {
     if (!showIntro) return;
-    const header = document.querySelector(".oc-header");
-    const update = () => {
-      const bottom = header ? header.getBoundingClientRect().bottom : 0;
-      setIntroTop(Math.max(8, Math.round(bottom + 4)));
-    };
-    update();
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, { passive: true });
-    const observer = header && typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
-    if (header && observer) observer.observe(header);
+    const slot = document.createElement("div");
+    slot.className = "oc-tour-intro-slot";
+    document.body.prepend(slot);
+    setIntroSlot(slot);
     return () => {
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update);
-      observer?.disconnect();
+      slot.remove();
+      setIntroSlot(null);
     };
   }, [showIntro]);
 
@@ -288,9 +281,9 @@ export function TourHost() {
   if (!mounted) return null;
 
   if (!state.page || !step) {
-    return showIntro ? createPortal(
+    return showIntro && introSlot ? createPortal(
       (
-      <div className="oc-tour-intro" style={{ top: introTop }} role="region" aria-label="はじめての方へ">
+      <div className="oc-tour-intro" role="region" aria-label="はじめての方へ">
         <span className="oc-tour-intro-text">はじめての方へ: 使い方ツアーを見る</span>
         <button
           type="button"
@@ -325,7 +318,7 @@ export function TourHost() {
         <TourStyles />
       </div>
       ),
-      document.body,
+      introSlot,
     ) : null;
   }
 
@@ -407,21 +400,16 @@ function TourStyles() {
   return (
     <style>{`
 .oc-tour-intro {
-  position: fixed;
-  top: 8px;
-  right: 12px;
-  bottom: auto;
-  z-index: 90;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   flex-wrap: wrap;
   box-sizing: border-box;
-  max-width: min(420px, calc(100vw - 24px));
-  padding: 8px 10px;
+  width: 100%;
+  padding: 6px 10px;
   background: #f2fbf2;
-  border: 1px solid #7bb87b;
-  box-shadow: 0 2px 10px rgba(0,0,0,.18);
+  border-bottom: 1px solid #7bb87b;
   font-size: 12px;
   color: #123d18;
 }
@@ -496,9 +484,6 @@ function TourStyles() {
   .oc-tour-tooltip-text { font-size: 13px; }
   .oc-tour-tooltip-foot .oc-btn { min-height: 40px; }
   .oc-tour-intro {
-    left: auto;
-    right: 4px;
-    max-width: min(360px, calc(100vw - 8px));
     padding: 6px 8px;
     font-size: 11.5px;
   }
