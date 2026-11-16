@@ -168,19 +168,20 @@
 | GET | `/github/start` | — | `auth.ts` | 365 |
 | POST | `/github/callback` | — | `auth.ts` | 371 |
 | POST | `/step-up` | `requireAuth` | `auth.ts` | 399 |
-| GET | `/` | — | `boards.ts` | 42 |
-| POST | `/` | `requireAuth` | `boards.ts` | 98 |
-| GET | `/:slug` | — | `boards.ts` | 169 |
-| PATCH | `/:slug` | `requireAuth` | `boards.ts` | 219 |
-| DELETE | `/:slug` | `requireAuth` | `boards.ts` | 258 |
-| GET | `/:slug/threads` | — | `boards.ts` | 281 |
-| POST | `/:slug/threads` | — | `boards.ts` | 305 |
-| GET | `/:slug/staff` | — | `boards.ts` | 333 |
-| POST | `/:slug/staff` | `requireAuth` | `boards.ts` | 356 |
-| DELETE | `/:slug/staff/:accountId` | `requireAuth` | `boards.ts` | 389 |
-| GET | `/:slug/bans` | `requireAuth` | `boards.ts` | 418 |
-| POST | `/:slug/bans` | `requireAuth` | `boards.ts` | 455 |
-| DELETE | `/:slug/bans/:id` | `requireAuth` | `boards.ts` | 492 |
+| GET | `/` | — | `boards.ts` | 43 |
+| POST | `/` | `requireAuth` | `boards.ts` | 99 |
+| GET | `/:slug` | — | `boards.ts` | 170 |
+| GET | `/:slug/turnstile` | — | `boards.ts` | 224 |
+| PATCH | `/:slug` | `requireAuth` | `boards.ts` | 250 |
+| DELETE | `/:slug` | `requireAuth` | `boards.ts` | 289 |
+| GET | `/:slug/threads` | — | `boards.ts` | 312 |
+| POST | `/:slug/threads` | — | `boards.ts` | 336 |
+| GET | `/:slug/staff` | — | `boards.ts` | 364 |
+| POST | `/:slug/staff` | `requireAuth` | `boards.ts` | 387 |
+| DELETE | `/:slug/staff/:accountId` | `requireAuth` | `boards.ts` | 420 |
+| GET | `/:slug/bans` | `requireAuth` | `boards.ts` | 449 |
+| POST | `/:slug/bans` | `requireAuth` | `boards.ts` | 486 |
+| DELETE | `/:slug/bans/:id` | `requireAuth` | `boards.ts` | 523 |
 | GET | `/:slug/subject.txt` | — | `compat.ts` | 59 |
 | GET | `/:slug/dat/:file` | — | `compat.ts` | 105 |
 | GET | `/bbsmenu.html` | — | `compat.ts` | 143 |
@@ -253,15 +254,15 @@
 | POST | `/:id/sync` | `requireAuth` | `plugins.ts` | 1124 |
 | GET | `/:id` | — | `posts.ts` | 46 |
 | POST | `/` | — | `posts.ts` | 68 |
-| POST | `/tsubuyaki` | — | `posts.ts` | 96 |
-| POST | `/:id/like` | — | `posts.ts` | 126 |
-| GET | `/:id/like` | — | `posts.ts` | 159 |
-| POST | `/:id/hide` | `requireAuth` | `posts.ts` | 176 |
-| POST | `/:id/restore` | `requireAuth` | `posts.ts` | 185 |
-| DELETE | `/:id` | `requireAuth` | `posts.ts` | 194 |
-| GET | `/:id/poll` | — | `posts.ts` | 206 |
-| POST | `/:id/poll/vote` | — | `posts.ts` | 245 |
-| GET | `/:id/backlinks` | — | `posts.ts` | 272 |
+| POST | `/tsubuyaki` | — | `posts.ts` | 101 |
+| POST | `/:id/like` | — | `posts.ts` | 131 |
+| GET | `/:id/like` | — | `posts.ts` | 164 |
+| POST | `/:id/hide` | `requireAuth` | `posts.ts` | 181 |
+| POST | `/:id/restore` | `requireAuth` | `posts.ts` | 190 |
+| DELETE | `/:id` | `requireAuth` | `posts.ts` | 199 |
+| GET | `/:id/poll` | — | `posts.ts` | 211 |
+| POST | `/:id/poll/vote` | — | `posts.ts` | 250 |
+| GET | `/:id/backlinks` | — | `posts.ts` | 277 |
 | GET | `/` | — | `ranking.ts` | 210 |
 | POST | `/` | — | `reports.ts` | 125 |
 | GET | `/` | `requireAuth` | `reports.ts` | 178 |
@@ -4464,6 +4465,12 @@
             }
           ]
         },
+        "turnstilePassMinutes": {
+          "default": 30,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1440
+        },
         "forceSage": {
           "default": false,
           "type": "boolean"
@@ -4604,6 +4611,12 @@
           "type": "null"
         }
       ]
+    },
+    "turnstilePassMinutes": {
+      "default": 30,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1440
     },
     "forceSage": {
       "default": false,
@@ -4968,6 +4981,12 @@
             }
           ]
         },
+        "turnstilePassMinutes": {
+          "default": 30,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1440
+        },
         "forceSage": {
           "default": false,
           "type": "boolean"
@@ -5168,6 +5187,12 @@
               "type": "null"
             }
           ]
+        },
+        "turnstilePassMinutes": {
+          "default": 30,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1440
         },
         "forceSage": {
           "default": false,
