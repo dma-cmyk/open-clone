@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import type { SessionState } from "shared";
 import { api } from "../../features/account/api";
 import { LogoutButton } from "../../features/account/logout-button";
+import { TourHost, setTourContext, startTour } from "../../features/site-tour";
 
 const PUBLIC_PATHS = ["/admin/invites/accept", "/admin/owner/setup"];
 
@@ -43,6 +44,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isPublic = PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
   const [state, setState] = useState<SessionState | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // 権限をツアーへ知らせる（ヘッダー等、どの開始経路でも同じ手順になる: レビュー 52 T04/T09）。
+  // 早期 return より前に置くこと（フック数がレンダー間で変わるとクラッシュする）。
+  const tourRole = state?.authenticated ? state.account.role : null;
+  useEffect(() => {
+    setTourContext({ siteOwner: tourRole === "owner", siteSpecialAdmin: tourRole === "special_admin" });
+  }, [tourRole]);
 
   useEffect(() => {
     if (isPublic) {
@@ -122,11 +130,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               TOTP が未登録です。高リスク操作の前に <Link href="/account/totp">TOTP を登録</Link> してください。
             </div>
           ) : null}
-          <nav className="oc-tabs" aria-label="管理メニュー">
+          <div className="oc-row oc-mb" style={{ gap: 6, alignItems: "center" }}>
+            {/* 管理画面の使い方（ツアー）と管理者向けヘルプへの導線 */}
+            <button
+              type="button"
+              className="oc-btn oc-btn-sm"
+              data-tour="admin-help"
+              onClick={() => startTour("admin")}
+              title="この管理画面の使い方を順に案内します"
+            >
+              使い方ツアー
+            </button>
+            <a className="oc-btn oc-btn-sm" href="/help/admin/#site-admin">
+              管理者向けヘルプ
+            </a>
+            <a className="oc-btn oc-btn-sm" href="/help/admin/#security">
+              二段階認証・再認証
+            </a>
+          </div>
+          <nav className="oc-tabs" data-tour="admin-nav" aria-label="管理メニュー">
             {visibleNav.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
+                data-tour={`admin-nav-${item.href.replace(/^\/admin\/?/, "").replaceAll("/", "-") || "dashboard"}`}
                 className={pathname === item.href || (item.href !== "/admin" && pathname.startsWith(`${item.href}/`)) ? "active" : undefined}
               >
                 {item.label}
@@ -136,6 +163,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {children}
         </div>
       </div>
+      {/* 管理画面はシェルのヘッダを使わないので、ツアー本体もここに置く */}
+      <TourHost />
     </div>
   );
 }

@@ -209,6 +209,9 @@ export function PostForm({
   const form = (
     <form
       className={`oc-form${floating ? " oc-form-floating" : ""}`}
+      // ツアーの目印。ラッパー div を足すと sticky（画面下の投稿バー）が壊れるため、
+      // 既存のフォーム要素そのものに付ける（レビュー T01）。
+      data-tour={mode === "post" ? "thread-form" : "board-new-thread-form"}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -248,7 +251,7 @@ export function PostForm({
           </div>
         ) : null}
 
-        <div className="oc-form-row">
+        <div className="oc-form-row" data-tour="post-form-name">
           <input
             className="oc-input oc-input-sm oc-form-name"
             placeholder="名前（省略可）"
@@ -297,6 +300,7 @@ export function PostForm({
         <textarea
           ref={textareaRef}
           className="oc-textarea"
+          data-tour="post-form-body"
           rows={4}
           placeholder="本文。レス番号クリックで >>n を引用。||ネタバレ|| も使えます。"
           value={body}
@@ -305,7 +309,11 @@ export function PostForm({
           aria-label="本文"
         />
         {/* 文字数と上限（API は UTF-8 バイトで 4096 まで）。超過は送信前から赤字で警告する。 */}
-        <div className={`oc-form-count${bodyBytes > BODY_MAX_BYTES ? " over" : ""}`} aria-live="polite">
+        <div
+          className={`oc-form-count${bodyBytes > BODY_MAX_BYTES ? " over" : ""}`}
+          aria-live="polite"
+          data-tour="post-form-count"
+        >
           <span>
             {body.length} 文字 / {bodyBytes} バイト（上限 {BODY_MAX_BYTES} バイト）
           </span>
@@ -329,7 +337,7 @@ export function PostForm({
           </div>
         ) : null}
 
-        <div className="oc-form-tools" style={{ marginTop: 4 }}>
+        <div className="oc-form-tools" style={{ marginTop: 4 }} data-tour="post-form-tools">
           <UploaderMount
             ref={uploaderRef}
             boardSlug={boardSlug}
@@ -362,7 +370,7 @@ export function PostForm({
 
         {/* Bot 確認はフォームに 1 個だけ（投稿・添付で同じトークンを使い回さない）。 */}
         {needsTurnstile ? (
-          <div className="oc-turnstile-row">
+          <div className="oc-turnstile-row" data-tour="post-form-turnstile">
             <TurnstileWidget
               onToken={turnstileToken.accept}
               onInvalidate={turnstileToken.invalidate}
