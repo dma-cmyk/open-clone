@@ -127,7 +127,13 @@ export function BoardView({ slug }: { slug: string }) {
         <div className="oc-linkbar">
           <Link href="/">掲示板一覧</Link>
           <a href={`/search?bbs=${encodeURIComponent(slug)}`}>板内検索</a>
-          <button type="button" className="oc-post-num" style={{ fontSize: 12 }} onClick={() => setRulesOpen((value) => !value)}>
+          <button
+            type="button"
+            className="oc-post-num"
+            style={{ fontSize: 12 }}
+            data-tour="board-rules"
+            onClick={() => setRulesOpen((value) => !value)}
+          >
             板ルール{rulesOpen ? "を閉じる" : "を見る"}
           </button>
           <span className="oc-spacer" />
@@ -145,6 +151,7 @@ export function BoardView({ slug }: { slug: string }) {
         ) : null}
         <form
           className="oc-row oc-mt oc-sp-search"
+          data-tour="board-search"
           onSubmit={(event) => {
             event.preventDefault();
             updateQuery({ q: searchDraft.trim() || null });
@@ -176,7 +183,7 @@ export function BoardView({ slug }: { slug: string }) {
         <PluginSlot slot="board-top" boardSlug={slug} />
       </div>
 
-      <div className="oc-thread-sort">
+      <div className="oc-thread-sort" data-tour="board-sort">
         <span className="oc-muted">並び:</span>
         {SORTS.map((item) => (
           <button
@@ -191,7 +198,7 @@ export function BoardView({ slug }: { slug: string }) {
         <span className="oc-spacer" />
       </div>
 
-      <div className="oc-thread-list">
+      <div className="oc-thread-list" data-tour="board-list">
         {threads.loading && !threads.data ? <div className="oc-loading">スレ一覧を読み込み中…</div> : null}
         {threads.error ? (
           <div className="oc-panel-inner">
@@ -341,7 +348,7 @@ export function BoardView({ slug }: { slug: string }) {
         })}
       </div>
 
-      <div className="oc-mt">
+      <div className="oc-mt" data-tour="board-new-thread">
         <PostForm
           mode="thread"
           boardSlug={slug}

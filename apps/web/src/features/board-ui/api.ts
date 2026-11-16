@@ -248,6 +248,32 @@ export const api = {
     return post<{ board: BoardDetail }>("/boards", input).then((data) => data.board);
   },
 
+  /**
+   * この板・この端末のロボット確認（Turnstile）の状態（報告書 81）。
+   * `passed` が true なら、サーバー側で期限内の省略が効くのでウィジェットを出さない。
+   */
+  getTurnstileStatus(slug: string): Promise<{
+    required: boolean;
+    passed: boolean;
+    passExpiresAt: number | null;
+    passMinutes: number;
+    policy: "off" | "anonymous" | "always";
+  }> {
+    return get<{
+      required: boolean;
+      passed: boolean;
+      passExpiresAt: number | null;
+      passMinutes: number;
+      policy: "off" | "anonymous" | "always";
+    }>(`/boards/${encodeURIComponent(slug)}/turnstile`).then((data) => ({
+      required: Boolean(data.required),
+      passed: Boolean(data.passed),
+      passExpiresAt: data.passExpiresAt ?? null,
+      passMinutes: Number(data.passMinutes ?? 0),
+      policy: data.policy ?? "anonymous",
+    }));
+  },
+
   getBoard(slug: string): Promise<{ board: BoardDetail; staff: StaffEntry[]; canManage: boolean }> {
     return get<{
       board?: BoardDetail;

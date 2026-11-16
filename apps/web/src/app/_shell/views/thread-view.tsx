@@ -528,7 +528,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
           👤 {viewers}人
         </div>
       ) : null}
-      <div className="oc-thread-toolbar">
+      <div className="oc-thread-toolbar" data-tour="thread-tools">
         <div className="oc-tool-group oc-tool-links">
           <Link href={boardPath(slug)}>板に戻る</Link>
           <Link href={`${threadPath(slug, threadId)}?r=1-1000`}>全部</Link>
@@ -608,7 +608,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
         <Link href={boardPath(slug)}>{thread.boardName ?? slug} 板</Link>
       </div>
 
-      <div className="oc-thread-head">
+      <div className="oc-thread-head" data-tour="thread-head">
         <h1>
           {thread.title} <span className="oc-thread-count">({total})</span>
         </h1>
@@ -687,6 +687,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
         ) : null}
         <form
           className="oc-row oc-mt"
+          data-tour="thread-search"
           onSubmit={(event) => {
             event.preventDefault();
             applyQuery({ q: searchDraft.trim() || null });
@@ -707,7 +708,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
         <PluginSlot slot="thread-top" boardSlug={slug} threadId={threadId} />
       </div>
 
-      <div className="oc-range-nav">
+      <div className="oc-range-nav" data-tour="thread-range">
         {pageLinks(total, range).map((link) => (
           <Link key={link.r} href={`${threadPath(slug, threadId)}?r=${link.r}`} className={link.r === rangeQuery(range) ? "active" : undefined}>
             {link.label}
@@ -755,7 +756,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
           </div>
         </div>
       ) : (
-        <div className="oc-panel">
+        <div className="oc-panel" data-tour="thread-posts">
           <div className="oc-panel-title">
             <span>レス一覧</span>
             {page.data?.hasMore ? <span className="oc-muted oc-small">（続きあり）</span> : null}
@@ -903,6 +904,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
 
       <TsubuyakiOverlay
         threadId={threadId}
+        boardSlug={slug}
         open={tsubuyakiOpen}
         onClose={() => setTsubuyakiOpen(false)}
         comments={tsubuyakiComments}

@@ -53,7 +53,7 @@ export const UploaderMount = forwardRef<UploaderHandle, UploaderProps>(function 
       showAdapterSelect={!compact}
       enablePaste
       onUploaded={(uploaded) => onUploaded?.(uploaded.map(toAttachmentRef))}
-      getTurnstileToken={turnstile.take}
+      getTurnstileToken={() => turnstile.take({ forUpload: true })}
     />
   );
 });

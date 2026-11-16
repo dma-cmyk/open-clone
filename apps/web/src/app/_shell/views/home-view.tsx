@@ -42,13 +42,13 @@ export function HomeView() {
             誰でも板を作って運営できます。ルール・デザイン・プラグインは板ごとに設定できます。
           </p>
           <div className="oc-row oc-mt">
-            <Link href="/boards/new">
+            <Link href="/boards/new" data-tour="home-new-board">
               <span className="oc-btn oc-btn-primary">＋ 板を作る</span>
             </Link>
             <a className="oc-btn" href="/plugins">
               プラグイン
             </a>
-            <a className="oc-btn" href="/ranking">
+            <a className="oc-btn" href="/ranking" data-tour="home-ranking">
               ランキング
             </a>
           </div>
@@ -58,7 +58,13 @@ export function HomeView() {
       <PluginSlot slot="site-top" />
 
       {/* SP トップの検索帯（open2ch 風の暗色帯。PC はヘッダ検索があるため非表示） */}
-      <form className="oc-row oc-mt oc-sp-search oc-home-search" action="/search" method="get" role="search">
+      <form
+        className="oc-row oc-mt oc-sp-search oc-home-search"
+        action="/search"
+        method="get"
+        role="search"
+        data-tour="site-search"
+      >
         <input
           className="oc-input oc-input-sm"
           type="search"
@@ -81,7 +87,7 @@ export function HomeView() {
 
       {boards.data ? (
         <>
-          <div className="oc-panel">
+          <div className="oc-panel" data-tour="home-boards">
             <div className="oc-panel-title">
               <span>掲示板一覧</span>
               <span className="oc-muted oc-small">

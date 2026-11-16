@@ -16,6 +16,7 @@ import {
 } from "shared";
 import type { AppEnv } from "../lib/env";
 import { getReqCtx } from "../lib/context";
+import { canPassTurnstile, needsTurnstile, readTurnstilePass } from "../services/board/turnstile";
 import { requireAuth } from "../lib/middleware/auth";
 import { writeAudit } from "../lib/audit";
 import {
@@ -212,6 +213,36 @@ app.get("/:slug", async (c) => {
       canManage,
       settings: boardSettingsOf(row),
       design: boardDesignOf(row),
+    }),
+  );
+});
+
+/**
+ * この板・この端末のロボット確認（Turnstile）の状態。
+ * Web はこれを見て、確認済みの期限内ならウィジェットを出さない（報告書 81 / B）。
+ * トークンは返さない（確認はサーバーで siteverify する）。
+ */
+app.get("/:slug/turnstile", async (c) => {
+  const db = c.env.DB;
+  const row = await resolveBoardRow(db, c.req.param("slug"));
+  if (!row) throw ApiError.notFound("板が見つかりません");
+  const settings = boardSettingsOf(row);
+  const ctx = getReqCtx(c);
+  const hasSession = ctx.session !== null;
+  const required = needsTurnstile(settings, hasSession);
+  const now = Math.floor(Date.now() / 1000);
+  const pass =
+    required && canPassTurnstile(settings)
+      ? await readTurnstilePass(db, ctx.device.deviceHash, row.id, now)
+      : null;
+  return c.json(
+    ok({
+      required,
+      /** 期限内なら省略できる（この端末は確認済み）。 */
+      passed: pass !== null,
+      passExpiresAt: pass?.expires_at ?? null,
+      passMinutes: settings.turnstilePassMinutes,
+      policy: settings.turnstile,
     }),
   );
 });

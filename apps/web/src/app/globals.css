@@ -1556,6 +1556,30 @@ body {
   }
 }
 
+/* ヘッダーの横はみ出し対策（レビュー T02）。
+   ツアーの案内・ツールチップの表示状態（TourStyles の有無）に依存させず、常に効かせる。
+   長い表示名は折り返さず省略し、狭幅では行を折り返して操作要素を画面内に収める。
+   ページ全体の overflow を隠して操作を切り捨てるのではなく、要素側を収める。 */
+.oc-header-inner {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.oc-header-right {
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+}
+.oc-header-right > * {
+  min-width: 0;
+}
+.oc-header-right .oc-btn {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
 /* パネル/表: 1px 罫線・角丸なし・緑の見出し帯 */
 .oc-panel,
 .oc-card,

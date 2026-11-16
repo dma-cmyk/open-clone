@@ -27,6 +27,8 @@ export interface BoardDesign {
 export interface BoardSettings {
   cooldownSeconds?: number;
   turnstile?: "off" | "anonymous" | "always";
+  /** ロボット確認を省略する時間（分）。0 = 毎回。レス・つぶやきだけが対象（報告書 81）。 */
+  turnstilePassMinutes?: number;
   ngWords?: string[];
   ngWordAction?: "reject" | "mask";
   live?: boolean;

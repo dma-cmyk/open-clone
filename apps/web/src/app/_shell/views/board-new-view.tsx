@@ -116,7 +116,7 @@ export function BoardNewView() {
 
   return (
     <div>
-      <div className="oc-panel">
+      <div className="oc-panel" data-tour="board-new-form">
         <div className="oc-panel-title">板を作る</div>
         <div className="oc-panel-inner">
           {sessionLoaded && session ? (
