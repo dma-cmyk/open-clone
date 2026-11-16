@@ -171,22 +171,29 @@ export default function PluginViewPage() {
   );
   const parsedBoardId = Number.parseInt(boardId, 10);
   const boardIdValid = Number.isInteger(parsedBoardId) && parsedBoardId > 0;
-  // R1/R1-N: 作者以外の導入の件数（API の 409 判定と同じ規則・NULL 安全）。
-  // 削除ボタンが押せるのは作者・管理者（canEdit）で、その視点では全導入が見える。
-  // 「作者本人」は scope=personal・作者ID あり・installedBy が非 NULL で一致するものだけ。
-  // owner=NULL（公式）は誰の導入も本人にならないため全て保護対象。
+  // R1/R1-N + 報告40: 作者以外の導入の件数（API の 409 判定と同じ規則・NULL 安全）。
+  // 「作者本人」の判定:
+  // - アカウント所有: scope=personal・作者ID あり・installedBy が非 NULL で一致
+  // - 端末所有（ownership=device）: この詳細ページを見られるのは所有端末かサイト運営のみで、
+  //   個人用導入（installedBy = device:<hash>・非 NULL）は本人の導入として扱う
+  // - 公式（両方 NULL）: 誰の導入も本人にならないため全て保護対象
   const ownerId = plugin?.owner?.id ?? null;
+  const isDeviceOwned = plugin?.ownership === "device";
   const foreignInstalls =
-    plugin?.installs.filter(
-      (install) =>
-        !(
-          install.scope === "personal" &&
-          ownerId !== null &&
-          install.installedBy !== null &&
-          install.installedBy === ownerId
-        ),
-    ).length ?? 0;
-
+    plugin?.installs.filter((install) => {
+      if (isDeviceOwned) {
+        // 端末所有: 個人用の導入（installedBy 非 NULL）は本人のもの
+        return !(install.scope === "personal" && install.installedBy !== null);
+      }
+      return !(
+        install.scope === "personal" &&
+        ownerId !== null &&
+        install.installedBy !== null &&
+        install.installedBy === ownerId
+      );
+    }).length ?? 0;
+  // 報告 40: 端末所有（匿名作成）のプラグイン。板・サイト導入と公開はできない。
+  const deviceOwned = isDeviceOwned;
   return (
     <PluginShell
       title={plugin ? plugin.name : "プラグイン詳細"}
@@ -279,7 +286,7 @@ export default function PluginViewPage() {
               <tbody>
                 <tr>
                   <td style={{ paddingRight: 12 }}>所有者</td>
-                  <td>{plugin.owner ? plugin.owner.name : "(サイト)"}</td>
+                  <td>{plugin.owner ? plugin.owner.name : deviceOwned ? "（このブラウザ）" : "(サイト)"}</td>
                 </tr>
                 <tr>
                   <td style={{ paddingRight: 12 }}>スコープ</td>
@@ -386,7 +393,13 @@ export default function PluginViewPage() {
               <button
                 type="button"
                 className="oc-btn"
-                disabled={busy || !boardIdValid || boardSearchState !== "ready" || boards.length === 0}
+                disabled={
+                  busy ||
+                  deviceOwned ||
+                  !boardIdValid ||
+                  boardSearchState !== "ready" ||
+                  boards.length === 0
+                }
                 onClick={() =>
                   void run(async () => {
                     const board = boards.find((item) => String(item.id) === boardId);
@@ -400,7 +413,13 @@ export default function PluginViewPage() {
               >
                 板用にインストール
               </button>
-              {loggedIn === false ? (
+              {deviceOwned ? (
+                <span className="oc-muted oc-small">
+                  ログインせずに保存したプラグインは板に導入できません（
+                  <a href="/account/login">ログイン</a>
+                  すると引き継げます）
+                </span>
+              ) : loggedIn === false ? (
                 <span className="oc-muted oc-small">
                   <a href="/account/login">ログイン</a>すると板用インストールができます
                 </span>
@@ -411,7 +430,7 @@ export default function PluginViewPage() {
               <button
                 type="button"
                 className="oc-btn"
-                disabled={busy || !plugin.viewer.isAdmin}
+                disabled={busy || deviceOwned || !plugin.viewer.isAdmin}
                 onClick={() =>
                   void run(async () => {
                     const result = await pluginApi.install(plugin.id, { scope: "site" });
@@ -421,7 +440,11 @@ export default function PluginViewPage() {
               >
                 サイト全体にインストール
               </button>
-              <span className="oc-muted oc-small">owner / 特別管理人のみ・サイト審査の承認が必要です</span>
+              <span className="oc-muted oc-small">
+                {deviceOwned
+                  ? "ログインせずに保存したプラグインはサイト全体に導入できません"
+                  : "owner / 特別管理人のみ・サイト審査の承認が必要です"}
+              </span>
             </div>
 
             {plugin.status === "disabled" ? (
@@ -500,7 +523,7 @@ export default function PluginViewPage() {
                 <button
                   type="button"
                   className="oc-btn oc-btn-primary"
-                  disabled={busy || publishScopes.length === 0}
+                  disabled={busy || deviceOwned || publishScopes.length === 0}
                   onClick={() =>
                     void run(async () => {
                       const result = await pluginApi.publish(plugin.id, {
@@ -516,6 +539,11 @@ export default function PluginViewPage() {
                   公開申請
                 </button>
               </div>
+              {deviceOwned ? (
+                <p className="oc-muted oc-small">
+                  ログインせずに保存したプラグインは公開できません。ログインすると引き継いで公開申請できます。
+                </p>
+              ) : null}
               <p className="oc-muted oc-small">
                 個人用/板用のみなら即時公開。site を含むと審査キューに入り、owner / 特別管理人の承認後に公開されます。
               </p>

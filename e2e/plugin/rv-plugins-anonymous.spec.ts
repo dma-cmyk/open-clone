@@ -158,12 +158,25 @@ test.describe("匿名ユーザーのプラグイン利用（B14）", () => {
     await page.goto(`/b/${encodeURIComponent(slug)}/t/${thread.data.threadId}`);
     await expect(page.locator("#p1 .oc-plugin-render-spoiler")).toHaveCount(0, { timeout: 15_000 });
 
-    // 9. 権限昇格なし: 匿名は作成できない
+    // 9. 権限昇格なし: 匿名の作成は scope=personal 専用（board/site を含む manifest は 403）
     const anonCreate = await request.post(`${API_BASE}/v1/plugins`, {
       headers: { Origin: ALLOWED_ORIGIN, "content-type": "application/json" },
-      data: { manifest: { name: unique("anon-create") }, code: "register({});" },
+      data: {
+        manifest: {
+          name: unique("anon-create").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 41),
+          version: "1.0.0",
+          summary: "権限確認",
+          scope: ["personal", "board"],
+          permissions: [],
+          connectAllowlist: [],
+          entry: "plugin.js",
+          slots: [],
+          hooks: [],
+        },
+        code: "register({});",
+      },
     });
-    expect(anonCreate.status()).toBe(401);
+    expect(anonCreate.status()).toBe(403);
 
     // Cookie は端末 Cookie（oc_did）だけになっている
     const cookies = await context.cookies();

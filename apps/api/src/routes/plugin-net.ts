@@ -8,7 +8,13 @@ import type { AppEnv } from "../lib/env";
 import { toErrorResponse } from "../lib/middleware/error";
 import { getReqCtx } from "../lib/context";
 import { requireRole } from "../lib/middleware/auth";
-import { pluginActorFrom, scopeRefFor } from "../services/plugins/access";
+import {
+  canViewDeviceOwnedPlugin,
+  isDeviceOwnedPlugin,
+  isPluginOwner,
+  pluginActorFrom,
+  scopeRefFor,
+} from "../services/plugins/access";
 import { findInstall, getPluginRow, parseManifest } from "../services/plugins/registry";
 import { assertNetRateLimit, logNetAttempt, proxyFetch, type NetCaller } from "../services/plugins/net";
 
@@ -33,8 +39,13 @@ app.post("/fetch", async (c) => {
   const plugin = await getPluginRow(c.env.DB, input.pluginId);
   if (!plugin) throw ApiError.notFound("プラグインが見つかりません");
 
-  const isOwner = actor.accountId !== null && plugin.owner_account_id === actor.accountId;
+  // 端末所有プラグインは所有端末・サイト運営以外に存在しないものとして扱う（報告 40）。
+  // net:fetch 自体も匿名作成では宣言できないため、所有端末でも権限チェックで拒否される。
+  if (isDeviceOwnedPlugin(plugin) && !canViewDeviceOwnedPlugin(actor, plugin)) {
+    throw ApiError.notFound("プラグインが見つかりません");
+  }
 
+  const isOwner = isPluginOwner(actor, plugin);
   const deny = async (error: ApiError): Promise<never> => {
     await logNetAttempt(c.env.DB, {
       pluginId: plugin.id,

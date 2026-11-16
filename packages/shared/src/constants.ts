@@ -27,9 +27,12 @@ export const HASHTAG_MAX_CHARS = 30;
 // --- プラグイン ---
 /** プラグインコード最大（D1 行 2MB 制限内の安全側） */
 export const PLUGIN_CODE_MAX_BYTES = 512 * 1024;
+/** 匿名（端末所有）作成のプラグインコード上限。アカウント所有は PLUGIN_CODE_MAX_BYTES。 */
+export const PLUGIN_ANON_CODE_MAX_BYTES = 64 * 1024;
+/** 端末あたりの匿名作成プラグイン保有数上限。 */
+export const PLUGIN_ANON_MAX_PER_DEVICE = 10;
 /** plugin_state の scope あたり容量上限 */
 export const PLUGIN_STATE_MAX_BYTES = 64 * 1024;
-/** プラグイン AI 連携（ai:complete）の入力・出力上限。外部 API の課金と悪用を抑える。 */
 export const PLUGIN_AI_PROMPT_MAX_CHARS = 4000;
 export const PLUGIN_AI_SYSTEM_MAX_CHARS = 2000;
 export const PLUGIN_AI_MAX_TOKENS = 512;
@@ -138,6 +141,12 @@ export const RATE_LIMITS = {
   pluginAi: { windowSeconds: 60, max: 10 },
   /** プラグイン作成トークン（トークン単位）。日次上限は plugin_author_usage で別途制御。 */
   pluginAuthor: { windowSeconds: 60, max: 30 },
+  /**
+   * 匿名（端末所有）プラグインの作成＋版追加（報告 40 設計）。
+   * 端末窓と IP 窓の両方に 1 日 20 回。Cookie を消して繰り返す抜け道を IP 側で抑える。
+   */
+  pluginAnonCreate: { windowSeconds: 86_400, max: 20 },
+  pluginAnonCreateIp: { windowSeconds: 86_400, max: 20 },
   /**
    * IP 単位の併用窓（Cookie を保存しないクライアントでも有効。H-3）。
    * pipeline では匿名（accountId なし）のみに適用する。ログイン済みは account/device で

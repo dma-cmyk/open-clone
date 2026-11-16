@@ -3,6 +3,7 @@
 
 import {
   ApiError,
+  PLUGIN_ANON_MAX_PER_DEVICE,
   PLUGIN_CODE_MAX_BYTES,
   PLUGIN_STATE_MAX_BYTES,
   manifestRiskLevel,
@@ -29,6 +30,8 @@ import {
 export interface PluginRow {
   id: string;
   owner_account_id: string | null;
+  /** 端末所有（匿名作成）。owner_account_id と排他。非 NULL なら端末所有、両方 NULL なら公式。 */
+  owner_device_hash: string | null;
   name: string;
   summary: string;
   description: string | null;
@@ -170,6 +173,12 @@ function rowToSummary(row: PluginRow): PluginSummary {
     owner: row.owner_account_id
       ? { id: row.owner_account_id, name: row.owner_name ?? "(不明)" }
       : null,
+    ownership:
+      row.owner_account_id !== null
+        ? "account"
+        : row.owner_device_hash !== null
+          ? "device"
+          : "official",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     publishedAt: row.published_at,
@@ -247,7 +256,14 @@ export async function getVersionRow(
     .first<VersionRow>();
 }
 
-/** 検索・一覧。cursor は offset の base64。 */
+/**
+ * 検索・一覧。cursor は offset の base64。
+ *
+ * 端末所有プラグイン（owner_device_hash 非 NULL）の扱い:
+ * - ownerDeviceHash を指定した場合のみ、その端末の所有行を返す（自分のプラグイン用）。
+ * - 指定がなければ公開一覧・検索・マイページのいずれにも出さない
+ *   （所有端末以外からは存在しないものとして扱う。報告 40 の設計）。
+ */
 export async function listPlugins(
   db: D1Database,
   options: {
@@ -257,9 +273,13 @@ export async function listPlugins(
     limit: number;
     cursor?: string;
     ownerAccountId?: string;
+    /** 端末所有のプラグインをこの端末のものに限定して返す（匿名の「自分のプラグイン」）。 */
+    ownerDeviceHash?: string;
     includeAllStatuses?: boolean;
     /** レジストリ状態での絞り込み（`/mcp-plugin` の authoring.list 用）。 */
     status?: PluginStatus;
+    /** サイト運営（isAdmin）の一覧。端末所有のプラグインも表示する管理用途。 */
+    includeDeviceOwned?: boolean;
   },
 ): Promise<PluginListPage> {
   const where: string[] = [];
@@ -268,6 +288,15 @@ export async function listPlugins(
   if (options.ownerAccountId) {
     where.push("p.owner_account_id = ?");
     params.push(options.ownerAccountId);
+  }
+  if (options.ownerDeviceHash) {
+    // 端末の「自分のプラグイン」: 端末所有行（＋後に引き継いだアカウント所有行は account 側で別途）
+    where.push("p.owner_device_hash = ?");
+    params.push(options.ownerDeviceHash);
+  }
+  if (!options.ownerDeviceHash && !options.includeDeviceOwned) {
+    // 公開一覧・検索・アカウントのマイページから端末所有を除外
+    where.push("p.owner_device_hash IS NULL");
   }
   if (options.status) {
     where.push("p.status = ?");
@@ -328,7 +357,10 @@ function encodeCursor(offset: number): string {
   return btoa(String(offset));
 }
 
-/** 詳細（バージョン・導入・閲覧者権限を含む）。 */
+/**
+ * 詳細（バージョン・導入・閲覧者権限を含む）。
+ * 端末所有プラグインは所有端末かサイト運営（isAdmin）以外に 404（存在しないものとして扱う）。
+ */
 export async function getPluginDetail(
   db: D1Database,
   row: PluginRow,
@@ -338,9 +370,21 @@ export async function getPluginDetail(
     isAdmin: boolean;
   },
 ): Promise<PluginDetail> {
-  const isOwner = viewer.accountId !== null && row.owner_account_id === viewer.accountId;
+  const deviceOwned = row.owner_account_id === null && row.owner_device_hash !== null;
+  // 所有者判定: アカウント所有（owner_account_id 一致）or 端末所有（匿名で device 一致）
+  const isOwner =
+    (row.owner_account_id !== null &&
+      viewer.accountId !== null &&
+      row.owner_account_id === viewer.accountId) ||
+    (deviceOwned &&
+      viewer.accountId === null &&
+      row.owner_device_hash === viewer.deviceHash);
   const canSeeUnapproved = isOwner || viewer.isAdmin;
 
+  // 端末所有は所有端末・サイト運営以外に見せない（板管理人も含む。報告 40 設計）
+  if (deviceOwned && !isOwner && !viewer.isAdmin) {
+    throw ApiError.notFound("プラグインが見つかりません");
+  }
   if (!canSeeUnapproved && (row.status !== "published" || row.visibility === "private")) {
     throw ApiError.notFound("プラグインが見つかりません");
   }
@@ -373,7 +417,10 @@ export async function getPluginDetail(
 // ─── 作成・版・公開 ────────────────────────────────────────────────
 
 export interface CreatePluginParams {
-  ownerAccountId: string;
+  /** アカウント所有者（ログイン時）。匿名作成では null。 */
+  ownerAccountId: string | null;
+  /** 端末所有者（匿名作成時）。ownerAccountId とは排他。両方 null は作成時に許さない。 */
+  ownerDeviceHash?: string | null;
   manifest: PluginManifest;
   code: string;
   changelog?: string;
@@ -387,6 +434,14 @@ export async function createPlugin(
   db: D1Database,
   params: CreatePluginParams,
 ): Promise<{ id: string; version: string; visibility: PluginVisibility }> {
+  // 排他の強制: 両方 null（公式を名乗る）は作成経路では許さない
+  if (params.ownerAccountId === null && !params.ownerDeviceHash) {
+    throw ApiError.validation("所有者（アカウントまたは端末）が必要です");
+  }
+  if (params.ownerAccountId !== null && params.ownerDeviceHash) {
+    throw ApiError.validation("アカウント所有と端末所有を同時には設定できません");
+  }
+
   const existing = await db
     .prepare("SELECT id FROM plugins WHERE name = ?")
     .bind(params.manifest.name)
@@ -397,49 +452,124 @@ export async function createPlugin(
   const timestamp = now();
   const codeHash = await sha256Hex(params.code);
 
-  await db.batch([
-    db
-      .prepare(
-        `INSERT INTO plugins (
-           id, owner_account_id, name, summary, description, manifest_json, scopes,
-           status, visibility, latest_version, source, source_ref,
-           install_count, report_count, flagged, license, kill_seq,
-           created_at, updated_at, published_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, 0, 0, 0, ?, 0, ?, ?, NULL)`,
-      )
-      .bind(
-        id,
-        params.ownerAccountId,
-        params.manifest.name,
-        params.manifest.summary,
-        params.manifest.description ?? null,
-        JSON.stringify(params.manifest),
-        scopesCsv(params.manifest.scope),
-        params.visibility,
-        params.manifest.version,
-        params.source ?? "local",
-        params.sourceRef ?? null,
-        params.manifest.license ?? null,
-        timestamp,
-        timestamp,
-      ),
-    db
-      .prepare(
-        `INSERT INTO plugin_versions
-           (plugin_id, version, code, code_hash, manifest_json, changelog, status, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, ?)`,
-      )
-      .bind(
-        id,
-        params.manifest.version,
-        params.code,
-        codeHash,
-        JSON.stringify(params.manifest),
-        params.changelog ?? null,
-        params.ownerAccountId,
-        timestamp,
-      ),
-  ]);
+  // R42-01 + R44-03: 端末あたりの保有数上限を INSERT の条件に入れて原子的に保証し、
+  // 本体と初期版を同じバッチ（= 1 トランザクション）で保存する。
+  //
+  // 構造:
+  // 1. 端末所有: 条件付き INSERT（上限 < 10 のときだけ本体を挿入）
+  //    + 条件付き INSERT の版（本体が挿入された場合だけ版を挿入）
+  // 2. アカウント所有: 従来どおり無条件 INSERT × 2 をバッチで
+  //
+  // 上限に達した場合（本体が 0 行）は版の条件（EXISTS）も不成立になるため、
+  // 版は挿入されず、バッチ全体が成功（0 changes）として完了する。
+  // その後 changes を確認して 403 を返す。
+  if (params.ownerDeviceHash) {
+    const results = await db.batch([
+      // 本体: 端末あたり 10 個未満のときだけ挿入（1 文 = アトミック）
+      db
+        .prepare(
+          `INSERT INTO plugins (
+             id, owner_account_id, owner_device_hash, name, summary, description, manifest_json, scopes,
+             status, visibility, latest_version, source, source_ref,
+             install_count, report_count, flagged, license, kill_seq,
+             created_at, updated_at, published_at
+           )
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, 0, 0, 0, ?, 0, ?, ?, NULL
+           WHERE (SELECT COUNT(*) FROM plugins WHERE owner_device_hash = ?) < ?`,
+        )
+        .bind(
+          id,
+          params.ownerAccountId,
+          params.ownerDeviceHash,
+          params.manifest.name,
+          params.manifest.summary,
+          params.manifest.description ?? null,
+          JSON.stringify(params.manifest),
+          scopesCsv(params.manifest.scope),
+          params.visibility,
+          params.manifest.version,
+          params.source ?? "local",
+          params.sourceRef ?? null,
+          params.manifest.license ?? null,
+          timestamp,
+          timestamp,
+          params.ownerDeviceHash,
+          PLUGIN_ANON_MAX_PER_DEVICE,
+        ),
+      // 版: 本体が挿入された場合だけ挿入（EXISTS で確認。上限で本体が 0 行なら版も 0 行）
+      db
+        .prepare(
+          `INSERT INTO plugin_versions
+             (plugin_id, version, code, code_hash, manifest_json, changelog, status, created_by, created_at)
+           SELECT ?, ?, ?, ?, ?, ?, 'approved', ?, ?
+           WHERE EXISTS (SELECT 1 FROM plugins WHERE id = ?)`,
+        )
+        .bind(
+          id,
+          params.manifest.version,
+          params.code,
+          codeHash,
+          JSON.stringify(params.manifest),
+          params.changelog ?? null,
+          params.ownerAccountId,
+          timestamp,
+          id,
+        ),
+    ]);
+    const parentResult = results[0];
+    if ((parentResult?.meta.changes ?? 0) === 0) {
+      // 上限超過（本体が挿入されず、版も挿入されていない = アトミック）
+      throw ApiError.forbidden(
+        `このブラウザで作れるプラグインは ${PLUGIN_ANON_MAX_PER_DEVICE} 個までです。不要なものを削除するか、ログインして引き継いでください`,
+      );
+    }
+  } else {
+    // アカウント所有: 従来どおり本体・版を 1 バッチで（元の原子性）
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO plugins (
+             id, owner_account_id, owner_device_hash, name, summary, description, manifest_json, scopes,
+             status, visibility, latest_version, source, source_ref,
+             install_count, report_count, flagged, license, kill_seq,
+             created_at, updated_at, published_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, 0, 0, 0, ?, 0, ?, ?, NULL)`,
+        )
+        .bind(
+          id,
+          params.ownerAccountId,
+          params.ownerDeviceHash ?? null,
+          params.manifest.name,
+          params.manifest.summary,
+          params.manifest.description ?? null,
+          JSON.stringify(params.manifest),
+          scopesCsv(params.manifest.scope),
+          params.visibility,
+          params.manifest.version,
+          params.source ?? "local",
+          params.sourceRef ?? null,
+          params.manifest.license ?? null,
+          timestamp,
+          timestamp,
+        ),
+      db
+        .prepare(
+          `INSERT INTO plugin_versions
+             (plugin_id, version, code, code_hash, manifest_json, changelog, status, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'approved', ?, ?)`,
+        )
+        .bind(
+          id,
+          params.manifest.version,
+          params.code,
+          codeHash,
+          JSON.stringify(params.manifest),
+          params.changelog ?? null,
+          params.ownerAccountId,
+          timestamp,
+        ),
+    ]);
+  }
 
   return { id, version: params.manifest.version, visibility: params.visibility };
 }
@@ -456,7 +586,7 @@ export async function addVersion(
     manifest?: PluginManifest;
     code: string;
     changelog?: string;
-    actorAccountId: string;
+    actorAccountId: string | null;
   },
 ): Promise<{ version: string; manifest: PluginManifest }> {
   const manifest = params.manifest ?? parseManifest(plugin.manifest_json);
@@ -839,25 +969,51 @@ export async function setInstallEnabled(db: D1Database, installId: string, enabl
 export const OWN_INSTALL_CONDITION = `scope = 'personal' AND installed_by IS NOT NULL AND ? IS NOT NULL AND installed_by = ?`;
 
 /**
- * 作者以外の導入の件数（レビュー B4-R1 の削除保護。R1-N: NULL 安全版）。
+ * 作者以外の導入の件数（レビュー B4-R1 の削除保護。R1-N: NULL 安全版＋端末所有対応）。
  * - board / site スコープは常に「他者への影響がある導入」として数える。
- * - personal は OWN_INSTALL_CONDITION を満たすものだけを作者自身とみなす。
- *   匿名端末（device:）・installed_by=NULL・owner=NULL（公式）は全て保護対象。
+ * - personal は「作者自身の導入」だけを除外する:
+ *   - アカウント所有: installed_by が非 NULL で作者アカウント ID と一致
+ *   - 端末所有: installed_by が非 NULL で owner_device_hash の `device:` スコープ ref と一致
+ *   - 公式（両方 NULL）: 誰の導入も作者本人にならない（全件保護）
+ * - 匿名端末の device 不一致・installed_by=NULL・帰属不明は全て保護対象。
  */
 export async function countForeignInstalls(
   db: D1Database,
   pluginId: string,
-  ownerAccountId: string | null,
+  ownership: { ownerAccountId: string | null; ownerDeviceHash: string | null },
 ): Promise<number> {
   const row = await db
     .prepare(
       `SELECT COUNT(*) AS n FROM plugin_installs
        WHERE plugin_id = ?
-         AND NOT (${OWN_INSTALL_CONDITION})`,
+         AND NOT (${ownInstallConditionFor(ownership)})`,
     )
-    .bind(pluginId, ownerAccountId, ownerAccountId)
+    .bind(...ownInstallBindingsFor(ownership, [pluginId]))
     .first<{ n: number }>();
   return row?.n ?? 0;
+}
+
+/** 作者自身の導入の条件（ownership に応じOWN_INSTALL_CONDITION か端末版を選ぶ）。 */
+function ownInstallConditionFor(ownership: {
+  ownerAccountId: string | null;
+  ownerDeviceHash: string | null;
+}): string {
+  if (ownership.ownerDeviceHash) {
+    // 端末所有: その端末の個人用導入（scope_ref と installed_by の両方が device:<hash>）
+    return `scope = 'personal' AND installed_by IS NOT NULL AND installed_by = ?`;
+  }
+  return OWN_INSTALL_CONDITION;
+}
+
+/** ownInstallConditionFor の `?` に束縛する値（prefix = 事前に束縛済みの値の並び）。 */
+function ownInstallBindingsFor(
+  ownership: { ownerAccountId: string | null; ownerDeviceHash: string | null },
+  prefix: unknown[],
+): unknown[] {
+  if (ownership.ownerDeviceHash) {
+    return [...prefix, `device:${ownership.ownerDeviceHash}`];
+  }
+  return [...prefix, ownership.ownerAccountId, ownership.ownerAccountId];
 }
 
 /**
@@ -879,35 +1035,25 @@ export async function countForeignInstalls(
 export async function deletePlugin(
   db: D1Database,
   pluginId: string,
-  ownerAccountId: string | null,
+  ownership: { ownerAccountId: string | null; ownerDeviceHash: string | null },
 ): Promise<{ deleted: boolean }> {
-  // 「他者の導入が 1 件も存在しない」こと（R1-N の NULL 安全条件）。
+  const own = ownInstallConditionFor(ownership);
   const noForeign = `NOT EXISTS (
     SELECT 1 FROM plugin_installs
-    WHERE plugin_id = ? AND NOT (${OWN_INSTALL_CONDITION})
+    WHERE plugin_id = ? AND NOT (${own})
   )`;
+  // 全文共通の束縛値（plugin_id ×2 + 本人条件の値）。binds() の重複を避けるため一度だけ作る。
+  const bindValues = ownInstallBindingsFor(ownership, [pluginId, pluginId]);
 
   // 1 バッチ = 1 トランザクション。各文が同じ条件を再判定するため、
   // 途中の文で保護条件が変わっても（並行導入）、以降の文は何も消さない。
   const results = await db.batch([
-    db
-      .prepare(`DELETE FROM plugin_installs WHERE plugin_id = ? AND ${noForeign}`)
-      .bind(pluginId, pluginId, ownerAccountId, ownerAccountId),
-    db
-      .prepare(`DELETE FROM plugin_state WHERE plugin_id = ? AND ${noForeign}`)
-      .bind(pluginId, pluginId, ownerAccountId, ownerAccountId),
-    db
-      .prepare(`DELETE FROM plugin_reviews WHERE plugin_id = ? AND ${noForeign}`)
-      .bind(pluginId, pluginId, ownerAccountId, ownerAccountId),
-    db
-      .prepare(`DELETE FROM plugin_reports WHERE plugin_id = ? AND ${noForeign}`)
-      .bind(pluginId, pluginId, ownerAccountId, ownerAccountId),
-    db
-      .prepare(`DELETE FROM plugin_versions WHERE plugin_id = ? AND ${noForeign}`)
-      .bind(pluginId, pluginId, ownerAccountId, ownerAccountId),
-    db
-      .prepare(`DELETE FROM plugins WHERE id = ? AND ${noForeign}`)
-      .bind(pluginId, pluginId, ownerAccountId, ownerAccountId),
+    db.prepare(`DELETE FROM plugin_installs WHERE plugin_id = ? AND ${noForeign}`).bind(...bindValues),
+    db.prepare(`DELETE FROM plugin_state WHERE plugin_id = ? AND ${noForeign}`).bind(...bindValues),
+    db.prepare(`DELETE FROM plugin_reviews WHERE plugin_id = ? AND ${noForeign}`).bind(...bindValues),
+    db.prepare(`DELETE FROM plugin_reports WHERE plugin_id = ? AND ${noForeign}`).bind(...bindValues),
+    db.prepare(`DELETE FROM plugin_versions WHERE plugin_id = ? AND ${noForeign}`).bind(...bindValues),
+    db.prepare(`DELETE FROM plugins WHERE id = ? AND ${noForeign}`).bind(...bindValues),
   ]);
 
   // 本体（最後の文）が削除できたかで成否を判定する。
@@ -917,7 +1063,12 @@ export async function deletePlugin(
 /** ページに適用される導入（personal + その板 + site）。停止済みも stopped フラグ付きで返す。 */
 export async function listActiveInstalls(
   db: D1Database,
-  params: { scopeRefs: { scope: PluginScope; ref: string }[]; viewerAccountId?: string | null },
+  params: {
+    scopeRefs: { scope: PluginScope; ref: string }[];
+    viewerAccountId?: string | null;
+    /** R42-06: 端末所有者の判定用（未公開新版の本人プレビューを許す） */
+    viewerDeviceHash?: string | null;
+  },
 ): Promise<PluginActiveInstall[]> {
   const clauses = params.scopeRefs.map(() => "(i.scope = ? AND i.scope_ref = ?)");
   if (params.scopeRefs.length === 0) return [];
@@ -928,8 +1079,8 @@ export async function listActiveInstalls(
 
   const result = await db
     .prepare(
-      `SELECT i.*, p.name, p.status AS plugin_status, p.owner_account_id, p.manifest_json AS plugin_manifest,
-              v.manifest_json AS version_manifest, v.status AS version_status
+      `SELECT i.*, p.name, p.status AS plugin_status, p.owner_account_id, p.owner_device_hash,
+              p.manifest_json AS plugin_manifest, v.manifest_json AS version_manifest, v.status AS version_status
        FROM plugin_installs i
        JOIN plugins p ON p.id = i.plugin_id
        LEFT JOIN plugin_versions v ON v.plugin_id = i.plugin_id AND v.version = i.version
@@ -942,6 +1093,7 @@ export async function listActiveInstalls(
         name: string;
         plugin_status: PluginStatus;
         owner_account_id: string | null;
+        owner_device_hash: string | null;
         plugin_manifest: string;
         version_manifest: string | null;
         version_status: string | null;
@@ -949,10 +1101,16 @@ export async function listActiveInstalls(
     >();
 
   return (result.results ?? []).map((row) => {
+    // R42-06: 所有者の本人プレビュー判定に端末所有を加える。
+    // - アカウント所有: viewerAccountId が owner_account_id と一致
+    // - 端末所有: viewerDeviceHash が owner_device_hash と一致（かつ viewerAccountId は null、
+    //   つまり匿名のリクエスト。NULL 同士（公式）を本人と扱わない条件）
     const ownerPreview =
       row.scope === "personal" &&
-      params.viewerAccountId != null &&
-      row.owner_account_id === params.viewerAccountId;
+      ((params.viewerAccountId != null && row.owner_account_id === params.viewerAccountId) ||
+        (params.viewerAccountId == null &&
+          row.owner_device_hash !== null &&
+          row.owner_device_hash === params.viewerDeviceHash));
     // 停止理由を分けて返す（レビュー B5: 表示と実際の効果を一致させる）。
     let stoppedReason: string | null = null;
     if (row.plugin_status === "disabled") {

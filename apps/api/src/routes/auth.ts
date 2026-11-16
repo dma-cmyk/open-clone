@@ -35,6 +35,7 @@ import { attemptKey, cleanupOldAttempts, countAttemptsSince, recordAttempt } fro
 import { grantStepUp, requireStepUp } from "../services/account/step-up";
 import { completeGithubLogin, githubLoginAvailable, startGithubLogin } from "../services/account/github-login";
 import { accountDto, buildAuthSession, getAccountRow, type AccountRow } from "../services/account/view";
+import { transferDeviceOwnedPlugins } from "../services/plugins/device-transfer";
 
 const app = new Hono<AppEnv>();
 
@@ -121,7 +122,14 @@ app.post("/register", requireTurnstile({ required: false }), async (c) => {
 
   const session = await createSession(db, accountId, c.req.header("user-agent") ?? null);
   setCookie(c, SESSION_COOKIE, session.token, sessionCookieOptions(c.env));
-
+  // 同じ端末の所有プラグインをアカウントへ引き継ぐ（報告 40 設計）。
+  // 同期で実行する: ログイン直後の「自分のプラグイン」一覧に反映されるようにするため。
+  // 失敗しても登録自体は止めない（引き継ぎは次のログインで再試行できる）。
+  try {
+    await transferDeviceOwnedPlugins(db, ctx.device.deviceHash, accountId);
+  } catch {
+    // 引き継ぎ失敗は登録を落とさない
+  }
   const row = await getAccountRow(db, accountId);
   if (!row) throw new Error("Failed to load created account");
   await writeAudit(db, {
@@ -202,6 +210,14 @@ app.post("/login", requireTurnstile({ required: false }), async (c) => {
   if (totpEnabled) await grantStepUp(db, session.tokenHash, account.id);
   await recordAttempt(db, "login_ok", keyHash, account.id);
   setCookie(c, SESSION_COOKIE, session.token, sessionCookieOptions(c.env));
+  // 同じ端末の所有プラグインをアカウントへ引き継ぐ（報告 40 設計）。
+  // 同期で実行する: ログイン直後の「自分のプラグイン」一覧に反映されるようにするため。
+  // 失敗してもログイン自体は止めない（引き継ぎは次のログインで再試行できる）。
+  try {
+    await transferDeviceOwnedPlugins(db, ctx.device.deviceHash, account.id);
+  } catch {
+    // 引き継ぎ失敗はログインを落とさない
+  }
   await writeAudit(db, {
     actorType: auditActor(account.role),
     actorId: account.id,
@@ -376,6 +392,13 @@ app.post("/github/callback", async (c) => {
     userAgent: c.req.header("user-agent") ?? null,
   });
   setCookie(c, SESSION_COOKIE, result.token, sessionCookieOptions(c.env));
+  // R42-05: GitHub ログインでもパスワードと同じく端末所有プラグインを引き継ぐ（同期）。
+  const ctx = getReqCtx(c);
+  try {
+    await transferDeviceOwnedPlugins(c.env.DB, ctx.device.deviceHash, result.account.id);
+  } catch {
+    // 引き継ぎ失敗はログインを落とさない
+  }
   await writeAudit(c.env.DB, {
     actorType: "account",
     actorId: result.account.id,

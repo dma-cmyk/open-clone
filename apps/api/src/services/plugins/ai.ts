@@ -20,7 +20,13 @@ import { checkRateLimit } from "../../lib/do";
 import { assertPublicHttpsUrl } from "../../lib/url-safety";
 import { getSiteSettings } from "../account/site-config";
 import { readEnvSecret } from "../env-secrets";
-import { scopeRefFor, type PluginActor } from "./access";
+import {
+  canViewDeviceOwnedPlugin,
+  isDeviceOwnedPlugin,
+  isPluginOwner,
+  scopeRefFor,
+  type PluginActor,
+} from "./access";
 import {
   findInstall,
   getPluginRow,
@@ -169,7 +175,12 @@ export async function completePluginAi(
     deviceHash: caller.deviceHash,
     isAdmin: false,
   };
-  const isOwner = caller.accountId !== null && plugin.owner_account_id === caller.accountId;
+  // 端末所有プラグインは所有端末以外に存在しないものとして扱う（報告 40）。
+  // ai:complete 自体も匿名作成では宣言できないため、所有端末でも権限チェックで拒否される。
+  if (isDeviceOwnedPlugin(plugin) && !canViewDeviceOwnedPlugin(actor, plugin)) {
+    throw ApiError.notFound("プラグインが見つかりません");
+  }
+  const isOwner = isPluginOwner(actor, plugin);
 
   const scopeRef = scopeRefFor(input.scope, actor, input.boardId);
   const install = await findInstall(env.DB, plugin.id, input.scope, scopeRef);

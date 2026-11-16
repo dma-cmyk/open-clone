@@ -29,6 +29,7 @@ import {
   type RenderSample,
 } from "@/features/plugin-templates";
 import { PluginApiError, pluginApi } from "@/features/plugin-host";
+import { useSession } from "@/features/account/session";
 import {
   Badge,
   Card,
@@ -49,6 +50,11 @@ interface SavedPlugin {
 
 export default function PluginTemplatesPage() {
   const queryTemplate = useQueryParam("template");
+  const { state: session } = useSession();
+  const loggedIn = session?.authenticated === true;
+  // R42-07: 読み込み中（session === null）は匿名確定と扱わない
+  const sessionLoaded = session !== null;
+  const anonymous = sessionLoaded && !loggedIn;
   const [step, setStep] = useState<Step>("select");
   const [template, setTemplate] = useState<PluginTemplateDefinition | null>(null);
   const [formState, setFormState] = useState<FormState>({});
@@ -63,7 +69,6 @@ export default function PluginTemplatesPage() {
   const [error, setError] = useState<string | null>(null);
   const [needLogin, setNeedLogin] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-
   const validation = useMemo(
     () => (template ? validateForm(template, formState) : null),
     [template, formState],
@@ -190,8 +195,14 @@ export default function PluginTemplatesPage() {
         setError("静的検査に合格しなかったため保存できません。理由を確認してください。");
         return;
       }
+      // 報告 40: 匿名確定（authenticated === false）は personal 専用で private 固定。
+      // テンプレートの既定 manifest は全スコープを含むため、ここで絞る。
+      // 読み込み中（session 未確定）はログイン済み扱い（正規化しない）。
+      const manifestForSave = anonymous
+        ? { ...prepared.draft.manifest, scope: ["personal" as const] }
+        : prepared.draft.manifest;
       const created = await pluginApi.create({
-        manifest: prepared.draft.manifest,
+        manifest: manifestForSave,
         code: prepared.draft.code,
         visibility: "private",
         changelog: templateChangelog(template.id),
@@ -222,10 +233,17 @@ export default function PluginTemplatesPage() {
     // 既定値で埋めて遷移せず、フォーム上に保存時と同じエラーを表示する（UI Low-2）。
     const draft = draftOnly();
     if (!draft) return;
+    // R42-07: 匿名確定（authenticated === false）のみ personal 専用に正規化してエディタへ渡す。
+    // テンプレートの既定 manifest は全スコープを含むため、そのまま渡すと
+    // エディタで board/site がチェック済みのまま保存が 403 になる。
+    // 読み込み中はログイン済み扱い（正規化しない）。
+    const manifestForEditor = anonymous
+      ? { ...draft.manifest, scope: ["personal" as const] }
+      : draft.manifest;
     const stored = saveTemplateDraft({
       templateId: template.id,
       values: draft.values,
-      manifest: draft.manifest,
+      manifest: manifestForEditor,
       code: draft.code,
     });
     if (!stored) {
@@ -270,6 +288,13 @@ export default function PluginTemplatesPage() {
         {error ? <Notice tone="danger">{error}</Notice> : null}
         {notice ? <Notice tone="ok">{notice}</Notice> : null}
       </div>
+      {/* 報告 40: 匿名でも保存できる前提の案内（保存ボタンの近くに常に表示） */}
+      <Notice tone="warn">
+        ログインせずに保存したプラグインは、このブラウザでだけ編集できます。Cookie
+        を消すと編集できなくなります。公開申請や板への導入にはアカウントが必要です（
+        <a href="/account/login">ログイン</a>
+        すると引き継げます）。
+      </Notice>
 
       {step === "select" ? (
         <>

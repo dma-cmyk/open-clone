@@ -74,11 +74,11 @@ test.describe("証拠スクリーンショット（B3/B7/B10/B11/B12/B13/B14）"
     expect(overflow).toBe(false);
   });
 
-  // B13/B14: 未ログインの一覧と導入
-  test("B13: 未ログインで mine タブはログイン導線（0 件と出さない）", async ({ page, context }) => {
+  // B13/B14: 未ログインの一覧と導入（40 以降: 匿名でも mine が使える）
+  test("B13: 未ログインで mine タブは自分の端末の一覧（空なら空の案内）", async ({ page, context }) => {
     await context.clearCookies();
     await page.goto("/plugins/?tab=mine");
-    await expect(page.getByText("自分のプラグインを表示するにはログインが必要です。")).toBeVisible({
+    await expect(page.getByText("該当するプラグインがありません。")).toBeVisible({
       timeout: 15_000,
     });
     await shot(page, "b13-loggedout-mine-pc");
@@ -88,7 +88,7 @@ test.describe("証拠スクリーンショット（B3/B7/B10/B11/B12/B13/B14）"
     await context.clearCookies();
     await page.setViewportSize({ width: 360, height: 740 });
     await page.goto("/plugins/?tab=mine");
-    await expect(page.getByText("自分のプラグインを表示するにはログインが必要です。")).toBeVisible({
+    await expect(page.getByText("該当するプラグインがありません。")).toBeVisible({
       timeout: 15_000,
     });
     await shot(page, "b13-loggedout-mine-360");

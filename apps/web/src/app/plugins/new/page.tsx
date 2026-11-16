@@ -18,6 +18,7 @@ import {
   type PluginStaticCheckResult,
 } from "shared";
 import { PluginPreview, pluginApi } from "@/features/plugin-host";
+import { useSession } from "@/features/account/session";
 import { takeTemplateDraft } from "@/features/plugin-templates";
 import { PLUGIN_TEMPLATES } from "../_examples";
 import {
@@ -101,7 +102,13 @@ export default function PluginEditorPage() {
   const [previewSlot, setPreviewSlot] = useState<PluginSlotName>("thread-post-inline");
   const [messages, setMessages] = useState<string[]>([]);
   const [visibility, setVisibility] = useState<"private" | "unlisted" | "public">("private");
-
+  // 報告 40: 匿名（未ログイン）でも保存できる。匿名ではスコープ・権限・公開に制約を出す。
+  // R42-07: session は初回 null（読み込み中）。匿名確定（ authenticated === false ）と
+  // 読み込み中を区別するため、確定前はログイン済み扱い（正規化しない）にする。
+  const { state: session } = useSession();
+  const sessionLoaded = session !== null;
+  const loggedIn = session?.authenticated === true;
+  const anonymous = sessionLoaded && !loggedIn;
   const renderRules = useMemo<{ rules: PluginPostRenderRule[]; error: string | null }>(() => {
     try {
       const parsed: unknown = JSON.parse(renderText || "[]");
@@ -177,25 +184,31 @@ export default function PluginEditorPage() {
     };
   }, [editId]);
 
-  const applyTemplate = useCallback((templateId: string) => {
-    const template = PLUGIN_TEMPLATES.find((item) => item.id === templateId);
-    if (!template) return;
-    setName(template.name);
-    setVersion(template.version);
-    setSummary(template.summary);
-    setDescription(template.description);
-    setScopes(template.scopes);
-    setPermissions(template.permissions);
-    setSlots(template.slots);
-    setAllowlistText(template.connectAllowlist.join("\n"));
-    setRenderText(JSON.stringify(template.render, null, 2));
-    setCode(template.code);
-    setPreviewSlot(template.slots[0] ?? "thread-post-inline");
-    setPreviewRunId((value) => value + 1);
-    setNotice(`サンプル「${template.label}」を読み込みました`);
-    setCheckResult(null);
-    setCheckWarnings([]);
-  }, []);
+  const applyTemplate = useCallback(
+    (templateId: string) => {
+      const template = PLUGIN_TEMPLATES.find((item) => item.id === templateId);
+      if (!template) return;
+      setName(template.name);
+      setVersion(template.version);
+      setSummary(template.summary);
+      setDescription(template.description);
+      // R42-07: 匿名確定（authenticated === false）は personal 専用に正規化する。
+      // 読み込み中は既定のまま（ログイン済みの破壊を避ける）。サンプルの既定は
+      // 全スコープを含むため、匿名でそのままセットすると保存が 403 になる。
+      setScopes(anonymous ? ["personal"] : template.scopes);
+      setPermissions(template.permissions);
+      setSlots(template.slots);
+      setAllowlistText(template.connectAllowlist.join("\n"));
+      setRenderText(JSON.stringify(template.render, null, 2));
+      setCode(template.code);
+      setPreviewSlot(template.slots[0] ?? "thread-post-inline");
+      setPreviewRunId((value) => value + 1);
+      setNotice(`サンプル「${template.label}」を読み込みました`);
+      setCheckResult(null);
+      setCheckWarnings([]);
+    },
+    [anonymous],
+  );
 
   // テンプレートからの受け渡し（報告書 27 §4.6 / 29 決定 7）。
   // - `?from=template`: /plugins/templates で入力済みの { manifest, code } を sessionStorage から 1 回読む
@@ -204,6 +217,10 @@ export default function PluginEditorPage() {
   // StrictMode の effect 二重実行で sessionStorage を 2 回読まないよう、一度だけ実行する。
   const templateInitRef = useRef(false);
   useEffect(() => {
+    // R44-02: セッションが確定するまで実行しない（templateInitRef を消費しない）。
+    // セッション未確定（null）のときに読み込むと anonymous が false（ログイン済み扱い）
+    // になり、匿名の禁止スコープ（board/site）がチェック済みのまま残る。
+    if (!sessionLoaded) return;
     if (templateInitRef.current) return;
     templateInitRef.current = true;
     const params = new URLSearchParams(window.location.search);
@@ -217,7 +234,9 @@ export default function PluginEditorPage() {
       setVersion(draft.manifest.version);
       setSummary(draft.manifest.summary);
       setDescription(draft.manifest.description ?? "");
-      setScopes(draft.manifest.scope);
+      // R42-07 / R44-02: 匿名確定後のみ personal 専用に正規化。
+      // セッション確定を待ってから実行するため、anonymous は正しい値。
+      setScopes(anonymous ? ["personal"] : draft.manifest.scope);
       setPermissions(draft.manifest.permissions);
       setSlots(draft.manifest.slots);
       setAllowlistText(draft.manifest.connectAllowlist.join("\n"));
@@ -232,7 +251,7 @@ export default function PluginEditorPage() {
     if (!templateId) return;
     if (PLUGIN_TEMPLATES.some((template) => template.id === templateId)) applyTemplate(templateId);
     else setError("指定されたテンプレートが見つかりません。");
-  }, [applyTemplate]);
+  }, [applyTemplate, anonymous, sessionLoaded]);
 
   async function runCheck() {
     // B10: 名前欄が空・不正なら、名前欄のそばに理由を出して先に止める。
@@ -352,6 +371,15 @@ export default function PluginEditorPage() {
       {error ? <Notice tone="danger">{error}</Notice> : null}
       {notice ? <Notice tone="ok">{notice}</Notice> : null}
       {loading ? <p className="oc-muted oc-small">読み込み中…</p> : null}
+      {/* 報告 40: 匿名でも保存できる前提の案内（保存ボタンの近くに常に表示） */}
+      {!loggedIn ? (
+        <Notice tone="warn">
+          ログインせずに保存したプラグインは、このブラウザでだけ編集できます。Cookie
+          を消すと編集できなくなります。公開申請や板への導入にはアカウントが必要です（
+          <a href="/account/login">ログイン</a>
+          すると引き継げます）。
+        </Notice>
+      ) : null}
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
         <div style={{ flex: "1 1 460px", minWidth: 320 }}>
@@ -396,33 +424,69 @@ export default function PluginEditorPage() {
               />
             </Field>
 
-            <Field label="適用スコープ（公開申請・manifest 共通）">
+            <Field
+              label="適用スコープ（公開申請・manifest 共通）"
+              hint={loggedIn ? undefined : "ログインせずに保存できるのは個人用のみです"}
+            >
               <div style={{ ...ui.row, marginTop: 4 }}>
-                {PLUGIN_SCOPES.map((scope) => (
-                  <label key={scope} style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12 }}>
-                    <input
-                      type="checkbox"
-                      checked={scopes.includes(scope)}
-                      onChange={() => setScopes(toggle(scopes, scope))}
-                    />
-                    {scope === "personal" ? "個人用" : scope === "board" ? "板用" : "サイト全体"}
-                  </label>
-                ))}
+                {PLUGIN_SCOPES.map((scope) => {
+                  const anonBlocked = anonymous && scope !== "personal";
+                  return (
+                    <label
+                      key={scope}
+                      style={{
+                        display: "flex",
+                        gap: 4,
+                        alignItems: "center",
+                        fontSize: 12,
+                        opacity: anonBlocked ? 0.5 : 1,
+                      }}
+                      title={anonBlocked ? "ログインすると選べます" : undefined}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={scopes.includes(scope)}
+                        disabled={anonBlocked}
+                        onChange={() => setScopes(toggle(scopes, scope))}
+                      />
+                      {scope === "personal" ? "個人用" : scope === "board" ? "板用" : "サイト全体"}
+                    </label>
+                  );
+                })}
               </div>
             </Field>
 
-            <Field label="権限（manifest.permissions）">
+            <Field
+              label="権限（manifest.permissions）"
+              hint={loggedIn ? undefined : "外部通信・費用が発生する権限にはアカウントが必要です"}
+            >
               <div style={{ ...ui.row, marginTop: 4 }}>
-                {PLUGIN_PERMISSIONS.map((permission) => (
-                  <label key={permission} style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12 }}>
-                    <input
-                      type="checkbox"
-                      checked={permissions.includes(permission)}
-                      onChange={() => setPermissions(toggle(permissions, permission))}
-                    />
-                    {permission}
-                  </label>
-                ))}
+                {PLUGIN_PERMISSIONS.map((permission) => {
+                  const anonBlocked =
+                    anonymous &&
+                    ["net:fetch", "ai:complete", "upload:start", "github:gist", "github:repo"].includes(permission);
+                  return (
+                    <label
+                      key={permission}
+                      style={{
+                        display: "flex",
+                        gap: 4,
+                        alignItems: "center",
+                        fontSize: 12,
+                        opacity: anonBlocked ? 0.5 : 1,
+                      }}
+                      title={anonBlocked ? "ログインすると選べます" : undefined}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={permissions.includes(permission)}
+                        disabled={anonBlocked}
+                        onChange={() => setPermissions(toggle(permissions, permission))}
+                      />
+                      {permission}
+                    </label>
+                  );
+                })}
               </div>
             </Field>
 
