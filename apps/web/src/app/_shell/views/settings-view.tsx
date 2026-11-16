@@ -28,7 +28,7 @@ function NgSection() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   return (
-    <section className="oc-settings-section">
+    <section className="oc-settings-section" data-tour="settings-ng">
       <h2>NG 設定</h2>
       <div className="oc-surface">
         <div className="oc-row">
