@@ -42,6 +42,18 @@ export const boardSettingsSchema = z.object({
   forceSage: z.boolean().default(false),
   /** アカウント作成可能な板数（サイト既定の上書き。null = 既定値） */
   maxBoardsPerAccount: z.number().int().min(1).max(50).nullable().default(null),
+  /** レスの本人編集を許可 */
+  allowPostEdit: z.boolean().default(true),
+  /** レスの本人削除を許可 */
+  allowPostDelete: z.boolean().default(true),
+  /** スレ（>>1）の本人編集を許可 */
+  allowThreadEdit: z.boolean().default(true),
+  /** スレの本人削除を許可 */
+  allowThreadDelete: z.boolean().default(true),
+  /** 引用スレを許可 */
+  allowQuoteThread: z.boolean().default(true),
+  /** 本人が編集・削除できる時間（分）。0 = 無制限 */
+  selfEditWindowMinutes: z.number().int().min(0).max(525600).default(0),
 });
 export type BoardSettings = z.infer<typeof boardSettingsSchema>;
 

@@ -12,8 +12,12 @@ import {
 } from "@/features/plugin-host/render-rules";
 import { requestRenderSegments } from "@/features/plugin-host/render-worker-client";
 import { mediaKind } from "./format";
+import { api } from "./api";
 
-const TOKEN = /(>>\d+(?:[-,]\d+)*)|(https?:\/\/[^\s<>"）]+)|(\|\|[^|\n]+\|\|)/g;
+// 自サイトのスレ相対パス（/b/<slug>/t/<id>）も URL トークンとして捕まえる（引用スレカード用）。
+const TOKEN = /(>>\d+(?:[-,]\d+)*)|(https?:\/\/[^\s<>"）]+)|(\/b\/[a-z0-9_-]+\/t\/\d+(?:[^\s<>"）]*))|(\|\|[^|\n]+\|\|)/g;
+/** このサイトのスレ URL（/b/<slug>/t/<id>）。レス内の引用スレカードに使う。 */
+const THREAD_URL = /\/b\/([a-z0-9_-]+)\/t\/(\d+)/i;
 
 function Spoiler({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
@@ -56,6 +60,47 @@ function InlineUrl({ url, showImages }: { url: string; showImages: boolean }) {
   );
 }
 
+/**
+ * レス内のこのサイトのスレ URL をスレカードとして表示する（引用スレ機能 (2)）。
+ * カード情報は GET /v1/threads/:id から非同期で取得する。外部サイトの URL は対象外。
+ */
+function ThreadLinkCard({ url, boardSlug, threadId }: { url: string; boardSlug: string; threadId: number }) {
+  const [card, setCard] = useState<{ title: string; postCount: number; unavailable: boolean } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .getThread(threadId, {})
+      .then((page) => {
+        if (cancelled) return;
+        setCard({
+          title: page.thread.title,
+          postCount: page.thread.postCount,
+          unavailable: page.thread.status === "deleted",
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setCard({ title: "削除されたスレ", postCount: 0, unavailable: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [threadId]);
+  return (
+    <a
+      href={url}
+      className="oc-thread-link-card"
+      data-quote-thread-card={threadId}
+      title={card ? `${boardSlug} 板 / ${card.title} (${card.postCount})` : `${boardSlug} 板のスレ`}
+    >
+      <span className="oc-thread-link-card-board">{boardSlug} 板</span>
+      <span className="oc-thread-link-card-title">
+        {card ? (card.unavailable ? "削除されたスレ" : card.title) : "スレを読み込み中…"}
+      </span>
+      {card && !card.unavailable ? <span className="oc-thread-link-card-count">({card.postCount})</span> : null}
+    </a>
+  );
+}
+
 /** 本文断片を安価・URL・ネタバレのトークンへ分解する（テキストは React のテキストノード）。 */
 function renderTokens(
   text: string,
@@ -70,7 +115,8 @@ function renderTokens(
     if (index > cursor) {
       nodes.push(<Fragment key={`${keyPrefix}-t-${cursor}`}>{text.slice(cursor, index)}</Fragment>);
     }
-    const [raw, anchor, url, spoiler] = match;
+    const [raw, anchor, url, localPath, spoiler] = match;
+    const urlToken = url ?? localPath;
     if (anchor) {
       nodes.push(
         <button
@@ -82,8 +128,24 @@ function renderTokens(
           {anchor}
         </button>,
       );
-    } else if (url) {
-      nodes.push(<InlineUrl key={`${keyPrefix}-u-${index}`} url={url} showImages={showImages} />);
+    } else if (urlToken) {
+      // このサイトのスレ URL（自オリジン or 相対パスを含む /b/<slug>/t/<id>）は引用スレカード。
+      const threadMatch = THREAD_URL.exec(urlToken);
+      const isLocalThread =
+        threadMatch !== null &&
+        (urlToken.startsWith("/") || (typeof location !== "undefined" && urlToken.startsWith(location.origin)));
+      if (isLocalThread && threadMatch) {
+        nodes.push(
+          <ThreadLinkCard
+            key={`${keyPrefix}-u-${index}`}
+            url={urlToken}
+            boardSlug={threadMatch[1] ?? ""}
+            threadId={Number(threadMatch[2] ?? 0)}
+          />,
+        );
+      } else {
+        nodes.push(<InlineUrl key={`${keyPrefix}-u-${index}`} url={urlToken} showImages={showImages} />);
+      }
     } else if (spoiler) {
       nodes.push(<Spoiler key={`${keyPrefix}-s-${index}`} text={spoiler.slice(2, -2)} />);
     } else {

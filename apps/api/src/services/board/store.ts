@@ -46,6 +46,7 @@ export interface ThreadRow {
   bump_at: number;
   pinned: number;
   status: string;
+  quote_source_id: number | null;
   created_at: number;
   board_slug: string;
   board_name: string;
@@ -72,6 +73,9 @@ export interface PostRow {
   attachments: string | null;
   hashtags: string | null;
   ai_agent_id: string | null;
+  account_id: string | null;
+  self_deleted: number;
+  edited_count: number;
   hidden: number;
   deleted: number;
   created_at: number;
@@ -81,10 +85,10 @@ export const BOARD_COLUMNS =
   "id, slug, name, category, description, rules_md, design, settings, owner_account_id, status, last_post_at, created_at";
 
 export const THREAD_COLUMNS =
-  "t.id, t.board_id, t.title, t.title_flags, t.owner_device_hash, t.owner_account_id, t.live, t.post_count, t.max_posts, t.last_post_at, t.bump_at, t.pinned, t.status, t.created_at, b.slug AS board_slug, b.name AS board_name";
+  "t.id, t.board_id, t.title, t.title_flags, t.owner_device_hash, t.owner_account_id, t.live, t.post_count, t.max_posts, t.last_post_at, t.bump_at, t.pinned, t.status, t.quote_source_id, t.created_at, b.slug AS board_slug, b.name AS board_name";
 
 export const POST_COLUMNS =
-  "id, thread_id, board_id, num, title, name, mail, trip, cap, body, sage, post_id_hash, device_hash, ip_hash, ninja_lv, kind, parent_post_id, attachments, hashtags, ai_agent_id, hidden, deleted, created_at";
+  "id, thread_id, board_id, num, title, name, mail, trip, cap, body, sage, post_id_hash, device_hash, ip_hash, ninja_lv, kind, parent_post_id, attachments, hashtags, ai_agent_id, account_id, self_deleted, edited_count, hidden, deleted, created_at";
 
 export const DEFAULT_SETTINGS: BoardSettings = boardSettingsSchema.parse({});
 export const DEFAULT_DESIGN: BoardDesign = boardDesignSchema.parse({});
@@ -140,6 +144,7 @@ export function mapThread(row: ThreadRow): Thread {
     lastPostAt: row.last_post_at,
     bumpAt: row.bump_at,
     pinned: row.pinned === 1,
+    quoteSourceId: row.quote_source_id ?? null,
     status: row.status === "deleted" ? "deleted" : row.status === "closed" ? "closed" : "active",
     createdAt: row.created_at,
   };
@@ -171,13 +176,17 @@ export interface PostDecoration {
   likedIds: ReadonlySet<number>;
   /** post id → 逆参照元のレス番号 */
   backlinks: ReadonlyMap<number, number[]>;
+  /** リクエスト主体が書いた post id 集合（本人編集・本人削除ボタンの表示に使う） */
+  mineIds: ReadonlySet<number>;
 }
 
 export const EMPTY_DECORATION: PostDecoration = {
   subHashes: new Set(),
   likedIds: new Set(),
   backlinks: new Map(),
+  mineIds: new Set(),
 };
+
 
 export function mapPost(row: PostRow, decoration: PostDecoration = EMPTY_DECORATION): Post {
   return {
@@ -202,6 +211,9 @@ export function mapPost(row: PostRow, decoration: PostDecoration = EMPTY_DECORAT
     likeCount: 0,
     liked: decoration.likedIds.has(row.id),
     backlinks: decoration.backlinks.get(row.id) ?? [],
+    editedCount: row.edited_count ?? 0,
+    selfDeleted: row.self_deleted === 1,
+    mine: decoration.mineIds.has(row.id),
     hidden: row.hidden === 1,
     aiAgentId: row.ai_agent_id,
   };

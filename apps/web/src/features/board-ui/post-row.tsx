@@ -23,6 +23,12 @@ interface PostRowProps {
   onFilterId: (idHash: string) => void;
   onReport: (post: Post) => void;
   onDelete: (post: Post, mode: "hide" | "delete") => void;
+  /** 本人編集（自分のレスのときだけ表示される） */
+  onSelfEdit?: (post: Post) => void;
+  /** 本人削除（自分のレスのときだけ表示される） */
+  onSelfDelete?: (post: Post) => void;
+  /** 編集履歴を開く（編集済みバッジのクリック） */
+  onHistory?: (post: Post) => void;
   onJump: (num: number) => void;
   /** プラグインの宣言的レンダー規則（WP3）。空なら標準レンダラを使う。 */
   renderRules?: readonly PluginPostRenderRule[];
@@ -106,6 +112,9 @@ export function PostRow({
   onFilterId,
   onReport,
   onDelete,
+  onSelfEdit,
+  onSelfDelete,
+  onHistory,
   onJump,
   renderRules,
 }: PostRowProps) {
@@ -160,9 +169,23 @@ export function PostRow({
         ) : null}
         {isNew ? <span className="oc-new-marker">NEW</span> : null}
         {post.sage ? <span className="oc-badge oc-badge-gray">sage</span> : null}
+        {(post.editedCount ?? 0) > 0 && !post.selfDeleted ? (
+          <button
+            type="button"
+            className="oc-post-edited"
+            title="編集前の本文（履歴）を見る"
+            onClick={() => onHistory?.(post)}
+          >
+            編集済み（{post.editedCount}回）
+          </button>
+        ) : null}
       </div>
 
-      <PostBody body={post.body} aa={aa} showImages={showImages} onAnchor={onAnchor} renderRules={renderRules} />
+      {post.selfDeleted ? (
+        <div className="oc-post-main oc-post-self-deleted">投稿者により削除されました</div>
+      ) : (
+        <PostBody body={post.body} aa={aa} showImages={showImages} onAnchor={onAnchor} renderRules={renderRules} />
+      )}
 
       {post.attachments && post.attachments.length > 0 ? (
         <Attachments items={post.attachments} showImages={showImages} />
@@ -184,6 +207,16 @@ export function PostRow({
         <button type="button" onClick={() => onReport(post)}>
           通報
         </button>
+        {onSelfEdit && !post.selfDeleted && !post.isOp ? (
+          <button type="button" className="oc-post-self" onClick={() => onSelfEdit(post)} title="自分のレスを編集">
+            編集
+          </button>
+        ) : null}
+        {onSelfDelete && !post.selfDeleted && !post.isOp ? (
+          <button type="button" className="oc-post-self" onClick={() => onSelfDelete(post)} title="自分のレスを削除">
+            削除
+          </button>
+        ) : null}
         {canManage ? (
           <>
             <button type="button" onClick={() => onDelete(post, "hide")}>

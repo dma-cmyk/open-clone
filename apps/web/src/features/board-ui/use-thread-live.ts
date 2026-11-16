@@ -68,6 +68,7 @@ export function useThreadLive({ threadId, enabled, getLastPostId, onPost, onTsub
         if (rawPost) handlers.current.onTsubuyaki(normalizePost(rawPost));
         break;
       case "post.hidden":
+      case "post.updated":
       case "post.deleted":
       case "thread.updated":
         handlers.current.onInvalidate();

@@ -52,6 +52,7 @@ export const threadSchema = z.object({
   bumpAt: z.number().int(),
   pinned: z.boolean(),
   status: threadStatusSchema,
+  quoteSourceId: z.number().int().positive().nullable().default(null),
   createdAt: z.number().int(),
 });
 export type Thread = z.infer<typeof threadSchema>;
@@ -82,6 +83,52 @@ export const createThreadRequestSchema = z.object({
   turnstileToken: z.string().optional(),
 });
 export type CreateThreadRequest = z.infer<typeof createThreadRequestSchema>;
+
+/** 引用スレの参照（threads.quote_source_id の上に建てたリンク）。 */
+export const threadQuoteRefSchema = z.object({
+  id: z.number().int().positive(),
+  boardId: z.number().int().positive(),
+  boardSlug: z.string(),
+  boardName: z.string(),
+  title: z.string(),
+  postCount: z.number().int().nonnegative(),
+  status: threadStatusSchema,
+  createdAt: z.number().int(),
+});
+export type ThreadQuoteRef = z.infer<typeof threadQuoteRefSchema>;
+
+/** 引用元スレ（削除済み・非公開板は限られた情報だけを返す）。 */
+export const quotedThreadCardSchema = z.object({
+  threadId: z.number().int().positive(),
+  boardId: z.number().int().positive().nullable(),
+  boardSlug: z.string().nullable(),
+  boardName: z.string().nullable(),
+  title: z.string(),
+  postCount: z.number().int().nonnegative(),
+  status: threadStatusSchema,
+  createdAt: z.number().int().nullable(),
+  /** 板・スレが非公開・削除済みで詳細を出せないとき true */
+  unavailable: z.boolean().default(false),
+});
+export type QuotedThreadCard = z.infer<typeof quotedThreadCardSchema>;
+
+/** 引用して新スレを立てるリクエスト（quoteThreadId を指定する以外は通常のスレ作成と同じ）。 */
+export const createQuotedThreadRequestSchema = z.object({
+  quoteThreadId: z.number().int().positive(),
+  title: z.string().min(1).max(120),
+  body: z.string().min(1).max(4096),
+  name: z.string().max(64).optional(),
+  mail: z.string().max(256).optional(),
+  turnstileToken: z.string().optional(),
+});
+export type CreateQuotedThreadRequest = z.infer<typeof createQuotedThreadRequestSchema>;
+
+/** 本人によるスレ編集（タイトルと >>1 本文）のリクエスト。 */
+export const editThreadRequestSchema = z.object({
+  title: z.string().min(1).max(120),
+  body: z.string().min(1).max(4096),
+});
+export type EditThreadRequest = z.infer<typeof editThreadRequestSchema>;
 
 export const threadListQuerySchema = z.object({
   sort: threadSortSchema.default("bump"),

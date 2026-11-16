@@ -134,12 +134,16 @@ export interface LoadedPosts {
   hasMore: boolean;
 }
 
-/** スレ内のレスを範囲指定で取得し、いいね・逆参照・副主表示を付与する。 */
+/**
+ * スレ内のレスを範囲指定で取得し、いいね・逆参照・副主表示を付与する。
+ * identityHash は端末ハッシュ。accountId はログイン中のアカウント（mine 判定に使う）。
+ */
 export async function loadThreadPosts(
   db: D1Database,
   thread: ThreadRow,
   query: ThreadPostsQuery,
   identityHash: string,
+  accountId?: string | null,
 ): Promise<LoadedPosts> {
   const conditions = ["thread_id = ?", "kind = 'post'", "hidden = 0", "deleted = 0"];
   const bindings: unknown[] = [thread.id];
@@ -200,8 +204,19 @@ export async function loadThreadPosts(
     loadBacklinks(db, ids),
   ]);
 
+  // 本人判定（ボタン表示の補助）: 端末一致またはアカウント一致。
+  const mineIds = new Set(
+    rows
+      .filter(
+        (row) =>
+          row.device_hash === identityHash ||
+          (accountId !== undefined && accountId !== null && row.account_id === accountId),
+      )
+      .map((row) => row.id),
+  );
+
   const posts = rows.map((row) => {
-    const post = mapPost(row, { subHashes, likedIds: reactions.liked, backlinks });
+    const post = mapPost(row, { subHashes, likedIds: reactions.liked, backlinks, mineIds });
     return { ...post, likeCount: reactions.counts.get(row.id) ?? 0 };
   });
 

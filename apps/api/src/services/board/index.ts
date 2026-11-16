@@ -47,7 +47,11 @@ export async function unhidePost(postId: number, deps: BoardServiceDeps): Promis
 export async function deletePost(postId: number, deps: BoardServiceDeps): Promise<void> {
   const db = deps.env.DB;
   const row = await loadPostRow(db, postId);
-  const statements = [db.prepare("UPDATE posts SET deleted = 1, hidden = 1 WHERE id = ?").bind(postId)];
+  const statements = [
+    db.prepare("UPDATE posts SET deleted = 1, hidden = 1 WHERE id = ?").bind(postId),
+    // スタッフ削除も不可逆: 履歴の旧本文を消す（本人削除と同じ扱い。履歴 API のガードと二重に防ぐ）。
+    db.prepare("DELETE FROM post_edit_history WHERE post_id = ?").bind(postId),
+  ];
   if (row.num === 1) {
     statements.push(db.prepare("UPDATE threads SET status = 'deleted' WHERE id = ?").bind(row.thread_id));
   } else if (row.kind === "post") {

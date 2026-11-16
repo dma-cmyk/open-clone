@@ -4,16 +4,24 @@ import { Hono } from "hono";
 import {
   ApiError,
   ErrorCode,
+  editPostRequestSchema,
   tsubuyakiRequestSchema,
   ok,
   reactionKindSchema,
   votePollRequestSchema,
+  type PostEditHistoryItem,
   type PollResult,
 } from "shared";
 import type { AppEnv } from "../lib/env";
 import { getReqCtx } from "../lib/context";
 import { requireAuth } from "../lib/middleware/auth";
-import { createTsubuyakiInternal, createPostInternal } from "../lib/pipeline";
+import {
+  createTsubuyakiInternal,
+  createPostInternal,
+  editPostInternal,
+  selfDeletePostInternal,
+  type Identity,
+} from "../lib/pipeline";
 import { parsePostCreateBody } from "../lib/post-input";
 import {
   POST_COLUMNS,
@@ -23,9 +31,11 @@ import {
   loadSubHashes,
   mapPost,
   assertThreadActive,
+  boardSettingsOf,
+  getBoardRow,
   type PostRow,
 } from "../services/board/store";
-import { actorFrom, assertBoardStaff, canHardDeletePost, isSiteAdmin } from "../services/board/access";
+import { actorFrom, assertBoardStaff, canHardDeletePost, hasBoardStaff, isSiteAdmin } from "../services/board/access";
 import { deletePost, hidePost, unhidePost } from "../services/board";
 
 const app = new Hono<AppEnv>();
@@ -53,7 +63,11 @@ app.get("/:id", async (c) => {
     loadBacklinks(db, [row.id]),
     getThreadRow(db, row.thread_id),
   ]);
-  const post = mapPost(row, { subHashes, likedIds: reactions.liked, backlinks });
+  const accountId = reqCtx.session?.account.id ?? null;
+  const mineIds = new Set<number>(
+    row.device_hash === reqCtx.device.deviceHash || (accountId !== null && row.account_id === accountId) ? [row.id] : [],
+  );
+  const post = mapPost(row, { subHashes, likedIds: reactions.liked, backlinks, mineIds });
   return c.json(
     ok({
       post: { ...post, likeCount: reactions.counts.get(row.id) ?? 0 },
@@ -190,16 +204,126 @@ app.post("/:id/restore", requireAuth, async (c) => {
   return c.json(ok({ postId: row.id, hidden: false }));
 });
 
-/** 削除（板スタッフ deputy 以上 / サイト管理者）。不可逆。 */
-app.delete("/:id", requireAuth, async (c) => {
+/**
+ * 削除。板スタッフ deputy 以上（従来どおり）または投稿者本人（selfDeleted 表示）。
+ * 本人はログイン不要（匿名掲示板: 端末一致またはアカウント一致で判定）。
+ */
+app.delete("/:id", async (c) => {
   const db = c.env.DB;
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
-  const actor = actorFrom(getReqCtx(c).session!.account);
+  const reqCtx = getReqCtx(c);
+  const identity: Identity = {
+    deviceHash: reqCtx.device.deviceHash,
+    ipHash: reqCtx.device.ipHash,
+    accountId: reqCtx.session?.account.id ?? null,
+  };
+
+  // 本人判定: 端末一致、または保存されたアカウント ID が現在のログインと一致。
+  const isSelf =
+    row.device_hash === identity.deviceHash ||
+    (row.account_id !== null && row.account_id === identity.accountId);
+
+  const board = await getBoardRow(db, row.board_id);
+  if (!board) throw ApiError.notFound("板が見つかりません");
+  const settings = boardSettingsOf(board);
+
+  if (isSelf) {
+    if (row.kind === "kome") throw ApiError.forbidden("つぶやきは本人削除の対象外です");
+    if (row.num === 1) {
+      // >>1 の本人削除 = スレ本人削除（threads 側の API を使う）。
+      throw new ApiError(409, ErrorCode.CONFLICT, "スレ本文の削除はスレ本人削除（DELETE /v1/threads/:id）を使用してください");
+    }
+    if (!settings.allowPostDelete) {
+      throw ApiError.forbidden("この板ではレスの本人削除が許可されていません");
+    }
+    if (row.self_deleted === 1) return c.json(ok({ postId: row.id, deleted: true }));
+    if (settings.selfEditWindowMinutes > 0 && row.created_at + settings.selfEditWindowMinutes * 60 < Math.floor(Date.now() / 1000)) {
+      throw ApiError.forbidden("本人削除の期限が過ぎています");
+    }
+    await selfDeletePostInternal(row, { env: c.env, ctx: c.executionCtx });
+    return c.json(ok({ postId: row.id, deleted: true, selfDeleted: true }));
+  }
+
+  const actor = actorFrom(reqCtx.session?.account);
+  if (!actor.accountId) {
+    // 本人でもスタッフでもない（未ログイン）: 他人による削除は 403。
+    throw ApiError.forbidden("レスの削除は本人または板スタッフのみです");
+  }
   if (!isSiteAdmin(actor) && !(await canHardDeletePost(db, actor, row.board_id))) {
     throw ApiError.forbidden("レス削除は副管理人以上が必要です（モデレーターは非表示のみ）");
   }
   await deletePost(row.id, { env: c.env, ctx: c.executionCtx });
   return c.json(ok({ postId: row.id, deleted: true }));
+});
+
+/** 本人編集（本文のみ。旧本文は履歴に残り誰でも見られる）。 */
+app.patch("/:id", async (c) => {
+  const db = c.env.DB;
+  const row = await loadPostRow(db, parsePostId(c.req.param("id")));
+  const reqCtx = getReqCtx(c);
+  const identity: Identity = {
+    deviceHash: reqCtx.device.deviceHash,
+    ipHash: reqCtx.device.ipHash,
+    accountId: reqCtx.session?.account.id ?? null,
+  };
+
+  const isSelf =
+    row.device_hash === identity.deviceHash ||
+    (row.account_id !== null && row.account_id === identity.accountId);
+  if (!isSelf) throw ApiError.forbidden("本人のみ編集できます");
+  if (row.kind === "kome") throw ApiError.forbidden("つぶやきは本人編集の対象外です");
+  if (row.self_deleted === 1) throw ApiError.forbidden("削除済みのレスは編集できません");
+  if (row.num === 1) {
+    throw new ApiError(409, ErrorCode.CONFLICT, "スレ本文の編集は PATCH /v1/threads/:id を使用してください");
+  }
+
+  const thread = await assertThreadActive(await getThreadRow(db, row.thread_id));
+  if (thread.status !== "active") {
+    // 設計 70: スレ停止中（close）・削除済みでは編集不可（投稿検査の再利用）。
+    throw new ApiError(409, ErrorCode.CONFLICT, "停止中・削除済みのスレでは編集できません");
+  }
+  const board = await getBoardRow(db, row.board_id);
+  if (!board) throw ApiError.notFound("板が見つかりません");
+  const settings = boardSettingsOf(board);
+  if (!settings.allowPostEdit) throw ApiError.forbidden("この板ではレスの本人編集が許可されていません");
+  if (settings.selfEditWindowMinutes > 0 && row.created_at + settings.selfEditWindowMinutes * 60 < Math.floor(Date.now() / 1000)) {
+    throw ApiError.forbidden("本人編集の期限が過ぎています");
+  }
+
+  const body = editPostRequestSchema.parse(await c.req.json());
+  const result = await editPostInternal(
+    { post: row, thread, board, identity, newBody: body.body, turnstileToken: body.turnstileToken },
+    { env: c.env, ctx: c.executionCtx },
+  );
+  return c.json(ok({ post: result.post }));
+});
+
+/**
+ * 編集履歴（旧本文の一覧）。
+ * 履歴は公開だが、元のレスが見えない状態（本人削除・スタッフ削除・非表示）では
+ * 旧本文も返さない（削除・非表示の閲覧権限に合わせる。板スタッフ以上は従来どおり閲覧可）。
+ */
+app.get("/:id/history", async (c) => {
+  const db = c.env.DB;
+  const row = await loadPostRow(db, parsePostId(c.req.param("id")));
+  const reqCtx = getReqCtx(c);
+  const actor = actorFrom(reqCtx.session?.account);
+  const restricted = row.deleted === 1 || row.hidden === 1 || row.self_deleted === 1;
+  if (restricted) {
+    const canSeeDeleted = actor.accountId !== null && (await hasBoardStaff(db, actor, row.board_id, "moderator"));
+    if (!canSeeDeleted) throw ApiError.notFound("レスが見つかりません");
+  }
+  const result = await db
+    .prepare("SELECT id, post_id, previous_body, edited_at FROM post_edit_history WHERE post_id = ? ORDER BY edited_at DESC, id DESC LIMIT 100")
+    .bind(row.id)
+    .all<{ id: number; post_id: number; previous_body: string; edited_at: number }>();
+  const items: PostEditHistoryItem[] = result.results.map((historyRow) => ({
+    id: historyRow.id,
+    postId: historyRow.post_id,
+    previousBody: historyRow.previous_body,
+    editedAt: historyRow.edited_at,
+  }));
+  return c.json(ok({ items }));
 });
 
 /** 投票の取得（結果つき）。 */

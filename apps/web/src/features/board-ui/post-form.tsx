@@ -28,6 +28,8 @@ interface PostFormProps {
   onOpenTsubuyaki?: () => void;
   disabled?: boolean;
   disabledReason?: string;
+  /** 引用スレ: 引用元スレ ID（板ページの ?quote= から渡る）。板設定で不許可なら API が 403。 */
+  quoteThreadId?: number;
   /** 板設定の Turnstile 方針。ログイン済みなら anonymous では表示しない。 */
   turnstile?: "off" | "anonymous" | "always";
 }
@@ -42,6 +44,7 @@ export function PostForm({
   onOpenTsubuyaki,
   disabled,
   disabledReason,
+  quoteThreadId,
   turnstile = "anonymous",
 }: PostFormProps) {
   const [name, setName] = useState("");
@@ -159,6 +162,7 @@ export function PostForm({
           name: name.trim() || undefined,
           mail: mail.trim() || undefined,
           mode: threadMode || undefined,
+          quoteThreadId: quoteThreadId || undefined,
           turnstileToken: token || undefined,
         });
         recordWrite({
@@ -245,6 +249,14 @@ export function PostForm({
                 </option>
               ))}
             </select>
+          </div>
+        ) : null}
+        {mode === "thread" && quoteThreadId ? (
+          <div className="oc-form-row" data-quote-thread={quoteThreadId}>
+            <span className="oc-badge oc-badge-yellow" title="引用元スレのカードが新スレの先頭に表示されます">
+              引用スレ（元スレ ID: {quoteThreadId}）
+            </span>
+            <span className="oc-muted oc-small">このスレを引用して新しいスレを立てます。</span>
           </div>
         ) : null}
 

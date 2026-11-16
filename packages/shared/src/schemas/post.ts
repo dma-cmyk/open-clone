@@ -36,6 +36,11 @@ export const postSchema = z.object({
   liked: z.boolean(),
   /** 逆参照（このレスを安価しているレス番号） */
   backlinks: z.array(z.number().int().nonnegative()),
+  /** 本人による編集回数（0 = 未編集） */
+  editedCount: z.number().int().nonnegative().default(0),
+  selfDeleted: z.boolean().default(false),
+  /** リクエスト主体が書いたレスか（本人編集・本人削除ボタンの表示用。判定は API 側） */
+  mine: z.boolean().default(false),
   hidden: z.boolean(),
   aiAgentId: z.string().nullable(),
 });
@@ -60,6 +65,23 @@ export const tsubuyakiRequestSchema = z.object({
   turnstileToken: z.string().max(4096).optional(),
 });
 export type TsubuyakiRequest = z.infer<typeof tsubuyakiRequestSchema>;
+
+/** 本人によるレス本文編集のリクエスト（名前・メール・添付は対象外）。 */
+export const editPostRequestSchema = z.object({
+  body: z.string().min(1).max(4096),
+  /** 板が Turnstile always のとき編集にも要求される（投稿と同じ条件） */
+  turnstileToken: z.string().max(4096).optional(),
+});
+export type EditPostRequest = z.infer<typeof editPostRequestSchema>;
+
+/** 編集履歴の 1 件（旧本文を誰でも閲覧可能）。 */
+export const postEditHistoryItemSchema = z.object({
+  id: z.number().int().positive(),
+  postId: z.number().int().positive(),
+  previousBody: z.string(),
+  editedAt: z.number().int(),
+});
+export type PostEditHistoryItem = z.infer<typeof postEditHistoryItemSchema>;
 
 export const reactionKindSchema = z.enum(["like", "good", "bad"]);
 export type ReactionKind = z.infer<typeof reactionKindSchema>;

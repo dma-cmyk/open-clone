@@ -28,6 +28,9 @@ export function BoardView({ slug }: { slug: string }) {
   }, [location]);
   const sort = params.get("sort") ?? "speed";
   const q = params.get("q") ?? "";
+  // 引用スレ: スレ画面から「引用して新スレ」で飛んできたときの ?quote=<threadId>。
+  const quoteThreadId = Number(params.get("quote"));
+  const validQuoteThreadId = Number.isInteger(quoteThreadId) && quoteThreadId > 0 ? quoteThreadId : undefined;
   const [searchDraft, setSearchDraft] = useState(q);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
@@ -344,6 +347,7 @@ export function BoardView({ slug }: { slug: string }) {
           boardSlug={slug}
           boardId={Number(board.id) || undefined}
           turnstile={board.settings?.turnstile ?? "anonymous"}
+          quoteThreadId={validQuoteThreadId}
           onPosted={({ threadId }) => {
             if (threadId) {
               toast.show("スレを立てました");

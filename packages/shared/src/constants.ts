@@ -127,7 +127,10 @@ export const RT_RING_BUFFER_SIZE = 100;
 // --- レート制限（RateLimiter DO の窓定義。秒/回数） ---
 export const RATE_LIMITS = {
   post: { windowSeconds: 30, max: 3 },
-  threadCreate: { windowSeconds: 300, max: 2 },
+  /** 本人編集（投稿と別窓: 編集で本人のレスペースを消費させない。荒らしの連続書き換えを防ぐ） */
+  postEdit: { windowSeconds: 30, max: 5 },
+  /** 本人編集の IP 併用窓（匿名のみ） */
+  postEditIp: { windowSeconds: 300, max: 30 },
   tsubuyaki: { windowSeconds: 10, max: 5 },
   login: { windowSeconds: 300, max: 10 },
   register: { windowSeconds: 86_400, max: 5 },

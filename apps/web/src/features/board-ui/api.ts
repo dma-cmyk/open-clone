@@ -10,13 +10,16 @@ import type {
   BoardSettings,
   BoardSummary,
   Post,
-  ReportItem,
+  PostEditHistoryItem,
+  QuotedThreadCard,
   ReportReason,
+  ReportItem,
   StaffEntry,
   ThreadDetail,
-  ThreadListResponse,
   ThreadPage,
+  ThreadQuoteRef,
   ThreadSummary,
+  ThreadListResponse,
 } from "./types";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "/api/v1").replace(/\/$/, "");
@@ -128,7 +131,6 @@ export function normalizePost(raw: unknown): Post {
     backlinks: Array.isArray(record.backlinks)
       ? (record.backlinks as unknown[]).map((value) => Number(value)).filter((value) => Number.isFinite(value))
       : undefined,
-    kind: record.kind === "tsubuyaki" ? "tsubuyaki" : "post",
     provider: typeof record.provider === "string" ? record.provider : undefined,
     aiAgent:
       record.aiAgent && typeof record.aiAgent === "object"
@@ -137,6 +139,10 @@ export function normalizePost(raw: unknown): Post {
           ? { id: record.aiAgentId }
           : null,
     hidden: Boolean(record.hidden),
+    kind: record.kind === "tsubuyaki" ? "tsubuyaki" : "post",
+    editedCount: Number(record.editedCount ?? record.edited_count ?? 0) || 0,
+    selfDeleted: Boolean(record.selfDeleted ?? record.self_deleted),
+    mine: Boolean(record.mine),
   };
 }
 
@@ -151,9 +157,28 @@ function normalizeThread(raw: unknown): ThreadDetail {
     maxPosts: record.maxPosts === undefined ? undefined : Number(record.maxPosts),
     live: Boolean(record.live),
     pinned: Boolean(record.pinned),
-    status: typeof record.status === "string" ? record.status : undefined,
+    quoteSourceId: record.quoteSourceId === undefined ? undefined : Number(record.quoteSourceId),
     createdAt: record.createdAt === undefined ? undefined : toSeconds(record.createdAt),
     lastPostAt: record.lastPostAt === undefined ? undefined : toSeconds(record.lastPostAt),
+  };
+}
+
+/** 引用元スレカードの normalize（quoteSource が null = 通常スレ）。 */
+function normalizeQuotedCard(raw: unknown): QuotedThreadCard | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const threadId = Number(record.threadId ?? 0);
+  if (!Number.isFinite(threadId) || threadId <= 0) return null;
+  return {
+    threadId,
+    boardId: record.boardId === undefined || record.boardId === null ? null : Number(record.boardId),
+    boardSlug: typeof record.boardSlug === "string" ? record.boardSlug : null,
+    boardName: typeof record.boardName === "string" ? record.boardName : null,
+    title: String(record.title ?? "削除されたスレ"),
+    postCount: Number(record.postCount ?? 0) || 0,
+    status: typeof record.status === "string" ? record.status : "active",
+    createdAt: record.createdAt === undefined || record.createdAt === null ? null : toSeconds(record.createdAt),
+    unavailable: Boolean(record.unavailable),
   };
 }
 
@@ -271,9 +296,68 @@ export const api = {
 
   createThread(
     slug: string,
-    input: { title: string; body: string; name?: string; mail?: string; mode?: string; turnstileToken?: string },
+    input: {
+      title: string;
+      body: string;
+      name?: string;
+      mail?: string;
+      mode?: string;
+      quoteThreadId?: number;
+      turnstileToken?: string;
+    },
   ): Promise<{ threadId: number; post?: Post }> {
-    return post<{ threadId: number; post?: Post }>(`/boards/${encodeURIComponent(slug)}/threads`, input);
+    return post<{ threadId: number; post?: unknown; quoteThreadId?: number | null }>(
+      `/boards/${encodeURIComponent(slug)}/threads`,
+      input,
+    ).then((data) => ({
+      threadId: data.threadId,
+      post: data.post ? normalizePost(data.post) : undefined,
+    }));
+  },
+
+  /** レス本文の本人編集（名前・メール・添付は対象外）。 */
+  editPost(postId: number, body: string): Promise<Post> {
+    return patch<{ post?: unknown }>(`/posts/${postId}`, { body }).then((data) => normalizePost(data.post));
+  },
+
+  /** レスの本人削除（「投稿者により削除されました」表示。レス番号は残る）。 */
+  deletePostSelf(postId: number): Promise<{ postId: number; selfDeleted: boolean }> {
+    return del<{ postId?: number; selfDeleted?: boolean }>(`/posts/${postId}`).then((data) => ({
+      postId: Number(data.postId ?? postId),
+      selfDeleted: Boolean(data.selfDeleted),
+    }));
+  },
+
+  /** 編集履歴（旧本文の一覧。誰でも取得できる）。 */
+  getPostHistory(postId: number): Promise<PostEditHistoryItem[]> {
+    return get<{ items?: PostEditHistoryItem[] }>(`/posts/${postId}/history`).then((data) =>
+      Array.isArray(data.items) ? data.items : [],
+    );
+  },
+
+  /** スレ（タイトル + >>1 本文）の本人編集。 */
+  editThread(threadId: number, title: string, body: string): Promise<ThreadDetail> {
+    return patch<{ thread?: unknown }>(`/threads/${threadId}`, { title, body }).then((data) =>
+      normalizeThread(data.thread),
+    );
+  },
+
+  /** スレの削除（本人 = 他人レスなしの場合 / スタッフは常に可）。 */
+  deleteThread(threadId: number): Promise<{ deleted: boolean; threadId: number; selfDeleted?: boolean }> {
+    return del<{ deleted?: boolean; threadId?: number; selfDeleted?: boolean }>(`/threads/${threadId}`).then(
+      (data) => ({
+        deleted: Boolean(data.deleted),
+        threadId: Number(data.threadId ?? threadId),
+        selfDeleted: Boolean(data.selfDeleted),
+      }),
+    );
+  },
+
+  /** このスレを引用したスレの一覧。 */
+  getThreadQuotes(threadId: number): Promise<ThreadQuoteRef[]> {
+    return get<{ items?: ThreadQuoteRef[] }>(`/threads/${threadId}/quotes`).then((data) =>
+      Array.isArray(data.items) ? data.items : [],
+    );
   },
 
   getStaff(slug: string): Promise<StaffEntry[]> {
@@ -301,7 +385,7 @@ export const api = {
   },
 
   async getThread(threadId: number, params: ThreadQuery = {}): Promise<ThreadPage> {
-    const data = await get<{ thread?: unknown; posts?: unknown[]; hasMore?: boolean }>(
+    const data = await get<{ thread?: unknown; posts?: unknown[]; hasMore?: boolean; quoteSource?: unknown }>(
       `/threads/${threadId}${query({
         r: params.images ? undefined : params.r,
         images: params.images ? "1" : undefined,
@@ -314,6 +398,7 @@ export const api = {
       thread: normalizeThread(data.thread),
       posts: Array.isArray(data.posts) ? data.posts.map(normalizePost) : [],
       hasMore: Boolean(data.hasMore),
+      quoteSource: normalizeQuotedCard(data.quoteSource),
     };
   },
 

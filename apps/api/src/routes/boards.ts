@@ -26,6 +26,7 @@ import {
   boardDesignOf,
   boardSettingsOf,
   getBoardRow,
+  getThreadRow,
   mapBoard,
   resolveBoardRow,
   type BoardRow,
@@ -309,6 +310,23 @@ app.post("/:slug/threads", async (c) => {
   await assertBoardActive(row);
   const reqCtx = getReqCtx(c);
   const body = (await c.req.json()) as Record<string, unknown>;
+
+  // 引用スレ: 引用先の板が引用スレを許可していること。引用元は削除済みでも良い（カードが「削除されたスレ」になる）。
+  let quoteThreadId: number | null = null;
+  const rawQuoteThreadId = Number(body["quoteThreadId"]);
+  if (Number.isInteger(rawQuoteThreadId) && rawQuoteThreadId > 0) {
+    const settings = boardSettingsOf(row);
+    if (!settings.allowQuoteThread) throw ApiError.forbidden("この板では引用スレが許可されていません");
+    const quoted = await getThreadRow(db, rawQuoteThreadId);
+    if (!quoted) throw ApiError.notFound("引用元スレが見つかりません");
+    // 引用元が非公開板のときは情報を漏らさない（板 status を見て 404 ではなく「見つかりません」に寄せる）。
+    const quotedBoard = await getBoardRow(db, quoted.board_id);
+    if (!quotedBoard || quotedBoard.status !== "active") {
+      throw ApiError.notFound("引用元スレが見つかりません");
+    }
+    quoteThreadId = quoted.id;
+  }
+
   const result = await createThreadInternal(
     {
       boardId: row.id,
@@ -320,13 +338,14 @@ app.post("/:slug/threads", async (c) => {
       deviceHash: reqCtx.device.deviceHash,
       ipHash: reqCtx.device.ipHash,
       accountId: reqCtx.session?.account.id ?? null,
+      quoteThreadId,
       turnstileToken:
         (typeof body["turnstileToken"] === "string" ? body["turnstileToken"] : undefined) ??
         (typeof body["cf-turnstile-response"] === "string" ? (body["cf-turnstile-response"] as string) : undefined),
     },
     { env: c.env, ctx: c.executionCtx },
   );
-  return c.json(ok({ threadId: result.thread.id, thread: result.thread, post: result.post }), 201);
+  return c.json(ok({ threadId: result.thread.id, thread: result.thread, post: result.post, quoteThreadId }), 201);
 });
 
 /** 板スタッフ一覧。 */

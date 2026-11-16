@@ -217,11 +217,14 @@ export async function measureAppWrites<T>(fn: () => Promise<T>): Promise<{ resul
 
 /** 期限切れデータの掃除（テスト間の独立性のため）。 */
 export async function resetWorld(): Promise<void> {
+  // 引用スレの自己参照 FK（threads.quote_source_id → threads.id）を先に切る。
+  await env.DB.prepare("UPDATE threads SET quote_source_id = NULL").run().catch(() => undefined);
   for (const table of [
     "backlinks",
     "post_reactions",
     "poll_votes",
     "polls",
+    "post_edit_history",
     "reports",
     "thread_tags",
     "tags",

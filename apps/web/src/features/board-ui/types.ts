@@ -36,6 +36,12 @@ export interface BoardSettings {
   maxPosts?: number;
   uploader?: string | null;
   forceSage?: boolean;
+  allowPostEdit?: boolean;
+  allowPostDelete?: boolean;
+  allowThreadEdit?: boolean;
+  allowThreadDelete?: boolean;
+  allowQuoteThread?: boolean;
+  selfEditWindowMinutes?: number;
   maxBoardsPerAccount?: number | null;
 }
 
@@ -77,8 +83,42 @@ export interface ThreadDetail {
   live?: boolean;
   pinned?: boolean;
   status?: string;
+  quoteSourceId?: number | null;
   createdAt?: number;
   lastPostAt?: number;
+}
+
+/** 引用元スレのカード（API GET /v1/threads/:id の quoteSource）。 */
+export interface QuotedThreadCard {
+  threadId: number;
+  boardId: number | null;
+  boardSlug: string | null;
+  boardName: string | null;
+  title: string;
+  postCount: number;
+  status: string;
+  createdAt: number | null;
+  unavailable: boolean;
+}
+
+/** 引用したスレの一覧の要素（API GET /v1/threads/:id/quotes）。 */
+export interface ThreadQuoteRef {
+  id: number;
+  boardId: number;
+  boardSlug: string;
+  boardName: string;
+  title: string;
+  postCount: number;
+  status: string;
+  createdAt: number;
+}
+
+/** 編集履歴の 1 件。 */
+export interface PostEditHistoryItem {
+  id: number;
+  postId: number;
+  previousBody: string;
+  editedAt: number;
 }
 
 export interface AttachmentRef {
@@ -112,12 +152,16 @@ export interface Post {
   provider?: string;
   aiAgent?: { id?: string; name?: string } | null;
   hidden?: boolean;
+  editedCount?: number;
+  selfDeleted?: boolean;
+  mine?: boolean;
 }
 
 export interface ThreadPage {
   thread: ThreadDetail;
   posts: Post[];
   hasMore?: boolean;
+  quoteSource?: QuotedThreadCard | null;
 }
 
 export interface BoardListResponse {

@@ -17,6 +17,7 @@ import {
   type AttachmentSummary,
   type BoardSettings,
   type Post,
+  type Thread,
   type ThreadState,
 } from "shared";
 import { batch, writeStats, type SqlWriteStats } from "./db";
@@ -34,6 +35,10 @@ import {
   boardSettingsOf,
   getBoardRow,
   getThreadRow,
+  mapThread,
+  type BoardRow,
+  type PostRow,
+  type ThreadRow,
   loadStaffLevel,
   loadThreadState,
   parseJsonColumn,
@@ -95,6 +100,8 @@ export interface CreateThreadInput {
   ipHash: string;
   accountId?: string | null;
   aiAgentId?: string | null;
+  /** 引用元スレ（引用スレ機能。許可判定は呼び出し元で済ませて quoteThreadId を渡す） */
+  quoteThreadId?: number | null;
   turnstileToken?: string;
   skipGuards?: boolean;
   skipTurnstile?: boolean;
@@ -504,8 +511,8 @@ export async function createPostInternal(input: CreatePostInput, deps: PipelineD
     db
       .prepare(
         `INSERT INTO posts
-           (thread_id, board_id, num, title, name, mail, trip, cap, body, sage, post_id_hash, device_hash, ip_hash, ninja_lv, kind, parent_post_id, attachments, hashtags, ai_agent_id, created_at)
-         VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'post', NULL, NULL, ?, ?, ?)
+           (thread_id, board_id, num, title, name, mail, trip, cap, body, sage, post_id_hash, device_hash, ip_hash, ninja_lv, kind, parent_post_id, attachments, hashtags, ai_agent_id, account_id, created_at)
+         VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'post', NULL, NULL, ?, ?, ?, ?)
          RETURNING id`,
       )
       .bind(
@@ -523,6 +530,7 @@ export async function createPostInternal(input: CreatePostInput, deps: PipelineD
         ninjaLv,
         hashtags.length > 0 ? JSON.stringify(hashtags) : null,
         input.aiAgentId ?? null,
+        identity.accountId ?? null,
         now,
       ),
   );
@@ -639,6 +647,9 @@ export async function createPostInternal(input: CreatePostInput, deps: PipelineD
     liked: false,
     backlinks: [],
     hidden: false,
+    editedCount: 0,
+    selfDeleted: false,
+    mine: true,
     aiAgentId: input.aiAgentId ?? null,
   };
 
@@ -708,8 +719,8 @@ export async function createThreadInternal(input: CreateThreadInput, deps: Pipel
   const threadInsert = await db
     .prepare(
       `INSERT INTO threads
-         (board_id, title, title_flags, owner_device_hash, owner_account_id, live, post_count, max_posts, last_post_at, bump_at, pinned, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0, 'active', ?)
+         (board_id, title, title_flags, owner_device_hash, owner_account_id, live, post_count, max_posts, last_post_at, bump_at, pinned, status, quote_source_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0, 'active', ?, ?)
        RETURNING id`,
     )
     .bind(
@@ -722,6 +733,7 @@ export async function createThreadInternal(input: CreateThreadInput, deps: Pipel
       maxPosts,
       now,
       now,
+      input.quoteThreadId ?? null,
       now,
     )
     .first<{ id: number }>();
@@ -733,8 +745,8 @@ export async function createThreadInternal(input: CreateThreadInput, deps: Pipel
     db
       .prepare(
         `INSERT INTO posts
-           (thread_id, board_id, num, title, name, mail, trip, cap, body, sage, post_id_hash, device_hash, ip_hash, ninja_lv, kind, parent_post_id, attachments, hashtags, ai_agent_id, created_at)
-         VALUES (?, ?, 1, ?, ?, ?, ?, NULL, ?, 0, ?, ?, ?, ?, 'post', NULL, NULL, ?, ?, ?)
+           (thread_id, board_id, num, title, name, mail, trip, cap, body, sage, post_id_hash, device_hash, ip_hash, ninja_lv, kind, parent_post_id, attachments, hashtags, ai_agent_id, account_id, created_at)
+         VALUES (?, ?, 1, ?, ?, ?, ?, NULL, ?, 0, ?, ?, ?, ?, 'post', NULL, NULL, ?, ?, ?, ?)
          RETURNING id`,
       )
       .bind(
@@ -751,6 +763,7 @@ export async function createThreadInternal(input: CreateThreadInput, deps: Pipel
         ninjaLv,
         hashtags.length > 0 ? JSON.stringify(hashtags) : null,
         input.aiAgentId ?? null,
+        identity.accountId ?? null,
         now,
       ),
   );
@@ -858,6 +871,9 @@ export async function createThreadInternal(input: CreateThreadInput, deps: Pipel
     liked: false,
     backlinks: [],
     hidden: false,
+    editedCount: 0,
+    selfDeleted: false,
+    mine: true,
     aiAgentId: input.aiAgentId ?? null,
   };
 
@@ -964,9 +980,323 @@ export async function createTsubuyakiInternal(input: CreateTsubuyakiInput, deps:
     liked: false,
     backlinks: [],
     hidden: false,
+    editedCount: 0,
+    selfDeleted: false,
+    mine: true,
     aiAgentId: input.aiAgentId ?? null,
   };
 
   await publishToThreadAndBoard(env, deps.ctx, thread.id, board.id, "tsubuyaki.created", { post });
   return { post, writeStats: sumStats(results) };
+}
+
+/** 本人編集・本人削除の入力（routes から渡す。判定済みの行を受け取る）。 */
+export interface EditPostInput {
+  post: PostRow;
+  thread: ThreadRow;
+  board: BoardRow;
+  identity: Identity;
+  newBody: string;
+  /** 板が always のとき編集にも要求する（投稿と同じ条件） */
+  turnstileToken?: string;
+}
+
+export interface EditPostResult {
+  post: Post;
+  writeStats: SqlWriteStats;
+}
+
+
+/** レス本文を本人編集する。旧本文を post_edit_history に残し、FTS・安価・ハッシュタグを張り替える。 */
+export async function editPostInternal(input: EditPostInput, deps: PipelineDeps): Promise<EditPostResult> {
+  const { env } = deps;
+  const db = env.DB;
+  const now = Math.floor(Date.now() / 1000);
+  const settings = boardSettingsOf(input.board);
+
+  // 投稿経路と同じ本文検査（NG ワード・文字数・空チェック）。
+  const rawBody = input.newBody.replace(/\r\n?/g, "\n");
+  const masked = applyNgWords(settings, rawBody);
+  if (masked.hit && settings.ngWordAction === "reject") {
+    throw ApiError.validation("NGワードが含まれています");
+  }
+  const finalBody = masked.body;
+  if (finalBody.trim().length === 0) throw ApiError.validation("本文が空です");
+  if (utf8Length(finalBody) > POST_BODY_MAX_BYTES) {
+    throw new ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, "本文が長すぎます");
+  }
+
+  // ---- 投稿経路と同じ検査（設計 70 重点 2。連投・回数制限・アク禁・Turnstile） ----
+  // レート制限は投稿と別窓（postEdit）: 本人が直後にレスできなくなる問題を避けつつ、
+  // 1 レスの高速連続書き換え（荒らし路）は同じ窓で頭打ちにする。
+  const editRate = await checkRateLimitMulti(env, "postEdit", [input.identity.deviceHash]);
+  const editIpRate =
+    input.identity.accountId === null
+      ? await checkRateLimitMulti(env, "postEditIp", [input.identity.ipHash])
+      : { allowed: true, retryAfterSeconds: 0 };
+  if (!editRate.allowed || !editIpRate.allowed) {
+    throw new ApiError(429, ErrorCode.RATE_LIMITED, "編集間隔が短すぎます。しばらく待ってください", {
+      retryAfterSeconds: Math.max(editRate.retryAfterSeconds, editIpRate.retryAfterSeconds),
+    });
+  }
+
+  // アク禁・アカウント停止（投稿と同じ判定）。
+  const ban = await db
+    .prepare(
+      `SELECT id FROM board_bans
+       WHERE (board_id = ? OR board_id IS NULL)
+         AND (expires_at IS NULL OR expires_at > ?)
+         AND ((kind = 'device' AND identity_hash = ?)
+           OR (kind = 'ip' AND identity_hash = ?)
+           OR (kind = 'account' AND identity_hash = ?))
+       LIMIT 1`,
+    )
+    .bind(input.board.id, now, input.identity.deviceHash, input.identity.ipHash, input.identity.accountId ?? "")
+    .first<{ id: string }>();
+  if (ban) throw new ApiError(403, ErrorCode.BANNED, "アクセス禁止中です");
+  if (input.identity.accountId) {
+    const account = await db
+      .prepare("SELECT status FROM accounts WHERE id = ?")
+      .bind(input.identity.accountId)
+      .first<{ status: string }>();
+    if (account && account.status !== "active") {
+      throw new ApiError(403, ErrorCode.BANNED, "アカウントが停止されています");
+    }
+  }
+
+  // Turnstile: 「その板でレスに確認が必要か」と同じ条件（always は編集も要求。anonymous はログイン済み免除）。
+  await assertTurnstile(env, input.turnstileToken, "", needsTurnstile(settings, input.identity.accountId !== null));
+
+  const post = input.post;
+  const previousBody = post.body;
+  const previousName = post.name;
+  const previousTitle = post.title;
+  const nextEditedCount = (post.edited_count ?? 0) + 1;
+
+  const parsedBody = parseBodyCommands(finalBody);
+  const anchors = await resolveAnchors(db, post.thread_id, parsedBody.anchors);
+  const hashtags = extractHashtags(parsedBody.body);
+
+  const statements: D1PreparedStatement[] = [
+    db
+      .prepare("UPDATE posts SET body = ?, hashtags = ?, edited_count = ? WHERE id = ?")
+      .bind(finalBody, hashtags.length > 0 ? JSON.stringify(hashtags) : null, nextEditedCount, post.id),
+    db
+      .prepare("INSERT INTO post_edit_history (post_id, previous_body, edited_at) VALUES (?, ?, ?)")
+      .bind(post.id, previousBody, now),
+    // FTS は外部コンテンツ方式: 旧トークン削除 → 新トークン挿入（!add と同じ 2 ステートメント）。
+    db
+      .prepare("INSERT INTO posts_fts(posts_fts, rowid, body, name, title) VALUES ('delete', ?, ?, ?, ?)")
+      .bind(post.id, previousBody, previousName, previousTitle),
+    db
+      .prepare("INSERT INTO posts_fts(rowid, body, name, title) VALUES (?, ?, ?, ?)")
+      .bind(post.id, finalBody, previousName, previousTitle),
+    // 安価の逆参照は新しい本文だけを反映する（旧本文の安価を外す）。
+    db.prepare("DELETE FROM backlinks WHERE post_id = ?").bind(post.id),
+  ];
+  for (const anchor of anchors) {
+    statements.push(
+      db
+        .prepare("INSERT OR IGNORE INTO backlinks (post_id, target_post_id, target_num, created_at) VALUES (?, ?, ?, ?)")
+        .bind(post.id, anchor.id, anchor.num, now),
+    );
+  }
+  // ハッシュタグの張り替え: 旧 hashtags（posts.hashtags JSON）由来の紐付けを外し、本文から再抽出したものを入れ直す。
+  statements.push(
+    db
+      .prepare(
+        `DELETE FROM thread_tags WHERE thread_id = ? AND tag_id IN (
+           SELECT g.id FROM tags g WHERE g.name IN (
+             SELECT je.value FROM posts p, json_each(p.hashtags) je WHERE p.id = ?
+           )
+         )`,
+      )
+      .bind(post.thread_id, post.id),
+  );
+  for (const tag of hashtags) {
+    statements.push(db.prepare("INSERT INTO tags (name) VALUES (?) ON CONFLICT(name) DO NOTHING").bind(tag));
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO thread_tags (thread_id, tag_id, updated_at) VALUES (?, (SELECT id FROM tags WHERE name = ?), ?)
+           ON CONFLICT(thread_id, tag_id) DO UPDATE SET updated_at = excluded.updated_at`,
+        )
+        .bind(post.thread_id, tag, now),
+    );
+  }
+
+  const results = await batch(db, statements);
+
+  const updated: Post = {
+    id: post.id,
+    threadId: post.thread_id,
+    boardId: post.board_id,
+    num: post.num,
+    kind: post.kind === "kome" ? "tsubuyaki" : "post",
+    name: post.name,
+    mail: post.mail,
+    trip: post.trip,
+    cap: post.cap,
+    body: finalBody,
+    createdAt: post.created_at,
+    idHash: post.post_id_hash,
+    sage: post.sage === 1,
+    isOp: post.num === 1,
+    isSub: false,
+    attachments: [],
+    likeCount: 0,
+    liked: false,
+    backlinks: anchors.map((anchor) => anchor.num),
+    hidden: post.hidden === 1,
+    editedCount: nextEditedCount,
+    selfDeleted: false,
+    mine: true,
+    aiAgentId: post.ai_agent_id,
+  };
+  await publishToThreadAndBoard(env, deps.ctx, post.thread_id, post.board_id, "post.updated", {
+    postId: post.id,
+    threadId: post.thread_id,
+    num: post.num,
+    post: updated,
+  });
+  return { post: updated, writeStats: sumStats(results) };
+}
+
+/** 本人削除: 本文を消して「投稿者により削除されました」。レス番号は残す（アンカーを壊さない）。 */
+export async function selfDeletePostInternal(post: PostRow, deps: PipelineDeps): Promise<void> {
+  const { env } = deps;
+  const db = env.DB;
+  const SELF_DELETED_BODY = "投稿者により削除されました";
+  const statements: D1PreparedStatement[] = [
+    db
+      .prepare("UPDATE posts SET self_deleted = 1, body = ?, attachments = NULL, hashtags = NULL WHERE id = ?")
+      .bind(SELF_DELETED_BODY, post.id),
+    db
+      .prepare("INSERT INTO posts_fts(posts_fts, rowid, body, name, title) VALUES ('delete', ?, ?, ?, ?)")
+      .bind(post.id, post.body, post.name, post.title),
+    // 検索対象外の本文として再索引する（削除済みレスが検索に引っかからないように空トークンを入れる）。
+    db.prepare("INSERT INTO posts_fts(rowid, body, name, title) VALUES (?, ?, ?, ?)").bind(post.id, "", post.name, post.title),
+    db.prepare("DELETE FROM backlinks WHERE post_id = ?").bind(post.id),
+    // 本人削除は不可逆の意思表示: 履歴の旧本文も消す（重点 3。API 側ガードと二重に防ぐ）。
+    db.prepare("DELETE FROM post_edit_history WHERE post_id = ?").bind(post.id),
+  ];
+  await batch(db, statements);
+  await publishToThreadAndBoard(env, deps.ctx, post.thread_id, post.board_id, "post.deleted", {
+    postId: post.id,
+    threadId: post.thread_id,
+    num: post.num,
+    selfDeleted: true,
+  });
+}
+
+/** スレ（タイトル + >>1 本文）の本人編集。 */
+export interface EditThreadInput {
+  thread: ThreadRow;
+  firstPost: PostRow;
+  board: BoardRow;
+  identity: Identity;
+  newTitle: string;
+  newBody: string;
+}
+
+export async function editThreadInternal(input: EditThreadInput, deps: PipelineDeps): Promise<{ thread: Thread }> {
+  const { env } = deps;
+  const db = env.DB;
+  const now = Math.floor(Date.now() / 1000);
+  const settings = boardSettingsOf(input.board);
+
+  const parsedTitle = parseTitleFlags(input.newTitle.replace(/[\r\n]+/g, " "));
+  if (parsedTitle.title.trim().length === 0) throw ApiError.validation("スレタイが空です");
+  if (Array.from(parsedTitle.title).length > 120) throw ApiError.validation("スレタイが長すぎます");
+
+  const rawBody = input.newBody.replace(/\r\n?/g, "\n");
+  const masked = applyNgWords(settings, rawBody);
+  if (masked.hit && settings.ngWordAction === "reject") throw ApiError.validation("NGワードが含まれています");
+  if (masked.body.trim().length === 0) throw ApiError.validation("本文が空です");
+  if (utf8Length(masked.body) > POST_BODY_MAX_BYTES) {
+    throw new ApiError(413, ErrorCode.PAYLOAD_TOO_LARGE, "本文が長すぎます");
+  }
+
+  // ---- 投稿経路と同じ検査（設計 70 重点 2。スレ編集にも連投・アク禁・アカウント停止を適用） ----
+  const editRate = await checkRateLimitMulti(env, "postEdit", [input.identity.deviceHash]);
+  const editIpRate =
+    input.identity.accountId === null
+      ? await checkRateLimitMulti(env, "postEditIp", [input.identity.ipHash])
+      : { allowed: true, retryAfterSeconds: 0 };
+  if (!editRate.allowed || !editIpRate.allowed) {
+    throw new ApiError(429, ErrorCode.RATE_LIMITED, "編集間隔が短すぎます。しばらく待ってください", {
+      retryAfterSeconds: Math.max(editRate.retryAfterSeconds, editIpRate.retryAfterSeconds),
+    });
+  }
+  const ban = await db
+    .prepare(
+      `SELECT id FROM board_bans
+       WHERE (board_id = ? OR board_id IS NULL)
+         AND (expires_at IS NULL OR expires_at > ?)
+         AND ((kind = 'device' AND identity_hash = ?)
+           OR (kind = 'ip' AND identity_hash = ?)
+           OR (kind = 'account' AND identity_hash = ?))
+       LIMIT 1`,
+    )
+    .bind(input.board.id, now, input.identity.deviceHash, input.identity.ipHash, input.identity.accountId ?? "")
+    .first<{ id: string }>();
+  if (ban) throw new ApiError(403, ErrorCode.BANNED, "アクセス禁止中です");
+  if (input.identity.accountId) {
+    const account = await db
+      .prepare("SELECT status FROM accounts WHERE id = ?")
+      .bind(input.identity.accountId)
+      .first<{ status: string }>();
+    if (account && account.status !== "active") {
+      throw new ApiError(403, ErrorCode.BANNED, "アカウントが停止されています");
+    }
+  }
+  const post = input.firstPost;
+  const previousBody = post.body;
+  const previousName = post.name;
+  const previousTitle = post.title;
+  const nextEditedCount = (post.edited_count ?? 0) + 1;
+  const hashtags = extractHashtags(masked.body);
+
+  const statements: D1PreparedStatement[] = [
+    db.prepare("UPDATE threads SET title = ? WHERE id = ?").bind(parsedTitle.title, input.thread.id),
+    db
+      .prepare("UPDATE posts SET body = ?, title = ?, hashtags = ?, edited_count = ? WHERE id = ?")
+      .bind(masked.body, parsedTitle.title, hashtags.length > 0 ? JSON.stringify(hashtags) : null, nextEditedCount, post.id),
+    db
+      .prepare("INSERT INTO post_edit_history (post_id, previous_body, edited_at) VALUES (?, ?, ?)")
+      .bind(post.id, previousBody, now),
+    db
+      .prepare("INSERT INTO posts_fts(posts_fts, rowid, body, name, title) VALUES ('delete', ?, ?, ?, ?)")
+      .bind(post.id, previousBody, previousName, previousTitle),
+    db
+      .prepare("INSERT INTO posts_fts(rowid, body, name, title) VALUES (?, ?, ?, ?)")
+      .bind(post.id, masked.body, previousName, parsedTitle.title),
+  ];
+  for (const tag of hashtags) {
+    statements.push(db.prepare("INSERT INTO tags (name) VALUES (?) ON CONFLICT(name) DO NOTHING").bind(tag));
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO thread_tags (thread_id, tag_id, updated_at) VALUES (?, (SELECT id FROM tags WHERE name = ?), ?)
+           ON CONFLICT(thread_id, tag_id) DO UPDATE SET updated_at = excluded.updated_at`,
+        )
+        .bind(post.thread_id, tag, now),
+    );
+  }
+  await batch(db, statements);
+
+  const fresh = await getThreadRow(db, input.thread.id);
+  if (!fresh) throw ApiError.notFound("スレッドが見つかりません");
+  const thread = mapThread(fresh);
+  await publishToThreadAndBoard(env, deps.ctx, input.thread.id, input.thread.board_id, "thread.updated", {
+    threadId: input.thread.id,
+    title: parsedTitle.title,
+    edited: true,
+  });
+  await publishToThreadAndBoard(env, deps.ctx, input.thread.id, input.thread.board_id, "post.updated", {
+    postId: post.id,
+    threadId: input.thread.id,
+    num: post.num,
+  });
+  return { thread };
 }

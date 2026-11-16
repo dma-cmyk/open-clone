@@ -4,19 +4,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api, ApiError } from "@/features/board-ui/api";
 import { AnchorPopup, type AnchorTarget } from "@/features/board-ui/anchor-popup";
-import { formatRelative, referencedNums, threadPath, boardPath } from "@/features/board-ui/format";
+import { formatDate, formatRelative, referencedNums, threadPath, boardPath } from "@/features/board-ui/format";
 import { getLastRead, isBookmarked, recordRead, setLastRead, toggleBookmark } from "@/features/board-ui/history";
-import { TsubuyakiOverlay } from "@/features/board-ui/tsubuyaki-overlay";
 import { PostForm } from "@/features/board-ui/post-form";
 import { PostRow } from "@/features/board-ui/post-row";
+import { TsubuyakiOverlay } from "@/features/board-ui/tsubuyaki-overlay";
 import { ReportModal } from "@/features/board-ui/report-modal";
 import { addNgEntry, matchNg, playNewPostSound, settingsStore, speak } from "@/features/board-ui/settings";
 import { useApiData, errorMessage } from "@/features/board-ui/use-api-data";
 import { useThreadLive, type LiveStatus } from "@/features/board-ui/use-thread-live";
 import { pageLinks, parseRange, rangeLabel, rangeQuery } from "@/features/board-ui/range";
 import { quotePost } from "@/features/board-ui/quote-bus";
-import type { AttachmentRef, Post } from "@/features/board-ui/types";
-import { Button, Notice, Spinner, useToast } from "@/components/ui";
+import type { AttachmentRef, Post, PostEditHistoryItem, ThreadQuoteRef } from "@/features/board-ui/types";
+import { Button, Modal, Notice, Spinner, useToast } from "@/components/ui";
 import { usePageTitle } from "@/lib/title";
 import { PluginSlot } from "@/components/plugin-slot";
 import { PluginRenderStyles, usePluginPostRenderRules } from "@/features/plugin-host";
@@ -79,6 +79,11 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   const [tsubuyakiComments, setTsubuyakiComments] = useState<Post[]>([]);
   const boardInfo = useApiData(() => api.getBoard(slug), [slug]);
   const canManage = Boolean(boardInfo.data?.canManage);
+  // 板設定（本人編集・本人削除・引用スレの許可）。ボタン表示は補助で、最終判定は API 側。
+  const boardSettings = boardInfo.data?.board.settings;
+  const allowQuoteThread = boardSettings?.allowQuoteThread !== false;
+  // スレ主かどうかは >>1 の mine フラグで判定（API が端末・アカウント一致を計算する）。
+  const isThreadOwner = useMemo(() => posts.some((post) => post.num === 1 && post.mine === true), [posts]);
   const renderRules = usePluginPostRenderRules({
     boardId: Number(boardInfo.data?.board.id) || undefined,
     boardSlug: slug,
@@ -93,6 +98,18 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   const [newIds, setNewIds] = useState<Set<number>>(new Set());
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [bookmarked, setBookmarked] = useState(false);
+  // 本人編集・本人削除・履歴・引用スレの UI 状態。
+  const [editTarget, setEditTarget] = useState<Post | null>(null);
+  const [editBody, setEditBody] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<Post | null>(null);
+  const [historyItems, setHistoryItems] = useState<PostEditHistoryItem[] | null>(null);
+  const [threadEditOpen, setThreadEditOpen] = useState(false);
+  const [threadEditTitle, setThreadEditTitle] = useState("");
+  const [threadEditBody, setThreadEditBody] = useState("");
+  const [quotesOpen, setQuotesOpen] = useState(false);
+  const [quoteRefs, setQuoteRefs] = useState<ThreadQuoteRef[] | null>(null);
   const initialMaxId = useRef(0);
   const lastIdRef = useRef(0);
   const stickToBottom = useRef(true);
@@ -339,6 +356,114 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
     }
   };
 
+  // ---- 本人編集・本人削除・履歴・引用スレ ----
+
+  const onSelfEdit = (post: Post) => {
+    setEditTarget(post);
+    setEditBody(post.body);
+    setEditError(null);
+  };
+
+  const submitSelfEdit = async () => {
+    if (!editTarget || editBody.trim().length === 0) {
+      setEditError("本文を入力してください");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const updated = await api.editPost(editTarget.id, editBody);
+      setPosts((prev) => prev.map((item) => (item.id === updated.id ? { ...item, ...updated, mine: true } : item)));
+      setEditTarget(null);
+      setEditBody("");
+      toast.show("編集しました");
+    } catch (cause) {
+      setEditError(cause instanceof Error ? cause.message : "編集に失敗しました");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const onSelfDelete = async (post: Post) => {
+    if (!window.confirm(`レス ${post.num} を削除しますか？（「投稿者により削除されました」と残ります）`)) return;
+    try {
+      await api.deletePostSelf(post.id);
+      // レス番号は残る（アンカーを壊さない）。本文表示だけが変わる。
+      setPosts((prev) =>
+        prev.map((item) => (item.id === post.id ? { ...item, selfDeleted: true, body: "投稿者により削除されました", attachments: [] } : item)),
+      );
+      toast.show("削除しました");
+    } catch (cause) {
+      toast.show(cause instanceof Error ? cause.message : "削除に失敗しました");
+    }
+  };
+
+  const onHistory = async (post: Post) => {
+    setHistoryTarget(post);
+    setHistoryItems(null);
+    try {
+      setHistoryItems(await api.getPostHistory(post.id));
+    } catch {
+      setHistoryItems([]);
+    }
+  };
+
+  const openThreadEdit = () => {
+    if (!thread) return;
+    setThreadEditTitle(thread.title);
+    setThreadEditBody(posts.find((post) => post.num === 1)?.body ?? "");
+    setThreadEditOpen(true);
+    setEditError(null);
+  };
+
+  const submitThreadEdit = async () => {
+    if (!thread) return;
+    if (threadEditTitle.trim().length === 0 || threadEditBody.trim().length === 0) {
+      setEditError("スレタイと本文を入力してください");
+      return;
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await api.editThread(thread.id, threadEditTitle, threadEditBody);
+      setThreadEditOpen(false);
+      page.reload();
+      toast.show("スレを編集しました");
+    } catch (cause) {
+      setEditError(cause instanceof Error ? cause.message : "編集に失敗しました");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const deleteThreadSelf = async () => {
+    if (!thread) return;
+    if (!window.confirm("スレを削除しますか？（他人のレスがある場合は削除できません）")) return;
+    try {
+      await api.deleteThread(thread.id);
+      toast.show("スレを削除しました");
+      navigate(boardPath(slug));
+    } catch (cause) {
+      toast.show(cause instanceof Error ? cause.message : "スレの削除に失敗しました");
+    }
+  };
+
+  const openQuotes = async () => {
+    setQuotesOpen(true);
+    if (quoteRefs === null) {
+      try {
+        setQuoteRefs(await api.getThreadQuotes(threadId));
+      } catch {
+        setQuoteRefs([]);
+      }
+    }
+  };
+
+  /** このスレを引用して新しいスレを立てる（引用先の板で許可されている場合）。 */
+  const quoteThisThread = () => {
+    navigate(`/b/${encodeURIComponent(slug)}/?quote=${threadId}`);
+  };
+
   const jumpTo = (num: number) => {
     const element = document.getElementById(`p${num}`);
     if (element) {
@@ -494,6 +619,49 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
           {lastRead > 0 ? <span>前回: {lastRead} まで既読</span> : null}
           <span className="oc-spacer" />
           <span>{rangeLabel(range)} 表示</span>
+        </div>
+
+        {page.data?.quoteSource ? (
+          <div className="oc-quote-card" data-quote-source={page.data.quoteSource.threadId}>
+            <div className="oc-quote-card-head">
+              <span className="oc-quote-card-label">引用元</span>
+              {page.data.quoteSource.unavailable ? (
+                <span className="oc-muted">
+                  {page.data.quoteSource.boardName ? `${page.data.quoteSource.boardName} 板 / ` : ""}
+                  {page.data.quoteSource.title}
+                </span>
+              ) : (
+                <Link href={`/b/${page.data.quoteSource.boardSlug}/t/${page.data.quoteSource.threadId}`}>
+                  {page.data.quoteSource.boardName} 板 / {page.data.quoteSource.title} ({page.data.quoteSource.postCount})
+                </Link>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="oc-row oc-mt oc-thread-owner-actions">
+          {(boardSettings?.selfEditWindowMinutes ?? 0) === 0 ||
+          thread.createdAt === undefined ||
+          thread.createdAt + (boardSettings?.selfEditWindowMinutes ?? 0) * 60 > Date.now() / 1000 ? (
+            isThreadOwner ? (
+              <Button size="sm" onClick={openThreadEdit} title="スレ主としてタイトルと>>1を編集">
+                ✏ スレを編集
+              </Button>
+            ) : null
+          ) : null}
+          {isThreadOwner ? (
+            <Button size="sm" onClick={deleteThreadSelf} title="スレ主としてスレを削除（他人のレスがある場合は不可）">
+              🗑 スレを削除
+            </Button>
+          ) : null}
+          {allowQuoteThread ? (
+            <Button size="sm" onClick={quoteThisThread} title="このスレを引用して新しいスレを立てる">
+              ↗ 引用して新スレ
+            </Button>
+          ) : null}
+          <Button size="sm" onClick={openQuotes} title="このスレを引用したスレの一覧">
+            🔗 引用したスレ
+          </Button>
         </div>
         {idFilter ? (
           <div className="oc-row oc-mt">
@@ -656,6 +824,11 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
                     onFilterId={(idHash) => applyQuery({ r: null, id: idHash })}
                     onReport={(target) => setReport({ posts: String(target.num) })}
                     onDelete={onDelete}
+                    onSelfEdit={post.mine && !post.isOp && (boardSettings?.allowPostEdit ?? true) ? onSelfEdit : undefined}
+                    onSelfDelete={
+                      post.mine && !post.isOp && (boardSettings?.allowPostDelete ?? true) ? onSelfDelete : undefined
+                    }
+                    onHistory={onHistory}
                     onJump={jumpTo}
                     renderRules={renderRules}
                   />
@@ -740,6 +913,101 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
         enabled={canPost}
         turnstile={boardInfo.data?.board.settings?.turnstile ?? "anonymous"}
       />
+
+      {/* 自分のレスの編集モーダル */}
+      <Modal open={editTarget !== null} title={`レス ${editTarget?.num ?? ""} を編集`} onClose={() => setEditTarget(null)} width={640}>
+        {editTarget ? (
+          <div className="oc-stack">
+            <textarea
+              className="oc-textarea"
+              rows={6}
+              value={editBody}
+              onChange={(event) => setEditBody(event.target.value)}
+              aria-label="編集本文"
+            />
+            <div className="oc-muted oc-small">編集すると「編集済み」と表示され、編集前の本文は履歴として誰でも見られます。</div>
+            {editError ? <Notice kind="error">{editError}</Notice> : null}
+            <div className="oc-row">
+              <Button variant="primary" disabled={editSaving} onClick={() => void submitSelfEdit()}>
+                {editSaving ? "保存中…" : "編集を保存"}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      {/* 編集履歴モーダル（誰でも見られる） */}
+      <Modal open={historyTarget !== null} title={`レス ${historyTarget?.num ?? ""} の編集履歴`} onClose={() => setHistoryTarget(null)} width={640}>
+        {historyTarget ? (
+          <div className="oc-stack">
+            {historyItems === null ? (
+              <div className="oc-muted">読み込み中…</div>
+            ) : historyItems.length === 0 ? (
+              <div className="oc-muted">編集履歴はありません。</div>
+            ) : (
+              historyItems.map((item) => (
+                <div key={item.id} className="oc-post oc-post-history">
+                  <div className="oc-muted oc-small">{formatDate(item.editedAt)} 時点の本文</div>
+                  <div className="oc-post-main" style={{ whiteSpace: "pre-wrap" }}>
+                    {item.previousBody}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : null}
+      </Modal>
+
+      {/* スレ編集モーダル（スレ主: タイトル + >>1 本文） */}
+      <Modal open={threadEditOpen} title="スレを編集" onClose={() => setThreadEditOpen(false)} width={640}>
+        <div className="oc-stack">
+          <label className="oc-field">
+            <span className="oc-label">スレタイ</span>
+            <input
+              className="oc-input"
+              value={threadEditTitle}
+              maxLength={120}
+              onChange={(event) => setThreadEditTitle(event.target.value)}
+              aria-label="スレタイ"
+            />
+          </label>
+          <label className="oc-field">
+            <span className="oc-label">{"1 の本文（>>1）"}</span>
+            <textarea
+              className="oc-textarea"
+              rows={6}
+              value={threadEditBody}
+              onChange={(event) => setThreadEditBody(event.target.value)}
+              aria-label="1の本文"
+            />
+          </label>
+          {editError ? <Notice kind="error">{editError}</Notice> : null}
+          <div className="oc-row">
+            <Button variant="primary" disabled={editSaving} onClick={() => void submitThreadEdit()}>
+              {editSaving ? "保存中…" : "編集を保存"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* このスレを引用したスレの一覧 */}
+      <Modal open={quotesOpen} title="このスレを引用したスレ" onClose={() => setQuotesOpen(false)} width={640}>
+        <div className="oc-stack">
+          {quoteRefs === null ? (
+            <div className="oc-muted">読み込み中…</div>
+          ) : quoteRefs.length === 0 ? (
+            <div className="oc-muted">まだ引用したスレはありません。</div>
+          ) : (
+            quoteRefs.map((ref) => (
+              <div key={ref.id} className="oc-quote-ref-row">
+                <Link href={`/b/${ref.boardSlug}/t/${ref.id}?r=l50`}>
+                  {ref.boardName} 板 / {ref.title} ({ref.postCount})
+                </Link>
+              </div>
+            ))
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

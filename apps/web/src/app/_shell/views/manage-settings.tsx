@@ -31,6 +31,12 @@ export function ManageBoardSettings({
     tsubuyaki: board.settings?.tsubuyaki !== false,
     noId: Boolean(board.settings?.noId),
     maxPosts: board.settings?.maxPosts ?? 1000,
+    allowPostEdit: board.settings?.allowPostEdit !== false,
+    allowPostDelete: board.settings?.allowPostDelete !== false,
+    allowThreadEdit: board.settings?.allowThreadEdit !== false,
+    allowThreadDelete: board.settings?.allowThreadDelete !== false,
+    allowQuoteThread: board.settings?.allowQuoteThread !== false,
+    selfEditWindowMinutes: board.settings?.selfEditWindowMinutes ?? 0,
   });
   const [ngWords, setNgWords] = useState((board.settings?.ngWords ?? []).join("\n"));
   const [design, setDesign] = useState<BoardDesign>({
@@ -54,6 +60,12 @@ export function ManageBoardSettings({
       tsubuyaki: board.settings?.tsubuyaki !== false,
       noId: Boolean(board.settings?.noId),
       maxPosts: board.settings?.maxPosts ?? 1000,
+      allowPostEdit: board.settings?.allowPostEdit !== false,
+      allowPostDelete: board.settings?.allowPostDelete !== false,
+      allowThreadEdit: board.settings?.allowThreadEdit !== false,
+      allowThreadDelete: board.settings?.allowThreadDelete !== false,
+      allowQuoteThread: board.settings?.allowQuoteThread !== false,
+      selfEditWindowMinutes: board.settings?.selfEditWindowMinutes ?? 0,
     });
     setNgWords((board.settings?.ngWords ?? []).join("\n"));
     setDesign({
@@ -158,6 +170,47 @@ export function ManageBoardSettings({
             ID 非表示
           </label>
         </div>
+        <div className="oc-panel" style={{ marginTop: 10 }}>
+          <div className="oc-panel-title">本人による編集・削除・引用スレ</div>
+          <div className="oc-panel-inner oc-stack">
+            <div className="oc-row">
+              <label className="oc-check">
+                <input type="checkbox" checked={settings.allowPostEdit} onChange={(event) => setSettings({ ...settings, allowPostEdit: event.target.checked })} />
+                レス編集
+              </label>
+              <label className="oc-check">
+                <input type="checkbox" checked={settings.allowPostDelete} onChange={(event) => setSettings({ ...settings, allowPostDelete: event.target.checked })} />
+                レス本人削除
+              </label>
+              <label className="oc-check">
+                <input type="checkbox" checked={settings.allowThreadEdit} onChange={(event) => setSettings({ ...settings, allowThreadEdit: event.target.checked })} />
+                スレ編集
+              </label>
+              <label className="oc-check">
+                <input type="checkbox" checked={settings.allowThreadDelete} onChange={(event) => setSettings({ ...settings, allowThreadDelete: event.target.checked })} />
+                スレ本人削除
+              </label>
+              <label className="oc-check">
+                <input type="checkbox" checked={settings.allowQuoteThread} onChange={(event) => setSettings({ ...settings, allowQuoteThread: event.target.checked })} />
+                引用スレ
+              </label>
+            </div>
+            <label className="oc-field" style={{ maxWidth: 280 }}>
+              <span className="oc-label">本人が編集・削除できる時間（分・0 = 無制限）</span>
+              <input
+                className="oc-input"
+                type="number"
+                min={0}
+                max={525600}
+                value={settings.selfEditWindowMinutes ?? 0}
+                onChange={(event) => setSettings({ ...settings, selfEditWindowMinutes: Number(event.target.value) })}
+              />
+            </label>
+            <div className="oc-muted oc-small">
+              この設定は本人操作（編集・削除）だけに適用されます。板スタッフの削除・非表示には影響しません。
+            </div>
+          </div>
+        </div>
         <label className="oc-field">
           <span className="oc-label">NG ワード（1行1語。ヒットした投稿は拒否されます）</span>
           <textarea className="oc-textarea" rows={4} value={ngWords} onChange={(event) => setNgWords(event.target.value)} />
@@ -180,6 +233,12 @@ export function ManageBoardSettings({
                   tsubuyaki: settings.tsubuyaki,
                   noId: settings.noId,
                   maxPosts: settings.maxPosts,
+                  allowPostEdit: settings.allowPostEdit,
+                  allowPostDelete: settings.allowPostDelete,
+                  allowThreadEdit: settings.allowThreadEdit,
+                  allowThreadDelete: settings.allowThreadDelete,
+                  allowQuoteThread: settings.allowQuoteThread,
+                  selfEditWindowMinutes: settings.selfEditWindowMinutes,
                   ngWords: ngWords
                     .split("\n")
                     .map((line) => line.trim())
