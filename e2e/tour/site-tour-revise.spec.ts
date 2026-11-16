@@ -59,28 +59,20 @@ async function loginAsUser(context: BrowserContext): Promise<void> {
   ]);
 }
 
-/** 上限（64 文字）の表示名を持つ実アカウントでログインする（T02）。
- *  pc/mobile の両プロジェクトで同じアカウントを使い、登録回数を増やさない（登録は 5 回/日/IP）。 */
-async function loginWithLongName(context: BrowserContext, request: APIRequestContext): Promise<void> {
-  const name = "長".repeat(64);
-  const email = "trev-long-name@example.test";
-  const password = "e2e-Password-1";
-  const registered = await request.post(apiUrl("/v1/auth/register"), {
-    headers: { Origin: ALLOWED_ORIGIN, "content-type": "application/json" },
-    data: { name, email, password },
-  });
-  // 既に別プロジェクトが同じ実行内で作っている場合は 409。同じ資格情報でログインする。
-  if (registered.status() !== 201) expect(registered.status(), await registered.text()).toBe(409);
-  const login = await request.post(apiUrl("/v1/auth/login"), {
-    headers: { Origin: ALLOWED_ORIGIN, "content-type": "application/json" },
-    data: { email, password },
-  });
-  expect(login.status(), await login.text()).toBe(200);
-  const token = /oc_sess=([^;]+)/.exec(login.headers()["set-cookie"] ?? "")?.[1] ?? "";
-  expect(token).not.toBe("");
+/** 上限（64 文字）の表示名を持つアカウントでログインする（T02）。
+ *  e2e/fixtures/seed.sql の固定アカウント。新規登録は 5 回/日/IP の上限を他 spec と取り合い
+ *  CI で 429 になるため、登録しない。 */
+async function loginWithLongName(context: BrowserContext, _request: APIRequestContext): Promise<void> {
   const { hostname } = new URL(process.env.E2E_WEB_URL ?? "http://localhost:3201");
   await context.addCookies([
-    { name: "oc_sess", value: token, domain: hostname, path: "/", httpOnly: true, sameSite: "Lax" },
+    {
+      name: "oc_sess",
+      value: "e2e-tour-longname-session-token",
+      domain: hostname,
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
   ]);
 }
 

@@ -7,7 +7,11 @@
 INSERT OR IGNORE INTO accounts (id, name, email, password_hash, role, status, created_at)
 VALUES
   ('01ARZ3NDEKTSV4RRFFQ69G5FAV', 'owner', NULL, NULL, 'owner', 'active', 1760000000),
-  ('01ARZ3NDEKTSV4RRFFQ69G5FAW', 'test-user', 'test@example.com', NULL, 'user', 'active', 1760000000);
+  ('01ARZ3NDEKTSV4RRFFQ69G5FAW', 'test-user', 'test@example.com', NULL, 'user', 'active', 1760000000),
+  -- サイトツアーの権限別検証用（新規登録の 5 回/日/IP 上限を他 spec と取り合わないよう固定で用意）
+  ('01ARZ3NDEKTSV4RRFFQ69G5FB0', 'trev-deputy', NULL, NULL, 'user', 'active', 1760000000),
+  ('01ARZ3NDEKTSV4RRFFQ69G5FB1', 'trev-moderator', NULL, NULL, 'user', 'active', 1760000000),
+  ('01ARZ3NDEKTSV4RRFFQ69G5FB2', '長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長', NULL, NULL, 'user', 'active', 1760000000);
 
 -- サイト設定の初期値
 INSERT OR IGNORE INTO site_config (key, value) VALUES
@@ -31,7 +35,14 @@ VALUES
   ('a4768801965d434ca3e6c8a107a4936948c4fee8914374d98ecab97e91286e54',
    '01ARZ3NDEKTSV4RRFFQ69G5FAV', 4102444800, 'e2e-owner', 1760000000, 1760000000),
   ('f8b4041e0522cee5c7bd2f6bd1667acd457ad5467b1398d70042600b085b41d4',
-   '01ARZ3NDEKTSV4RRFFQ69G5FAW', 4102444800, 'e2e-user', 1760000000, 1760000000);
+   '01ARZ3NDEKTSV4RRFFQ69G5FAW', 4102444800, 'e2e-user', 1760000000, 1760000000),
+  -- oc_sess=e2e-tour-deputy-session-token / e2e-tour-moderator-session-token / e2e-tour-longname-session-token
+  ('7665350ef18b742554950bffe2ce46dd11c52f729d7b254915fccf5009f892fe',
+   '01ARZ3NDEKTSV4RRFFQ69G5FB0', 4102444800, 'e2e-tour-deputy', 1760000000, 1760000000),
+  ('9034d948944f5dac83aece697555f2e14f5bb70ce594db620575bcd6aa39e40f',
+   '01ARZ3NDEKTSV4RRFFQ69G5FB1', 4102444800, 'e2e-tour-moderator', 1760000000, 1760000000),
+  ('48e5424a9ad2d3feb74dc554daa13ea0aa08e628b847d422675cb0785d526e51',
+   '01ARZ3NDEKTSV4RRFFQ69G5FB2', 4102444800, 'e2e-tour-longname', 1760000000, 1760000000);
 
 -- seed owner セッションの step-up（TOTP 再認証）を恒久付与する（migration 0600 の session_stepup）。
 -- seed の owner は password/TOTP を持たないため、招待キー発行などの step-up 必須操作を E2E から

@@ -58,28 +58,13 @@ async function runTourToEnd(page: Page): Promise<string[]> {
 }
 
 
-/** 実アカウントでログインしたセッション Cookie を返す（板スタッフの権限検証用）。
- *  pc/mobile の両プロジェクトで同じアカウントを共有し、登録回数を増やさない（登録は 5 回/日/IP）。 */
-async function createAccountSession(
-  request: APIRequestContext,
+/** 板スタッフの権限検証用のセッション Cookie（e2e/fixtures/seed.sql の固定アカウント）。
+ *  新規登録は 5 回/日/IP の上限を他 spec と取り合い CI で 429 になるため、登録しない。 */
+function createAccountSession(
+  _request: APIRequestContext,
   key: "deputy" | "moderator",
 ): Promise<{ cookie: string; name: string }> {
-  const name = `trev-${key}`;
-  const email = `${name}@example.test`;
-  const password = "e2e-Password-1";
-  const registered = await request.post(apiUrl("/v1/auth/register"), {
-    headers: { Origin: ALLOWED_ORIGIN, "content-type": "application/json" },
-    data: { name, email, password },
-  });
-  if (registered.status() !== 201) expect(registered.status(), await registered.text()).toBe(409);
-  const login = await request.post(apiUrl("/v1/auth/login"), {
-    headers: { Origin: ALLOWED_ORIGIN, "content-type": "application/json" },
-    data: { email, password },
-  });
-  expect(login.status(), await login.text()).toBe(200);
-  const token = /oc_sess=([^;]+)/.exec(login.headers()["set-cookie"] ?? "")?.[1] ?? "";
-  expect(token).not.toBe("");
-  return { cookie: `oc_sess=${token}`, name };
+  return Promise.resolve({ cookie: `oc_sess=e2e-tour-${key}-session-token`, name: `trev-${key}` });
 }
 
 async function addSessionCookie(context: BrowserContext, cookie: string): Promise<void> {

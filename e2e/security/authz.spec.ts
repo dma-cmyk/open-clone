@@ -28,9 +28,10 @@ const PROTECTED: ProtectedEndpoint[] = [
   { method: "GET", path: "/v1/ai/policies" },
   { method: "GET", path: "/v1/ai/status" },
   { method: "GET", path: "/v1/github/link" },
-  { method: "GET", path: "/v1/plugins/mine" },
+  // GET /v1/plugins/mine と POST /v1/plugins はログインなしでも使える（端末所有の自分専用プラグイン。
+  // 報告 40 の設計）。匿名で他人のプラグインが見えないこと・禁止範囲が拒否されることは
+  // plugin/anon-create.spec.ts と API の anon-create.test.ts で検証する。
   { method: "GET", path: "/v1/plugins/reviews" },
-  { method: "POST", path: "/v1/plugins" },
   { method: "GET", path: "/v1/reports" },
   { method: "POST", path: "/v1/boards" },
 ];
