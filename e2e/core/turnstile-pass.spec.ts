@@ -249,16 +249,19 @@ test.describe("ロボット確認の省略", () => {
 
     await page.goto(`/b/${slug}/t/${threadId}`);
     await expect(page.locator("#p1")).toBeVisible({ timeout: 20_000 });
-    // レスで確認済みにする
+    // レスで確認済みにする。**送信成功後に状態を取り直して省略が反映される**ので、
+    // ここで待つべき終状態は「部品 0 個」（以前は直前の一時状態 1 個を待っていて不安定だった）。
     await sendReply(page, `添付前のレス ${Date.now()}`);
-    await expect(page.locator(".oc-form .oc-turnstile")).toHaveCount(1, { timeout: 20_000 });
+    await expect(page.locator(".oc-form .oc-turnstile")).toHaveCount(0, { timeout: 20_000 });
 
-    // 添付は毎回確認。prepare に新しいトークンが付き、成功する。
+    // 添付は毎回確認なので、添付を始めた時点で部品が 1 個マウントされる（遅延マウント）。
+    // prepare に新しいトークンが付き、成功する。
     const prepare = page.waitForResponse(
       (response) => /\/api\/v1\/uploads\/prepare$/.test(new URL(response.url()).pathname),
     );
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52]);
     await page.locator('.oc-form input[type="file"]').setInputFiles({ name: "pass.png", mimeType: "image/png", buffer: png });
+    await expect(page.locator(".oc-form .oc-turnstile")).toHaveCount(1, { timeout: 20_000 });
     const prepared = await prepare;
     expect(prepared.status(), await prepared.text()).toBe(201);
     expect(prepared.request().headers()["x-turnstile-token"] ?? "").toMatch(/^stub-token|^[0-9]+$/);
