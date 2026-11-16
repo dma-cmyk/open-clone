@@ -663,8 +663,13 @@ export default function PluginEditorPage() {
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#444" }}>
               <li>manifest で宣言していない権限の API は拒否されます。</li>
               <li>宣言的レンダー規則（render.post）は JS なしで投稿表示を変換できます。</li>
-              <li>コードは 512KB まで。無限ループ・eval・document.cookie は静的検査でブロックされます。</li>
-              <li>保存しただけでは公開されません（非公開の下書き）。公開申請を行ってください。</li>
+              <li>
+                コードは {anonymous ? "64KB（ログインせずに保存する場合）" : "512KB"} まで。無限ループ・eval・document.cookie は静的検査でブロックされます。
+              </li>
+              <li>
+                保存しただけでは公開されません（非公開の下書き）。
+                {anonymous ? "公開申請にはログインが必要です。" : "公開申請を行ってください。"}
+              </li>
               <li>現在のスコープ: {scopes.join(", ") || "未選択"}</li>
             </ul>
           </Card>
