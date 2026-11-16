@@ -1174,3 +1174,85 @@ describe("R44-03: 本体と初期版が同じバッチで保存される", () =>
     expect(orphanVersions?.n).toBe(0); // 孤立した版がない
   });
 });
+
+// 端末の作成回数制限（1 日 20 回）は他のテストと共有されるため、専用の端末 Cookie を使う。
+async function createAnonPlugin(
+  name: string,
+  ip: string,
+  cookie: string,
+): Promise<{ id: string; deviceHash: string }> {
+  const created = await call("/v1/plugins", {
+    method: "POST",
+    cookie,
+    headers: withIp(ip),
+    body: { manifest: anonManifest(name), code: "register({});" },
+  });
+  expect(created.status).toBe(201);
+  const plugin = expectData<{ id: string }>(created);
+  const row = await env.DB.prepare("SELECT owner_device_hash FROM plugins WHERE id = ?")
+    .bind(plugin.id)
+    .first<{ owner_device_hash: string }>();
+  return { id: plugin.id, deviceHash: row?.owner_device_hash ?? "" };
+}
+
+describe("R46-01: 引き継ぎの競合で先に確定した所有者を上書きしない", () => {
+  it("後発の引き継ぎが候補を読んだ後に先発が確定しても、所有者と導入は先発のまま", async () => {
+    const device = "oc_did=0123456789abcdef0123456789ab4601";
+    const { id, deviceHash } = await createAnonPlugin("r4601-race", "10.46.1.1", device);
+    await call(`/v1/plugins/${id}/install`, {
+      method: "POST",
+      cookie: device,
+      headers: withIp("10.46.1.1"),
+      body: { scope: "personal" },
+    });
+    const first = await seedAccount("user", "first");
+    const second = await seedAccount("user", "second");
+
+    // 後発（second）の候補 SELECT の後、バッチの直前で先発（first）の引き継ぎを完了させる。
+    const racing = {
+      prepare: (sql: string) => env.DB.prepare(sql),
+      batch: async (statements: D1PreparedStatement[]) => {
+        await transferDeviceOwnedPlugins(env.DB, deviceHash, first.id);
+        return env.DB.batch(statements);
+      },
+    } as unknown as D1Database;
+    const moved = await transferDeviceOwnedPlugins(racing, deviceHash, second.id);
+    expect(moved).toBe(0);
+
+    const owner = await env.DB.prepare("SELECT owner_account_id FROM plugins WHERE id = ?")
+      .bind(id)
+      .first<{ owner_account_id: string }>();
+    expect(owner?.owner_account_id).toBe(first.id);
+    const install = await env.DB.prepare(
+      "SELECT scope_ref, installed_by FROM plugin_installs WHERE plugin_id = ? AND scope = 'personal'",
+    )
+      .bind(id)
+      .first<{ scope_ref: string; installed_by: string }>();
+    expect(install).toEqual({ scope_ref: first.id, installed_by: first.id });
+  });
+});
+
+describe("R46-02: 帰属不明の導入は引き継ぎで本人扱いにしない", () => {
+  it("installed_by が NULL の導入は残り、引き継ぎ後も削除は 409", async () => {
+    const { id, deviceHash } = await createAnonPlugin("r4602-unknown", "10.46.2.1", "oc_did=0123456789abcdef0123456789ab4602");
+    // 帰属不明の既存導入（installed_by = NULL）を用意する
+    await env.DB.prepare(
+      "INSERT INTO plugin_installs (id, plugin_id, version, scope, scope_ref, enabled, installed_by, created_at, updated_at) VALUES (?, ?, '1.0.0', 'personal', ?, 1, NULL, 0, 0)",
+    )
+      .bind(ulid(), id, `device:${deviceHash}`)
+      .run();
+    const account = await seedAccount("user", "heir");
+
+    expect(await transferDeviceOwnedPlugins(env.DB, deviceHash, account.id)).toBe(1);
+
+    const install = await env.DB.prepare(
+      "SELECT scope_ref, installed_by FROM plugin_installs WHERE plugin_id = ? AND scope = 'personal'",
+    )
+      .bind(id)
+      .first<{ scope_ref: string; installed_by: string | null }>();
+    expect(install).toEqual({ scope_ref: `device:${deviceHash}`, installed_by: null });
+
+    const deleted = await call(`/v1/plugins/${id}`, { method: "DELETE", cookie: account.cookie });
+    expect(deleted.status).toBe(409);
+  });
+});
