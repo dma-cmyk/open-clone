@@ -46,9 +46,11 @@ test.describe("rv-core A1: 投稿フォームの Turnstile は 1 個", () => {
     expect(sent?.turnstileToken ?? "").toMatch(/^stub-token-/);
     await expect(page.locator(".oc-post", { hasText: body })).toBeVisible({ timeout: 20_000 });
 
-    // 送信後（トークン消費 → リセット）もウィジェットは 1 個のまま
-    await expect.poll(() => widgetCount(page)).toBe(1);
-    await expect(page.locator(".oc-form .oc-turnstile .stub-turnstile")).toHaveCount(1);
+    // 送信後はトークンを消費してリセットされる。ただし報告書 81 の「確認の省略」により、
+    // 未ログインの板では成功後にウィジェットが消えることがある（期限内は省略）。
+    // ここでは「2 個に増えない」ことだけを確認し、省略の挙動は core/turnstile-pass.spec.ts で見る。
+    expect(await widgetCount(page)).toBeLessThanOrEqual(1);
+    await expect(page.locator(".oc-form .oc-turnstile .stub-turnstile")).toHaveCount(await widgetCount(page));
   });
 
   test("投稿欄を閉じて開き直しても、遷移して戻っても 1 個のまま", async ({ page, request }) => {

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { matchNg, settingsStore } from "./settings";
 import { TurnstileWidget } from "./turnstile";
+import { getTurnstilePass, setTurnstilePass, useTurnstilePass } from "./turnstile-pass-store";
 import type { Post } from "./types";
 
 interface Flowing {
@@ -19,6 +20,7 @@ interface Flowing {
 
 export function TsubuyakiOverlay({
   threadId,
+  boardSlug,
   open,
   onClose,
   comments,
@@ -28,6 +30,8 @@ export function TsubuyakiOverlay({
   turnstile = "anonymous",
 }: {
   threadId: number;
+  /** 確認済み（省略）の判定に使う板スラッグ。 */
+  boardSlug?: string;
   open: boolean;
   onClose: () => void;
   comments: Post[];
@@ -46,10 +50,15 @@ export function TsubuyakiOverlay({
   const [token, setToken] = useState("");
   const [resetKey, setResetKey] = useState(0);
   const [needsTurnstile, setNeedsTurnstile] = useState(false);
+  // サーバーが「期限内の確認済み」と答えていれば、ウィジェットを出さない（報告書 81）。
+  const shared = useTurnstilePass(boardSlug ?? "");
+  // `always` の板では省略しない（共有 pass が古くても使わない。レビュー 84 / R82-03）。
+  const passed = turnstile === "anonymous" && (shared.passed || getTurnstilePass(boardSlug ?? "").passed);
   const seen = useRef(new Set<number>());
   const initialDone = useRef(false);
 
   // 未ログイン時のみ Turnstile を要求する（板設定 anonymous）。通常投稿と同じ判定。
+  // さらに、この端末が期限内の確認済みなら省略する（サーバーが最終判定する）。
   useEffect(() => {
     if (turnstile === "off") {
       setNeedsTurnstile(false);
@@ -61,12 +70,24 @@ export function TsubuyakiOverlay({
     }
     let alive = true;
     api.getSession().then((session) => {
-      if (alive) setNeedsTurnstile(!session);
+      if (!alive) return;
+      if (session) {
+        setNeedsTurnstile(false);
+        return;
+      }
+      setNeedsTurnstile(true);
+      if (!boardSlug) return;
+      api
+        .getTurnstileStatus(boardSlug)
+        .then((status) => {
+          if (alive) setTurnstilePass(boardSlug, { passed: status.passed, expiresAt: status.passExpiresAt });
+        })
+        .catch(() => undefined);
     });
     return () => {
       alive = false;
     };
-  }, [turnstile]);
+  }, [turnstile, boardSlug, open]);
 
   const onToken = useCallback((value: string) => setToken(value), []);
 
@@ -118,13 +139,28 @@ export function TsubuyakiOverlay({
     setSending(true);
     setError(null);
     try {
-      const post = await api.sendTsubuyaki(threadId, text, token || undefined);
+      const post = await api.sendTsubuyaki(threadId, text, passed ? undefined : token || undefined);
       setDraft("");
       setToken("");
       setResetKey((value) => value + 1);
       onSent?.(post);
+      // つぶやき自身の初回成功も「確認済み」として共有する（R82-04）。
+      // 同じ板のレスフォームにも伝わるよう、サーバーの状態を取り直してストアへ書く。
+      if (boardSlug) {
+        void api
+          .getTurnstileStatus(boardSlug)
+          .then((status) => setTurnstilePass(boardSlug, { passed: status.passed, expiresAt: status.passExpiresAt }))
+          .catch(() => undefined);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "つぶやきの送信に失敗しました");
+      // NG・429 などでもサーバーは確認済みを取り消している。画面を追随させる（R82-03）。
+      if (boardSlug) {
+        void api
+          .getTurnstileStatus(boardSlug)
+          .then((status) => setTurnstilePass(boardSlug, { passed: status.passed, expiresAt: status.passExpiresAt }))
+          .catch(() => undefined);
+      }
     } finally {
       setSending(false);
     }
@@ -179,7 +215,7 @@ export function TsubuyakiOverlay({
           </button>
         </form>
         {error ? <div className="oc-error oc-mt">{error}</div> : null}
-        {needsTurnstile ? (
+        {needsTurnstile && !passed ? (
           <div className="oc-mt">
             <TurnstileWidget onToken={onToken} resetKey={resetKey} />
           </div>

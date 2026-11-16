@@ -73,10 +73,15 @@ app.post("/", async (c) => {
   if (!Number.isInteger(threadId) || threadId <= 0) throw ApiError.validation("threadId が必要です");
   const body = parsePostCreateBody(raw);
   const thread = await assertThreadActive(await getThreadRow(db, threadId));
+  // プラグイン sandbox からの中継（ホスト側コードだけが付けるヘッダ）。この経路は
+  // 「確認済みによる省略」を使わず、従来どおり毎回 Turnstile を検証する（レビュー 82 / R82-01）。
+  // ボディ（プラグインが作る値）ではなくヘッダで判定するため、プラグインは外せない。
+  const pluginRelay = c.req.header("x-oc-plugin-relay") === "1";
   const result = await createPostInternal(
     {
       boardId: thread.board_id,
       threadId: thread.id,
+      pluginRelay,
       name: body.name,
       mail: body.mail,
       body: body.body,

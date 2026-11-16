@@ -88,6 +88,7 @@ export function ManageView({ slug, tab }: { slug: string; tab: string }) {
             <ManageBoardSettings
               board={current}
               mode={active}
+              canManage={canManage}
               onSaved={(updated) => {
                 setBoard(updated);
                 info.reload();

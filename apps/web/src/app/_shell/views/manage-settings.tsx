@@ -12,10 +12,13 @@ type Mode = "basic" | "rules" | "design";
 export function ManageBoardSettings({
   board,
   mode,
+  canManage,
   onSaved,
 }: {
   board: BoardDetail;
   mode: Mode;
+  /** 板の管理人（admin）以上か。ロボット確認の省略時間は管理人のみ変更できる。 */
+  canManage?: boolean;
   onSaved: (board: BoardDetail) => void;
 }) {
   const toast = useToast();
@@ -25,6 +28,7 @@ export function ManageBoardSettings({
   const [rules, setRules] = useState(board.rulesMd ?? "");
   const [settings, setSettings] = useState<BoardSettings>({
     turnstile: board.settings?.turnstile ?? "anonymous",
+    turnstilePassMinutes: board.settings?.turnstilePassMinutes ?? 30,
     cooldownSeconds: board.settings?.cooldownSeconds ?? 0,
     live: Boolean(board.settings?.live),
     allowImages: board.settings?.allowImages !== false,
@@ -48,6 +52,7 @@ export function ManageBoardSettings({
     setRules(board.rulesMd ?? "");
     setSettings({
       turnstile: board.settings?.turnstile ?? "anonymous",
+      turnstilePassMinutes: board.settings?.turnstilePassMinutes ?? 30,
       cooldownSeconds: board.settings?.cooldownSeconds ?? 0,
       live: Boolean(board.settings?.live),
       allowImages: board.settings?.allowImages !== false,
@@ -125,6 +130,23 @@ export function ManageBoardSettings({
             </select>
           </label>
           <label className="oc-field">
+            <span className="oc-label">確認を省略する時間（分）</span>
+            <input
+              className="oc-input"
+              type="number"
+              min={0}
+              max={1440}
+              value={settings.turnstilePassMinutes}
+              onChange={(event) => setSettings({ ...settings, turnstilePassMinutes: Number(event.target.value) })}
+              disabled={settings.turnstile !== "anonymous" || canManage === false}
+              title="一度ロボット確認に成功した端末は、この時間だけレス・つぶやきの確認を省略します（0 で毎回）。スレ立ては常に確認します。"
+            />
+            <span className="oc-note">
+              「未ログインのみ要求」のときだけ有効です（0 で毎回確認）。スレ立ては常に確認します。
+              {canManage === false ? " 変更は板の管理人（admin）だけができます。" : ""}
+            </span>
+          </label>
+          <label className="oc-field">
             <span className="oc-label">既定のレス上限</span>
             <input
               className="oc-input"
@@ -174,6 +196,7 @@ export function ManageBoardSettings({
                 description: description.trim(),
                 settings: {
                   turnstile: settings.turnstile,
+                  turnstilePassMinutes: settings.turnstilePassMinutes,
                   cooldownSeconds: settings.cooldownSeconds,
                   live: settings.live,
                   allowImages: settings.allowImages,
