@@ -40,20 +40,27 @@ export async function transferDeviceOwnedPlugins(
   if (transferred === 0) return 0;
 
   // 所有者と導入の移動を 1 つのバッチ（= 1 トランザクション）で実行する。
-  // 導入の UPDATE は plugin_id を個別に束縛し、今回引き継いだ ID だけを対象にする。
+  // R46-01: 上の SELECT はバッチの外なので、その後に同じ端末の別ログインが先に引き継いでいる
+  // ことがある。所有者の UPDATE で「まだ端末所有で、アカウント所有でない」を再確認し、
+  // 導入の UPDATE は「この時点でこのアカウントの所有になっているプラグイン」だけに限る。
+  // これで後発の引き継ぎは何も変えず、所有者と導入記録が食い違わない。
+  const deviceRef = `device:${deviceHash}`;
   const statements: D1PreparedStatement[] = [
-    // 所有者を account へ移す
     db
       .prepare(
         `UPDATE plugins
          SET owner_account_id = ?, owner_device_hash = NULL, updated_at = ?
-         WHERE id IN (${pluginIds.map(() => "?").join(",")})`,
+         WHERE id IN (${pluginIds.map(() => "?").join(",")})
+           AND owner_device_hash = ?
+           AND owner_account_id IS NULL`,
       )
-      .bind(accountId, now, ...pluginIds),
+      .bind(accountId, now, ...pluginIds, deviceHash),
   ];
 
   for (const pluginId of pluginIds) {
-    // 各プラグインの device: 個人用導入を account へ移す。
+    // 各プラグインの、この端末自身が入れた個人用導入だけを account へ移す。
+    // R46-02: installed_by が端末と一致しない導入（帰属不明の NULL や他者）は書き換えない。
+    // 書き換えると「他人の導入」として残っている削除保護が外れてしまうため。
     // scope_ref の書き換えは UNIQUE (plugin_id, 'personal', account) との衝突を
     // 回避するため、既存の account 導入が無い場合だけ行う（NOT EXISTS）。
     statements.push(
@@ -64,24 +71,27 @@ export async function transferDeviceOwnedPlugins(
            WHERE plugin_id = ?
              AND scope = 'personal'
              AND scope_ref = ?
+             AND installed_by = ?
+             AND EXISTS (SELECT 1 FROM plugins WHERE id = ? AND owner_account_id = ?)
              AND NOT EXISTS (
                SELECT 1 FROM plugin_installs
                WHERE plugin_id = ? AND scope = 'personal' AND scope_ref = ?
              )`,
         )
-        .bind(accountId, accountId, now, pluginId, `device:${deviceHash}`, pluginId, accountId),
+        .bind(accountId, accountId, now, pluginId, deviceRef, deviceRef, pluginId, accountId, pluginId, accountId),
     );
   }
 
-  // audit_log の記録も同バッチに含める（途中で失敗すれば全体がロールバックされる）
+  // audit_log の記録も同バッチに含める（途中で失敗すれば全体がロールバックされる）。
+  // 実際に移った件数はバッチ後にしか分からないため、ここでは候補の件数を記録する。
   statements.push(
     db
       .prepare(
         "INSERT INTO audit_log (id, actor_type, actor_id, action, target, detail, created_at) VALUES (?, 'account', ?, 'plugin.device.transfer', ?, ?, ?)",
       )
-      .bind(ulid(), accountId, "device-own-plugins", JSON.stringify({ transferred, deviceHash }), now),
+      .bind(ulid(), accountId, "device-own-plugins", JSON.stringify({ candidates: transferred, deviceHash }), now),
   );
 
-  await db.batch(statements);
-  return transferred;
+  const results = await db.batch(statements);
+  return results[0]?.meta.changes ?? 0;
 }
