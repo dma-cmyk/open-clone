@@ -123,20 +123,12 @@ test.describe("パスワードを忘れたときの復旧", () => {
     await expect(page.getByRole("heading", { name: "プロフィール" })).toBeVisible();
   });
 
-  test("所有者が再設定 URL を発行→別ブラウザで開いて再設定→ログイン", async ({ browser, page, request }, testInfo) => {
-    const email = `${unique("pwreset-operator").toLowerCase()}@example.com`;
-    const name = `E2E 運営復旧 ${Date.now().toString(36)}`;
-
-    // 対象ユーザーは API（別 IP）で作る（登録上限と画面操作の競合を避ける）。
-    const registered = await request.post(apiUrl("/v1/auth/register"), {
-      headers: {
-        origin: ALLOWED_ORIGIN,
-        "content-type": "application/json",
-        "x-real-ip": fakeIp(Math.floor(Math.random() * 40_000)),
-      },
-      data: { name, email, password: PASSWORD },
-    });
-    expect(registered.status(), await registered.text()).toBe(201);
+  test("所有者が再設定 URL を発行→別ブラウザで開いて再設定→ログイン", async ({ browser, page }, testInfo) => {
+    // seed.sql の固定アカウント（pc/mobile で別）。登録上限 5 回/日/IP を消費しない。
+    // パスワードは再設定で付く（古いパスワードは使わない）。
+    const project = testInfo.project.name;
+    const email = `pwreset-op-${project}@example.com`;
+    const name = `pwreset-operator-${project}`;
 
     // --- 所有者でユーザー一覧を開き、再設定 URL を発行 ---
     await loginAsOwner(page);
