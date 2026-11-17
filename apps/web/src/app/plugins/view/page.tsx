@@ -2,10 +2,11 @@
 
 // プラグイン詳細（公開・導入・更新・通報・停止・審査・GitHub 発行）
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PluginDetail, PluginInstallInfo, PluginReviewInfo, PluginScope } from "shared";
 import { pluginApi } from "@/features/plugin-host";
 import { parseTemplateOrigin } from "@/features/plugin-templates";
+import { clearQueuedTour, setTourContext, setTourContextPending } from "@/features/site-tour";
 import {
   Badge,
   Card,
@@ -21,6 +22,8 @@ import {
 } from "../_shared";
 
 const RISK_LABEL: Record<string, string> = { low: "低", medium: "中", high: "高" };
+// サーバー側では useEffect に落とす（useLayoutEffect の SSR 警告を出さない）。
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 interface BoardOption {
   id: number;
@@ -89,6 +92,25 @@ export default function PluginViewPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 詳細（作者かどうか）が読めるまではツアー開始を保留する。
+  // 作者向けの手順は `requires: "pluginAuthor"` で絞るため、読み込み前の false で確定させない（K3）。
+  useIsomorphicLayoutEffect(() => {
+    if (id && loading) {
+      setTourContextPending(true);
+      return;
+    }
+    setTourContext({ pluginAuthor: detail?.viewer.canEdit === true });
+    setTourContextPending(false);
+  }, [id, loading, detail]);
+  useEffect(
+    () => () => {
+      clearQueuedTour();
+      setTourContextPending(false);
+      setTourContext({ pluginAuthor: false });
+    },
+    [],
+  );
 
   // B13: ログイン状態（作成・公開・板用/サイト導入の案内を出し分ける）。
   // B14: 個人用導入はログイン不要なので、ここで止めない。
@@ -270,6 +292,7 @@ export default function PluginViewPage() {
 
       {plugin ? (
         <>
+          <div data-tour="plugin-detail-basic">
           <Card title="基本情報">
             <div className="oc-row">
               <StatusBadge status={plugin.status} />
@@ -321,7 +344,9 @@ export default function PluginViewPage() {
               </tbody>
             </table>
           </Card>
+          </div>
 
+          <div data-tour="plugin-detail-install">
           <Card title="インストール">
             <div style={{ ...ui.row, marginBottom: 8 }}>
               <button
@@ -502,8 +527,10 @@ export default function PluginViewPage() {
               </div>
             ) : null}
           </Card>
+          </div>
 
           {plugin.viewer.canEdit ? (
+            <div data-tour="plugin-detail-owner">
             <Card title="公開・審査">
               <div className="oc-row">
                 {(["personal", "board", "site"] as PluginScope[]).map((scope) => (
@@ -733,8 +760,10 @@ export default function PluginViewPage() {
                 </div>
               ) : null}
             </Card>
+            </div>
           ) : null}
 
+          <div data-tour="plugin-detail-github">
           <Card title="GitHub / Gist（任意）">
             <div className="oc-row">
               <button
@@ -798,7 +827,9 @@ export default function PluginViewPage() {
               GitHub 未連携の場合はエラーになりますが、サイト内の公開・検索・導入・更新は GitHub なしで完結します。
             </p>
           </Card>
+          </div>
 
+          <div data-tour="plugin-detail-report">
           <Card title="通報">
             <div style={{ ...ui.row, alignItems: "flex-end" }}>
               <div style={{ width: 160 }}>
@@ -843,7 +874,9 @@ export default function PluginViewPage() {
               </button>
             </div>
           </Card>
+          </div>
 
+          <div data-tour="plugin-detail-versions">
           <Card title="バージョン">
             <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
               {plugin.versions.map((version) => (
@@ -864,6 +897,7 @@ export default function PluginViewPage() {
               {plugin.versions.length === 0 ? <li className="oc-muted oc-small">公開済みバージョンはありません</li> : null}
             </ul>
           </Card>
+          </div>
 
           {code ? (
             <Card title="コード（最新）">

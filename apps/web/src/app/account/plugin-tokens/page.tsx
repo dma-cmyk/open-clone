@@ -5,7 +5,7 @@
 // 画面・文言は報告書27 §5.2〜5.6、API は報告書28 §4.6 が正本。
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {
   PLUGIN_TOKEN_MAX_PER_ACCOUNT,
   PLUGIN_TOKEN_TTL_DAYS,
@@ -22,6 +22,7 @@ import {
 } from "../../../features/account/plugin-tokens-api";
 import { useSession } from "../../../features/account/session";
 import { useStepUp } from "../../../features/account/step-up";
+import { clearQueuedTour, setTourContext, setTourContextPending } from "../../../features/site-tour";
 
 /** API の公開オリジン（決定9）。未設定なら vercel.json のプロキシ先と同じ。 */
 const API_ORIGIN = (
@@ -31,6 +32,9 @@ const MCP_URL = `${API_ORIGIN}/mcp-plugin`;
 const MCP_LEGACY_URL = `${API_ORIGIN}/mcp-plugin/legacy`;
 
 type GuideTab = "claude" | "chatgpt" | "generic" | "verify";
+
+// サーバー側では useEffect に落とす（useLayoutEffect の SSR 警告を出さない）。
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 const GUIDE_TABS: { key: GuideTab; label: string }[] = [
   { key: "claude", label: "Claude Code" },
@@ -104,6 +108,24 @@ export default function PluginTokensPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const gate = useStepUp(setError);
+  const loggedIn = state?.authenticated === true;
+  // セッションが分かるまでは開始要求を保留する（読み込み中に押してもヘルプへ飛ばさない）。
+  useIsomorphicLayoutEffect(() => {
+    if (loading) {
+      setTourContextPending(true);
+      return;
+    }
+    setTourContext({ loggedIn });
+    setTourContextPending(false);
+  }, [loading, loggedIn]);
+  useEffect(
+    () => () => {
+      clearQueuedTour();
+      setTourContextPending(false);
+      setTourContext({ loggedIn: false });
+    },
+    [],
+  );
 
   const loadTokens = useCallback(async () => {
     setTokens(await listPluginTokens());
@@ -228,7 +250,7 @@ export default function PluginTokensPage() {
         </div>
       ) : null}
 
-      <section className="oc-card">
+      <section className="oc-card" data-tour="plugin-tokens-issue">
         <h2 style={{ fontSize: 15, margin: "0 0 8px" }}>トークンを発行する</h2>
         <ul className="oc-small" style={{ margin: "0 0 8px", paddingLeft: 20 }}>
           <li>
@@ -290,7 +312,7 @@ export default function PluginTokensPage() {
         ) : null}
       </section>
 
-      <section className="oc-card">
+      <section className="oc-card" data-tour="plugin-tokens-guide">
         <h2 style={{ fontSize: 15, margin: "0 0 8px" }}>接続手順</h2>
         <p className="oc-small oc-muted" style={{ marginTop: 0 }}>
           API ベース URL: <code>{API_ORIGIN}</code>
@@ -382,7 +404,7 @@ export default function PluginTokensPage() {
         ) : null}
       </section>
 
-      <section className="oc-card">
+      <section className="oc-card" data-tour="plugin-tokens-list">
         <div className="oc-row-between">
           <h2 style={{ fontSize: 15, margin: 0 }}>発行済みのトークン</h2>
           <button
@@ -465,7 +487,7 @@ export default function PluginTokensPage() {
         </table>
       </section>
 
-      <section className="oc-card">
+      <section className="oc-card" data-tour="plugin-tokens-drafts">
         <h2 style={{ fontSize: 15, margin: "0 0 8px" }}>AI が作った下書きの確認</h2>
         <p className="oc-small" style={{ marginTop: 0 }}>
           AI が作成した下書きは「自分のプラグイン」に表示されます。コード・静的検査・プレビューを確認してから、
@@ -476,7 +498,7 @@ export default function PluginTokensPage() {
         </Link>
       </section>
 
-      <section className="oc-card oc-small">
+      <section className="oc-card oc-small" data-tour="plugin-tokens-safety">
         <h2 style={{ fontSize: 15, margin: "0 0 8px" }}>トークンの取り扱い</h2>
         <ul style={{ margin: 0, paddingLeft: 20 }}>
           <li>

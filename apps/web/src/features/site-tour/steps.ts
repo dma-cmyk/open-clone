@@ -2,15 +2,61 @@
 // ここに書く説明は **実装にある機能だけ**（`data-tour` を付けた要素と、その画面で実際に
 // できる操作）に限定する。存在しない機能・未実装の操作は書かない。
 
-import type { TourDefinition, TourPageKey, TourStep } from "./types";
+import type { TourDefinition, TourListContext, TourPageKey, TourStep } from "./types";
+// 一覧の「開く先」（板・スレの自動選択）で使う既存の公開 API。相対 import は単体テスト
+// （vitest）が `@/` エイリアスを解決しないため。
+import { api } from "../board-ui/api";
+import { PLUGIN_TOUR_DEFINITIONS } from "./steps-plugins";
 
 /** 一般向けヘルプの節（`/help/`。アンカーは設計 50 で固定）。 */
 const HELP = "/help/";
 /** 管理者向けヘルプの節（`/help/admin/`）。 */
 const HELP_ADMIN = "/help/admin/";
 
+/**
+ * 一覧（ヘルプ `#tour`）から始めるときに開く先。
+ * 板・スレは API で選ぶ（トップの板一覧と同じ並びの先頭 → その板の新しいスレ）。
+ * 削除板は `/v1/boards` に出ない（K2）ため、自動選択にも残らない。
+ */
+async function firstBoardEntry(): Promise<string | null> {
+  try {
+    const boards = await api.listBoards();
+    const board = boards.items[0];
+    return board ? `/b/${encodeURIComponent(board.slug)}` : null;
+  } catch {
+    return null;
+  }
+}
+
+async function firstThreadEntry(): Promise<string | null> {
+  try {
+    const boards = await api.listBoards();
+    for (const board of boards.items) {
+      try {
+        const threads = await api.listThreads(board.slug, { sort: "created", limit: 1 });
+        const thread = threads.items[0];
+        if (thread) return `/b/${encodeURIComponent(board.slug)}/t/${thread.id}`;
+      } catch {
+        // 選んだ直後に板が消えた（404）等は次の板へ。
+        continue;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** その人がスタッフを務める最初の板の管理画面（無ければ null）。 */
+function firstStaffBoardEntry(context: TourListContext): string | null {
+  const slug = context.staffBoardSlugs[0];
+  return slug ? `/b/${encodeURIComponent(slug)}/manage` : null;
+}
+
 const HOME: TourDefinition = {
   label: "トップページ",
+  summary: "サイト内検索・上のメニュー・板一覧・板の作成・ログイン・ランキングの入口を案内します。",
+  entry: () => "/",
   helpPath: `${HELP}#basics`,
   steps: [
     {
@@ -60,6 +106,8 @@ const HOME: TourDefinition = {
 
 const BOARD: TourDefinition = {
   label: "板",
+  summary: "板のルール・板の中の検索・並び替え・スレ一覧・スレ立てを案内します。",
+  entry: firstBoardEntry,
   helpPath: `${HELP}#basics`,
   steps: [
     {
@@ -102,6 +150,8 @@ const BOARD: TourDefinition = {
 
 const THREAD: TourDefinition = {
   label: "スレ",
+  summary: "スレの見出し・スレ内検索・表示範囲・実況・レス操作・書き込みフォームを案内します。",
+  entry: firstThreadEntry,
   helpPath: `${HELP}#reading`,
   steps: [
     {
@@ -196,6 +246,8 @@ const THREAD: TourDefinition = {
 
 const BOARD_NEW: TourDefinition = {
   label: "板を作る",
+  summary: "板の作成フォーム（スラッグ・板名・カテゴリ）を案内します。",
+  entry: () => "/boards/new",
   helpPath: `${HELP}#board`,
   steps: [
     {
@@ -210,6 +262,8 @@ const BOARD_NEW: TourDefinition = {
 
 const SETTINGS: TourDefinition = {
   label: "設定",
+  summary: "設定の NG（見たくない語・ID・名前・スレタイ）の登録を案内します。",
+  entry: () => "/settings",
   helpPath: `${HELP}#reading`,
   steps: [
     {
@@ -224,6 +278,9 @@ const SETTINGS: TourDefinition = {
 
 const ADMIN: TourDefinition = {
   label: "管理画面",
+  summary: "管理メニューと、ダッシュボード・ユーザー・板・通報・AI などの各画面を順に案内します。",
+  listVisible: (ctx) => ctx.siteOwner || ctx.siteSpecialAdmin,
+  entry: () => "/admin",
   helpPath: HELP_ADMIN,
   steps: [
     {
@@ -351,6 +408,9 @@ const ADMIN: TourDefinition = {
 
 const MANAGE: TourDefinition = {
   label: "板の管理",
+  summary: "板の管理メニュー・設定・スタッフ・通報の画面を案内します（スタッフの板だけ）。",
+  listVisible: (ctx) => ctx.staffBoardSlugs.length > 0,
+  entry: firstStaffBoardEntry,
   helpPath: HELP_ADMIN,
   steps: [
     {
@@ -398,6 +458,8 @@ const MANAGE: TourDefinition = {
 
 const HELP_PAGE: TourDefinition = {
   label: "ヘルプ",
+  summary: "このヘルプの使い方（用語や操作の探し方）を案内します。",
+  entry: () => "/help/",
   helpPath: HELP,
   steps: [
     {
@@ -412,6 +474,8 @@ const HELP_PAGE: TourDefinition = {
 
 const HELP_ADMIN_PAGE: TourDefinition = {
   label: "管理者向けヘルプ",
+  summary: "所有者・特別管理人・板の管理人の権限と操作をまとめたヘルプを案内します。",
+  entry: () => "/help/admin/",
   helpPath: HELP_ADMIN,
   steps: [
     {
@@ -434,7 +498,43 @@ export const TOUR_DEFINITIONS: Record<TourPageKey, TourDefinition> = {
   manage: MANAGE,
   help: HELP_PAGE,
   "help-admin": HELP_ADMIN_PAGE,
+  ...PLUGIN_TOUR_DEFINITIONS,
 };
+
+/**
+ * 一覧（ヘルプ `#tour`）に並べるツアー。`TOUR_DEFINITIONS` から作るので、
+ * 後からキーを足しても一覧にそのまま載る（キーは手で列挙しない）。
+ * 並び順だけ下の希望順で決め、知らないキー（後から足した画面）は末尾に回す。
+ */
+const LIST_ORDER: readonly TourPageKey[] = [
+  "home",
+  "board",
+  "thread",
+  "board-new",
+  "settings",
+  "admin",
+  "manage",
+  "help",
+  "help-admin",
+];
+
+export interface TourListEntry {
+  page: TourPageKey;
+  definition: TourDefinition;
+}
+
+export const TOUR_LIST_DEFINITIONS: readonly TourListEntry[] = (() => {
+  const rank = new Map<TourPageKey, number>(LIST_ORDER.map((page, index) => [page, index]));
+  const entries: TourListEntry[] = [];
+  for (const page of Object.keys(TOUR_DEFINITIONS) as TourPageKey[]) {
+    const definition = TOUR_DEFINITIONS[page];
+    // 一覧に出すのは説明と開く先のあるツアーだけ（型の契約）。
+    if (!definition.summary || typeof definition.entry !== "function") continue;
+    entries.push({ page, definition });
+  }
+  // Array#sort は安定なので、順位の同じ（未知の）キーは定義順のまま残る。
+  return entries.sort((a, b) => (rank.get(a.page) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.page) ?? Number.MAX_SAFE_INTEGER));
+})();
 
 /** その画面のツアー定義（未対応の画面は null）。 */
 export function tourDefinitionOf(key: TourPageKey): TourDefinition {
@@ -449,7 +549,13 @@ export function tourDefinitionOf(key: TourPageKey): TourDefinition {
 export function resolveSteps(
   definition: TourDefinition,
   isVisible: (selector: string) => boolean,
-  context: { boardStaff?: boolean; canManageBoard?: boolean; siteOwner?: boolean; siteSpecialAdmin?: boolean } = {},
+  context: {
+    boardStaff?: boolean;
+    canManageBoard?: boolean;
+    siteOwner?: boolean;
+    siteSpecialAdmin?: boolean;
+    pluginAuthor?: boolean;
+  } = {},
 ): TourStep[] {
   const allowed = (step: TourStep): boolean => {
     switch (step.requires) {
@@ -461,6 +567,8 @@ export function resolveSteps(
         return Boolean(context.siteOwner || context.siteSpecialAdmin);
       case "siteOwner":
         return Boolean(context.siteOwner);
+      case "pluginAuthor":
+        return Boolean(context.pluginAuthor);
       default:
         return true;
     }

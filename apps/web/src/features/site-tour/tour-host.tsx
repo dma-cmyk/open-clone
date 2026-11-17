@@ -10,7 +10,10 @@ import { createPortal } from "react-dom";
 // SSR では useLayoutEffect を使わない（サーバー側の警告を避ける）。
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 import {
+  canStartTour,
   isLastStep,
+  isTourContextPending,
+  pendingTourStart,
   shouldShowIntro,
   dismissIntro,
   setTourRestore,
@@ -18,12 +21,17 @@ import {
   stopTour,
   stopTourIfRouteChanged,
   subscribeTour,
+  tourGoTo,
+  tourHelpHref,
   tourNext,
+  tourPageKeyForPath,
   tourPrev,
   tourServerSnapshot,
   tourSnapshot,
+  visibleStepsFor,
 } from "./store";
-import { subscribeLocation } from "@/app/_shell/router";
+import { clearPendingStart, planPendingStart } from "./pending-start";
+import { subscribeLocation, usePathname } from "@/app/_shell/router";
 import { tourDefinitionOf } from "./steps";
 
 /** 対象要素の矩形（ビューポート座標）。 */
@@ -116,12 +124,67 @@ export function TourHost() {
   const [tooltipSize, setTooltipSize] = useState({ width: TOOLTIP_MAX_WIDTH, height: 180 });
   /** いまの手順の対象が見つかったか（見つからなければ次の手順へ送る）。 */
   const measured = useRef<{ id: string; found: boolean } | null>(null);
+  /** 目次（手順の一覧）を開いているか。 */
+  const [tocOpen, setTocOpen] = useState(false);
+  const tocButtonRef = useRef<HTMLButtonElement>(null);
+  const tocCurrentRef = useRef<HTMLButtonElement>(null);
+  const pathname = usePathname();
 
   // 初回の案内（勝手にツアーは始めない）。
   useEffect(() => {
     setMounted(true);
     setShowIntro(shouldShowIntro());
   }, []);
+
+  // 画面をまたぐ開始の予約（ヘルプの一覧・「トップページでツアーを始める」）を受け取る。
+  // この画面の準備（権限の読み込み `setTourContextPending`・手順の描画）ができてから開始し、
+  // 時間切れ・権限不足なら予約を捨ててヘルプの該当節へ送る。判定は `planPendingStart`。
+  useEffect(() => {
+    if (!mounted) return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const step = () => {
+      if (cancelled) return;
+      const page = tourPageKeyForPath(window.location.pathname);
+      const plan = planPendingStart({
+        pending: pendingTourStart(),
+        page,
+        now: Date.now(),
+        contextReady: !isTourContextPending(),
+        allowed: page ? canStartTour(page) : false,
+        stepCount: page ? visibleStepsFor(page).length : 0,
+      });
+      switch (plan.action) {
+        case "none":
+          return;
+        case "discard":
+          clearPendingStart(window.sessionStorage);
+          return;
+        case "help":
+          clearPendingStart(window.sessionStorage);
+          window.location.assign(page ? tourHelpHref(page) : "/help/#tour");
+          return;
+        case "start":
+          if (!page) {
+            clearPendingStart(window.sessionStorage);
+            return;
+          }
+          clearPendingStart(window.sessionStorage);
+          if (!startTour(page)) window.location.assign(tourHelpHref(page));
+          return;
+        case "wait":
+          timer = window.setTimeout(step, 200);
+          return;
+      }
+    };
+
+    step();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [mounted, pathname]);
 
   // 案内は画面の上に重ねず、ページ先頭の通常の帯として差し込む。重ねると狭幅・広幅とも
   // スレの操作ボタン（実況・つぶやき・ブクマ）や投稿バーを覆ってしまうため。
@@ -205,19 +268,48 @@ export function TourHost() {
   }, [step, refreshRect]);
 
   // ツールチップの実寸を測って位置を決める（画面外へはみ出さない）。
+  // 目次の開閉でも高さが変わるため、開閉後にも測り直して位置をクランプする。
   useIsomorphicLayoutEffect(() => {
     const element = tooltipRef.current;
     if (!element) return;
     const box = element.getBoundingClientRect();
     setTooltipSize({ width: box.width, height: box.height });
-  }, [step, state.index, rect]);
+  }, [step, state.index, rect, tocOpen]);
 
-  // キーボード操作（Esc で終了、←→ で移動）。
+  // ツアーが終わったら目次も閉じる（開いたまま次のツアーへ持ち越さない）。
+  useEffect(() => {
+    if (!state.page) setTocOpen(false);
+  }, [state.page]);
+
+  // 目次を開いたら、いまの手順（無ければ先頭）へフォーカスを移す。
+  useEffect(() => {
+    if (!tocOpen) return;
+    tocCurrentRef.current?.focus();
+  }, [tocOpen, state.index]);
+
+  /** 目次を閉じて「目次」ボタンへフォーカスを戻す。 */
+  const closeToc = useCallback(() => {
+    setTocOpen(false);
+    window.requestAnimationFrame(() => tocButtonRef.current?.focus());
+  }, []);
+
+  /** 目次から手順を選ぶ（reveal の扱いは「次へ」で進んだときと同じ）。 */
+  const selectStep = useCallback((index: number) => {
+    tourGoTo(index);
+    setTocOpen(false);
+    window.requestAnimationFrame(() => tooltipRef.current?.focus());
+  }, []);
+
+  // キーボード操作（Esc で終了、←→ で移動。目次を開いている間の Esc は目次だけ閉じる）。
   useEffect(() => {
     if (!state.page) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        if (tocOpen) {
+          closeToc();
+          return;
+        }
         stopTour();
         return;
       }
@@ -255,7 +347,7 @@ export function TourHost() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state.page]);
+  }, [state.page, tocOpen, closeToc]);
 
   const viewport = visibleViewport();
   const position = useMemo(() => {
@@ -369,10 +461,44 @@ export function TourHost() {
             もっと詳しく（ヘルプ）
           </a>
         </div>
+        {tocOpen ? (
+          <div className="oc-tour-toc" id="oc-tour-toc" role="group" aria-label="ツアーの目次">
+            <ol className="oc-tour-toc-list">
+              {state.steps.map((item, index) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    ref={index === state.index ? tocCurrentRef : undefined}
+                    className={`oc-tour-toc-item${index === state.index ? " oc-tour-toc-current" : ""}`}
+                    aria-current={index === state.index ? "step" : undefined}
+                    onClick={() => selectStep(index)}
+                  >
+                    <span className="oc-tour-toc-num">{index + 1}.</span>
+                    <span className="oc-tour-toc-title">{item.title}</span>
+                    {index === state.index ? <span className="oc-tour-toc-now">いまここ</span> : null}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
         <div className="oc-tour-tooltip-foot">
           <span className="oc-tour-progress">
             {state.index + 1} / {state.steps.length}
           </span>
+          <button
+            type="button"
+            ref={tocButtonRef}
+            className="oc-btn oc-btn-sm"
+            aria-expanded={tocOpen}
+            aria-controls="oc-tour-toc"
+            onClick={() => {
+              if (tocOpen) closeToc();
+              else setTocOpen(true);
+            }}
+          >
+            目次
+          </button>
           <button type="button" className="oc-btn oc-btn-sm" onClick={tourPrev} disabled={state.index === 0}>
             戻る
           </button>
@@ -479,10 +605,54 @@ function TourStyles() {
   border-top: 1px solid #d8e8d8;
 }
 .oc-tour-progress { margin-right: auto; font-size: 11px; color: #555; }
+/* 目次（手順の一覧）。360px でも説明欄を潰さず、目次だけをスクロールさせる。 */
+.oc-tour-toc {
+  border-top: 1px solid #d8e8d8;
+  background: #f7fff7;
+}
+.oc-tour-toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 2px 4px;
+  max-height: min(46vh, 320px);
+  overflow-y: auto;
+}
+.oc-tour-toc-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 6px;
+  border: 0;
+  border-bottom: 1px solid #e4f0e4;
+  background: transparent;
+  text-align: left;
+  font-size: 12.5px;
+  color: #111;
+  cursor: pointer;
+}
+.oc-tour-toc-list li:last-child .oc-tour-toc-item { border-bottom: 0; }
+.oc-tour-toc-item:hover { background: #eaffea; }
+.oc-tour-toc-item:focus-visible { outline: 2px solid #228811; outline-offset: -2px; }
+.oc-tour-toc-item.oc-tour-toc-current { background: #ccffcc; font-weight: 700; color: #123d18; }
+.oc-tour-toc-num { flex: 0 0 auto; color: #456; font-variant-numeric: tabular-nums; }
+.oc-tour-toc-title { flex: 1 1 auto; min-width: 0; }
+.oc-tour-toc-now {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: #123d18;
+  border: 1px solid #7bb87b;
+  border-radius: 3px;
+  padding: 0 3px;
+}
 /* 360px 前後ではツールチップを画面幅に収め、操作を 44px 程度にする */
 @media (max-width: 640px) {
   .oc-tour-tooltip-text { font-size: 13px; }
   .oc-tour-tooltip-foot .oc-btn { min-height: 40px; }
+  .oc-tour-toc-item { min-height: 40px; font-size: 13px; }
+  .oc-tour-toc-list { max-height: min(40vh, 260px); }
   .oc-tour-intro {
     padding: 6px 8px;
     font-size: 11.5px;

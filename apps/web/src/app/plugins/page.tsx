@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PluginActiveInstall, PluginScope, PluginSummary } from "shared";
 import { PluginApiError, pluginApi } from "@/features/plugin-host";
+import { clearQueuedTour, setTourContextPending } from "@/features/site-tour";
 import {
   createLatestOnly,
   initialRegistryTab,
@@ -107,6 +108,23 @@ export default function PluginsPage() {
     void load();
   }, [load]);
 
+  // 一覧の読み込みが終わるまではツアー開始を保留する（読み込み中に押してもヘルプへ飛ばさない）。
+  const tourReady = tab !== null && !loading;
+  useEffect(() => {
+    if (!tourReady) {
+      setTourContextPending(true);
+      return;
+    }
+    setTourContextPending(false);
+  }, [tourReady]);
+  useEffect(
+    () => () => {
+      clearQueuedTour();
+      setTourContextPending(false);
+    },
+    [],
+  );
+
   async function installPersonal(plugin: PluginSummary) {
     setNotice(null);
     try {
@@ -150,7 +168,7 @@ export default function PluginsPage() {
       description="ユーザー製プラグインのレジストリ。作成・公開・検索・インストール・更新が GitHub 連携なしで完結します。"
       actions={
         <>
-          <a href="/plugins/templates/" className="oc-btn oc-btn-primary">
+          <a href="/plugins/templates/" className="oc-btn oc-btn-primary" data-tour="plugins-actions">
             テンプレートから作る
           </a>
           <a href="/plugins/new/" className="oc-btn">
@@ -166,7 +184,7 @@ export default function PluginsPage() {
       {notice ? <Notice tone="ok">{notice}</Notice> : null}
 
       <Card>
-        <div style={{ ...ui.row, marginBottom: 8 }}>
+        <div style={{ ...ui.row, marginBottom: 8 }} data-tour="plugins-tabs">
           {(
             [
               ["public", "公開プラグイン"],
@@ -186,7 +204,7 @@ export default function PluginsPage() {
         </div>
 
         {tab !== "installed" ? (
-          <div style={{ ...ui.row, alignItems: "flex-end" }}>
+          <div style={{ ...ui.row, alignItems: "flex-end" }} data-tour="plugins-search">
             <div style={{ flex: "1 1 240px" }}>
               <Field label="検索">
                 <input
@@ -234,9 +252,10 @@ export default function PluginsPage() {
         ) : null}
       </Card>
 
-      {tab !== null && loading ? <p className="oc-muted oc-small">読み込み中…</p> : null}
+      <div data-tour="plugins-list">
+        {tab !== null && loading ? <p className="oc-muted oc-small">読み込み中…</p> : null}
 
-      {tab === null ? (
+        {tab === null ? (
         <Card title="プラグイン一覧">
           <p className="oc-muted oc-small">読み込み中…</p>
         </Card>
@@ -338,7 +357,9 @@ export default function PluginsPage() {
           )}
         </Card>
       )}
+      </div>
 
+      <div data-tour="plugins-import">
       <Card title="GitHub / Gist から取り込む（任意）">
         <p className="oc-muted oc-small">
           公開 Gist または公開リポジトリ（manifest.json + plugin.js）から下書きとして取り込めます。
@@ -375,6 +396,7 @@ export default function PluginsPage() {
           </button>
         </div>
       </Card>
+      </div>
     </PluginShell>
   );
 }

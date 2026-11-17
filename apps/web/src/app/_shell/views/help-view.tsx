@@ -3,7 +3,7 @@
 // ヘルプ（一般向け）。`/help/`。節アンカーは設計50で固定（#basics … #tour）。
 // 本文の数値・挙動はすべて実装から確認したものだけを書く（出典は報告書61の一覧）。
 import { usePageTitle } from "@/lib/title";
-import { startTour } from "@/features/site-tour";
+import { TourList, reserveTourStart } from "@/features/site-tour";
 import { useEffect, type ReactNode } from "react";
 import { navigate } from "../router";
 
@@ -51,17 +51,11 @@ export function HelpView() {
     if (target) target.scrollIntoView();
   }, []);
 
-  // ヘルプ自体には案内する部品がほとんど無いので、トップへ移ってトップのツアーを始める。
-  // 板一覧は API 取得後に描画されるため、目印が出るまで（最大 3 秒）待ってから開始する。
+  // トップへ移ってトップのツアーを始める。開始待ち（画面の準備・権限・時間切れ）は
+  // 予約を移動先の TourHost が受け取って行う（`pending-start.ts`）。ここでポーリングしない。
   const startTopTour = () => {
+    reserveTourStart("home");
     navigate("/");
-    const deadline = Date.now() + 3000;
-    const attempt = () => {
-      const ready = document.querySelector('[data-tour="home-boards"]') !== null;
-      if ((ready || Date.now() >= deadline) && startTour("home")) return;
-      if (Date.now() < deadline) window.setTimeout(attempt, 100);
-    };
-    window.setTimeout(attempt, 0);
   };
 
   return (
@@ -303,9 +297,18 @@ export function HelpView() {
           今いる画面に合わせたツアーをいつでも始められます。
         </P>
         <P>
-          ツアーは「次へ／戻る／終了」で進み、Escキーで終了、←→キーでも移動できます。
+          下の一覧からは、ほかの画面のツアーも始められます。押すとその画面へ移動し、表示と権限の
+          読み込みが済んでからツアーが始まります。<b>板</b>は勢いのある板、<b>スレ</b>はその板の新しいスレを
+          自動で開きます（開ける板・スレが無いときは、その行は押せません）。
+          <b>管理画面</b>と<b>板の管理</b>の行は、その権限がある人にだけ出ます。
+        </P>
+        <P>
+          ツアー中は「次へ／戻る／終了」で進み、Escキーで終了、←→キーでも移動できます。
+          吹き出しの<b>「目次」</b>を押すと、いまのツアーで案内する手順の一覧が出て、好きな手順へ移れます
+          （目次を開いている間の Esc は目次だけを閉じます）。
           最後にこのヘルプの該当節へのリンクが出ます。
         </P>
+        <TourList />
         <div className="oc-row">
           <button type="button" className="oc-btn oc-btn-primary" onClick={startTopTour}>
             トップページでツアーを始める

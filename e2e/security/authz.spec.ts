@@ -17,6 +17,7 @@ const PROTECTED: ProtectedEndpoint[] = [
   { method: "GET", path: "/v1/accounts/me" },
   { method: "PATCH", path: "/v1/accounts/me" },
   { method: "GET", path: "/v1/accounts/me/sessions" },
+  { method: "GET", path: "/v1/accounts/me/boards" },
   { method: "GET", path: "/v1/admin/invites" },
   { method: "POST", path: "/v1/admin/invites" },
   { method: "GET", path: "/v1/admin/audit" },

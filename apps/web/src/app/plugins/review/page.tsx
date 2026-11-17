@@ -2,14 +2,19 @@
 
 // プラグイン審査キュー（owner / 特別管理人向け）
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import type { PluginReviewInfo } from "shared";
 import { pluginApi } from "@/features/plugin-host";
+import { useSession } from "@/features/account/session";
+import { clearQueuedTour, setTourContext, setTourContextPending } from "@/features/site-tour";
 import { Badge, Card, Field, Notice, PluginShell, errorText, formatTime, ui } from "../_shared";
 
 const RISK_LABEL: Record<string, string> = { low: "低", medium: "中", high: "高" };
+// サーバー側では useEffect に落とす（useLayoutEffect の SSR 警告を出さない）。
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export default function PluginReviewPage() {
+  const { state: session } = useSession();
   const [items, setItems] = useState<PluginReviewInfo[]>([]);
   const [status, setStatus] = useState<"pending" | "approved" | "rejected">("pending");
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -34,6 +39,26 @@ export default function PluginReviewPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // セッション（所有者・特別管理人か）が分かるまでは開始要求を保留する（K3）。
+  const tourRole = session?.authenticated ? session.account.role : null;
+  const sessionSettled = session !== null;
+  useIsomorphicLayoutEffect(() => {
+    if (!sessionSettled) {
+      setTourContextPending(true);
+      return;
+    }
+    setTourContext({ siteOwner: tourRole === "owner", siteSpecialAdmin: tourRole === "special_admin" });
+    setTourContextPending(false);
+  }, [sessionSettled, tourRole]);
+  useEffect(
+    () => () => {
+      clearQueuedTour();
+      setTourContextPending(false);
+      setTourContext({ siteOwner: false, siteSpecialAdmin: false });
+    },
+    [],
+  );
 
   async function decide(item: PluginReviewInfo, decision: "approve" | "reject"): Promise<void> {
     setError(null);
@@ -66,6 +91,7 @@ export default function PluginReviewPage() {
       {error ? <Notice tone="danger">{error}</Notice> : null}
       {notice ? <Notice tone="ok">{notice}</Notice> : null}
 
+      <div data-tour="plugins-review-filters">
       <Card>
         <div className="oc-row">
           {(["pending", "approved", "rejected"] as const).map((value) => (
@@ -83,7 +109,9 @@ export default function PluginReviewPage() {
           </button>
         </div>
       </Card>
+      </div>
 
+      <div data-tour="plugins-review-list">
       {loading ? <p className="oc-muted oc-small">読み込み中…</p> : null}
       {!loading && items.length === 0 ? <Notice tone="warn">該当する審査はありません。</Notice> : null}
 
@@ -156,6 +184,7 @@ export default function PluginReviewPage() {
           </div>
         </Card>
       ))}
+      </div>
     </PluginShell>
   );
 }

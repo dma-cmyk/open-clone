@@ -8,6 +8,7 @@
 // - 画面（URL）が変わったらツアーを終了する。
 
 import { resolveSteps, tourDefinitionOf, TOUR_DEFINITIONS } from "./steps";
+import { readPendingStart, writePendingStart, type PendingTourStart } from "./pending-start";
 import type { TourPageKey, TourStep } from "./types";
 
 const INTRO_KEY = "oc.tour.intro.v1";
@@ -23,6 +24,10 @@ export interface TourContext {
   siteOwner: boolean;
   /** 管理画面: 特別管理人か。 */
   siteSpecialAdmin: boolean;
+  /** ログインしているか（プラグイン作成トークン画面のツアー）。 */
+  loggedIn: boolean;
+  /** プラグイン詳細: そのプラグインの作者か（作者向けの手順）。 */
+  pluginAuthor: boolean;
 }
 
 const DEFAULT_CONTEXT: TourContext = {
@@ -30,6 +35,8 @@ const DEFAULT_CONTEXT: TourContext = {
   boardStaff: false,
   siteOwner: false,
   siteSpecialAdmin: false,
+  loggedIn: false,
+  pluginAuthor: false,
 };
 
 let context: TourContext = { ...DEFAULT_CONTEXT };
@@ -78,6 +85,41 @@ export function resetTourContext(): void {
 
 export function tourContext(): TourContext {
   return context;
+}
+
+/** 画面が権限を読み込み中か（開始予約の待ち合わせ・開始可否の判断に使う）。 */
+export function isTourContextPending(): boolean {
+  return contextPending;
+}
+
+/**
+ * 画面をまたぐツアーの開始を予約する（ヘルプのツアー一覧から使う）。
+ * 呼び出し側はこの直後に移動する。移動先の `TourHost` が準備を待って開始する
+ * （時間切れ・権限不足ならヘルプの該当節へ）。詳細は `pending-start.ts`。
+ */
+export function reserveTourStart(page: TourPageKey): void {
+  if (typeof window === "undefined") return;
+  writePendingStart(window.sessionStorage, page, Date.now());
+}
+
+/** その画面のツアーが失敗したときに案内するヘルプ（予約の破棄先）。 */
+export function tourHelpHref(page: TourPageKey): string {
+  const definition = tourDefinitionOf(page);
+  if (definition.helpPath.includes("#")) return definition.helpPath;
+  // 見出しだけのヘルプ（/help/admin/ など）は、最初の手順の節へ送る。
+  const anchor = definition.steps[0]?.helpAnchor;
+  return anchor ? `${definition.helpPath}${anchor}` : definition.helpPath;
+}
+
+/** 保存されている開始予約（`TourHost` が移動先で受け取る）。 */
+export function pendingTourStart(): PendingTourStart | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return readPendingStart(window.sessionStorage);
+  } catch {
+    // ストレージに触れない環境（プライベートモード等）では予約なしとして扱う。
+    return null;
+  }
 }
 
 export interface TourState {
@@ -131,6 +173,9 @@ function isVisible(selector: string): boolean {
 export function canStartTour(page: TourPageKey): boolean {
   if (page === "manage") return context.boardStaff;
   if (page === "admin") return context.siteOwner || context.siteSpecialAdmin;
+  if (page === "plugins-board") return context.canManageBoard;
+  if (page === "plugins-review") return context.siteOwner || context.siteSpecialAdmin;
+  if (page === "plugin-tokens") return context.loggedIn;
   return true;
 }
 
@@ -224,6 +269,15 @@ export function tourPrev(): void {
   emit();
 }
 
+/** 目次から指定の手順へ移る（範囲外・同じ手順なら何もしない）。 */
+export function tourGoTo(index: number): void {
+  if (state.page === null) return;
+  if (!Number.isInteger(index) || index < 0 || index >= state.steps.length) return;
+  if (index === state.index) return;
+  state = { ...state, index };
+  emit();
+}
+
 /** 最後の手順か（「終了」の代わりにヘルプ導線を出す）。 */
 export function isLastStep(current: TourState): boolean {
   return current.steps.length > 0 && current.index === current.steps.length - 1;
@@ -237,6 +291,13 @@ export function tourPageKeyForPath(pathname: string): TourPageKey | null {
   if (path === "/settings") return "settings";
   if (path === "/help/admin") return "help-admin";
   if (path === "/help") return "help";
+  if (path === "/plugins") return "plugins";
+  if (path === "/plugins/new") return "plugin-new";
+  if (path === "/plugins/templates") return "plugin-templates";
+  if (path === "/plugins/view") return "plugin-view";
+  if (path === "/plugins/board") return "plugins-board";
+  if (path === "/plugins/review") return "plugins-review";
+  if (path === "/account/plugin-tokens") return "plugin-tokens";
   if (path === "/admin" || path.startsWith("/admin/")) return "admin";
   const manage = path.match(/^\/b\/[^/]+\/manage(?:\/|$)/);
   if (manage) return "manage";
