@@ -1,10 +1,23 @@
 // 個人設定（NG・表示・新着・つぶやき）。open2ch 同様、端末ローカルが正本（DESIGN §6.2）。
 // サーバーには保存しない（アカウント同期は将来 WP6 の設定 API で拡張可能）。
 
-import { createLocalStore } from "./storage";
+import { createLocalStore, syncAcrossTabs } from "./storage";
 import type { Post } from "./types";
 
 export type NgMode = "confirm" | "hide" | "ignore";
+
+/** 文字列の一覧で持つ NG の種類。 */
+export type NgListKind = "words" | "ids" | "names" | "trips" | "threads";
+
+/** スレ ID 単位の無視。タイトルではなく「そのスレだけ」を隠す。 */
+export interface IgnoredThread {
+  id: number;
+  /** 板スラッグ（スレへのリンクに使う） */
+  board: string;
+  title: string;
+  /** 追加日時（epoch ミリ秒） */
+  at: number;
+}
 
 export interface NgConfig {
   mode: NgMode;
@@ -12,8 +25,12 @@ export interface NgConfig {
   ids: string[];
   names: string[];
   trips: string[];
-  /** スレタイ無視（板トップの左スワイプ / 「無視」ボタン） */
+  /** スレタイ無視（部分一致）。旧方式の保存値をそのまま活かすため残す。 */
   threads: string[];
+  /** スレ ID 単位の無視（新方式） */
+  ignoredThreads: IgnoredThread[];
+  /** 文字列項目の追加日時（`種類:値` をキー）。旧データには無い＝追加日不明。 */
+  addedAt: Record<string, number>;
 }
 
 export interface UserSettings {
@@ -40,7 +57,16 @@ export interface UserSettings {
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
-  ng: { mode: "confirm", words: [], ids: [], names: [], trips: [], threads: [] },
+  ng: {
+    mode: "confirm",
+    words: [],
+    ids: [],
+    names: [],
+    trips: [],
+    threads: [],
+    ignoredThreads: [],
+    addedAt: {},
+  },
   display: { fontSize: 15, showImages: true, aa: false, reverse: false },
   behavior: { autoScroll: true, sound: false, readAloud: false, tsubuyaki: false, floatForm: false },
   tsubuyaki: { size: 22, speed: 9, opacity: 0.95, color: "#ffffff" },
@@ -127,20 +153,85 @@ export function migrateSettingsStorage(): void {
 // モジュール読み込み時（ブラウザ）に旧キーを新しい名前に移して保存し直す。
 migrateSettingsStorage();
 
+const NG_MODES: readonly NgMode[] = ["confirm", "hide", "ignore"];
+
+function stringList(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+}
+
+/** `ng.ignoredThreads` の保存値を安全な形へ寄せる（壊れた値・重複 ID は捨てる）。 */
+function normalizeIgnoredThreads(raw: unknown): IgnoredThread[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<number>();
+  const result: IgnoredThread[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const record = item as Record<string, unknown>;
+    const id = Number(record["id"]);
+    if (!Number.isInteger(id) || id <= 0 || seen.has(id)) continue;
+    seen.add(id);
+    const at = Number(record["at"]);
+    result.push({
+      id,
+      board: typeof record["board"] === "string" ? record["board"] : "",
+      title: typeof record["title"] === "string" ? record["title"] : "",
+      at: Number.isFinite(at) ? at : 0,
+    });
+  }
+  return result;
+}
+
+function normalizeAddedAt(raw: unknown): Record<string, number> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+  const result: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "number" && Number.isFinite(value)) result[key] = value;
+  }
+  return result;
+}
+
+/** 保存値を現在のスキーマへ寄せる（旧データの `ng.threads` もそのまま残す）。 */
+export function mergeSettings(stored: unknown, fallback: UserSettings): UserSettings {
+  const value = (migrateLegacySettings(stored) ?? {}) as Partial<UserSettings>;
+  const ng = (typeof value.ng === "object" && value.ng !== null ? value.ng : {}) as Partial<NgConfig>;
+  return {
+    ng: {
+      mode: ng.mode && NG_MODES.includes(ng.mode) ? ng.mode : fallback.ng.mode,
+      words: stringList(ng.words),
+      ids: stringList(ng.ids),
+      names: stringList(ng.names),
+      trips: stringList(ng.trips),
+      threads: stringList(ng.threads),
+      ignoredThreads: normalizeIgnoredThreads(ng.ignoredThreads),
+      addedAt: normalizeAddedAt(ng.addedAt),
+    },
+    display: { ...fallback.display, ...(value.display ?? {}) },
+    behavior: { ...fallback.behavior, ...(value.behavior ?? {}) },
+    tsubuyaki: { ...fallback.tsubuyaki, ...(value.tsubuyaki ?? {}) },
+  };
+}
+
 export const settingsStore = createLocalStore<UserSettings>(SETTINGS_STORAGE_KEY, DEFAULT_SETTINGS, {
-  merge(stored, fallback) {
-    const value = (migrateLegacySettings(stored) ?? {}) as Partial<UserSettings>;
-    return {
-      ng: { ...fallback.ng, ...(value.ng ?? {}), threads: value.ng?.threads ?? [] },
-      display: { ...fallback.display, ...(value.display ?? {}) },
-      behavior: { ...fallback.behavior, ...(value.behavior ?? {}) },
-      tsubuyaki: { ...fallback.tsubuyaki, ...(value.tsubuyaki ?? {}) },
-    };
-  },
+  merge: mergeSettings,
 });
+
+// 同じ端末の別タブで NG を変えたとき、このタブにも反映する。
+if (typeof window !== "undefined") {
+  syncAcrossTabs(settingsStore);
+}
 
 export interface NgVerdict {
   hit: boolean;
+  reason?: string;
+  /** 解除ボタン用: 一致した NG 項目（保存値そのもの）。 */
+  entry?: { kind: NgListKind; value: string };
+}
+
+export interface NgThreadVerdict {
+  hit: boolean;
+  /** "thread" = スレ ID 単位の無視、"title" = スレタイ部分一致 */
+  kind?: "thread" | "title";
+  /** 表示用の理由（スレタイ NG なら登録語） */
   reason?: string;
 }
 
@@ -163,6 +254,16 @@ export function matchNgThread(title: string, ng: NgConfig): string | null {
   return null;
 }
 
+/** スレ 1 件の NG 判定。スレ ID の無視を先に見る（似たタイトルの別スレは隠さない）。 */
+export function matchThreadNg(thread: { id: number; title: string }, ng: NgConfig): NgThreadVerdict {
+  if (ng.ignoredThreads.some((item) => item.id === thread.id)) {
+    return { hit: true, kind: "thread", reason: "無視したスレ" };
+  }
+  const token = matchNgThread(thread.title, ng);
+  if (token !== null) return { hit: true, kind: "title", reason: token };
+  return { hit: false };
+}
+
 /** NG 判定。words は部分一致（大小無視）、ids/trips は完全一致、names は部分一致。 */
 export function matchNg(post: Post, ng: NgConfig): NgVerdict {
   if (post.isOp) {
@@ -175,44 +276,117 @@ export function matchNg(post: Post, ng: NgConfig): NgVerdict {
     if (!token) continue;
     const special = SPECIAL[token.toLowerCase()];
     if (special) {
-      if (special(post)) return { hit: true, reason: token };
+      if (special(post)) return { hit: true, reason: token, entry: { kind: "words", value: word } };
       continue;
     }
     if (body.includes(token.toLowerCase())) {
-      return { hit: true, reason: token };
+      return { hit: true, reason: token, entry: { kind: "words", value: word } };
     }
   }
-  if (post.idHash && ng.ids.some((id) => id.trim().toLowerCase() === post.idHash?.toLowerCase())) {
-    return { hit: true, reason: `ID:${post.idHash}` };
+  const idHash = post.idHash?.toLowerCase();
+  const idEntry = idHash ? ng.ids.find((id) => id.trim().toLowerCase() === idHash) : undefined;
+  if (idHash && idEntry !== undefined) {
+    return { hit: true, reason: `ID:${post.idHash}`, entry: { kind: "ids", value: idEntry } };
   }
-  if (post.trip && ng.trips.some((trip) => trip.trim() === post.trip)) {
-    return { hit: true, reason: post.trip };
+  const tripEntry = post.trip ? ng.trips.find((trip) => trip.trim() === post.trip) : undefined;
+  if (post.trip && tripEntry !== undefined) {
+    return { hit: true, reason: post.trip, entry: { kind: "trips", value: tripEntry } };
   }
   const name = post.name.toLowerCase();
   for (const ngName of ng.names) {
     const token = ngName.trim().toLowerCase();
     if (token && name.includes(token)) {
-      return { hit: true, reason: ngName };
+      return { hit: true, reason: ngName, entry: { kind: "names", value: ngName } };
     }
   }
   return { hit: false };
 }
 
-export function addNgEntry(kind: keyof Omit<NgConfig, "mode">, value: string): void {
+function ngEntryKey(kind: NgListKind, value: string): string {
+  return `${kind}:${value}`;
+}
+
+/** NG 項目の追加日時（epoch ミリ秒）。旧データ（日時なし）は null。 */
+export function ngEntryAddedAt(ng: NgConfig, kind: NgListKind, value: string): number | null {
+  const at = ng.addedAt[ngEntryKey(kind, value)];
+  return typeof at === "number" && Number.isFinite(at) ? at : null;
+}
+
+/** 1 件足した NG 設定を返す（純関数）。既にあれば追加日時だけ補う。 */
+export function withNgEntry(ng: NgConfig, kind: NgListKind, value: string, at = Date.now()): NgConfig {
   const token = value.trim();
-  if (!token) return;
+  if (!token) return ng;
+  const key = ngEntryKey(kind, token);
+  const list = ng[kind];
+  if (list.includes(token)) {
+    return ng.addedAt[key] === undefined ? { ...ng, addedAt: { ...ng.addedAt, [key]: at } } : ng;
+  }
+  return { ...ng, [kind]: [...list, token], addedAt: { ...ng.addedAt, [key]: at } };
+}
+
+/** 1 件消した NG 設定を返す（純関数）。追加日時も一緒に消す。 */
+export function withoutNgEntry(ng: NgConfig, kind: NgListKind, value: string): NgConfig {
+  const addedAt = { ...ng.addedAt };
+  delete addedAt[ngEntryKey(kind, value)];
+  return { ...ng, [kind]: ng[kind].filter((item) => item !== value), addedAt };
+}
+
+/** 種類ごとの全解除（純関数）。 */
+export function withoutNgKind(ng: NgConfig, kind: NgListKind): NgConfig {
+  const addedAt = { ...ng.addedAt };
+  for (const value of ng[kind]) delete addedAt[ngEntryKey(kind, value)];
+  return { ...ng, [kind]: [], addedAt };
+}
+
+/** スレを ID 単位で無視した設定を返す（純関数・同じ ID は追加日時を更新しない）。 */
+export function withIgnoredThread(
+  ng: NgConfig,
+  thread: { id: number; board: string; title: string },
+  at = Date.now(),
+): NgConfig {
+  if (ng.ignoredThreads.some((item) => item.id === thread.id)) return ng;
+  return {
+    ...ng,
+    ignoredThreads: [...ng.ignoredThreads, { id: thread.id, board: thread.board, title: thread.title, at }],
+  };
+}
+
+/** スレ ID の無視を解除した設定を返す（純関数）。 */
+export function withoutIgnoredThread(ng: NgConfig, id: number): NgConfig {
+  return { ...ng, ignoredThreads: ng.ignoredThreads.filter((item) => item.id !== id) };
+}
+
+function updateNg(next: (ng: NgConfig) => NgConfig): void {
   settingsStore.set((prev) => {
-    const list = prev.ng[kind];
-    if (list.includes(token)) return prev;
-    return { ...prev, ng: { ...prev.ng, [kind]: [...list, token] } };
+    const ng = next(prev.ng);
+    return ng === prev.ng ? prev : { ...prev, ng };
   });
 }
 
-export function removeNgEntry(kind: keyof Omit<NgConfig, "mode">, value: string): void {
-  settingsStore.set((prev) => ({
-    ...prev,
-    ng: { ...prev.ng, [kind]: prev.ng[kind].filter((item) => item !== value) },
-  }));
+export function addNgEntry(kind: NgListKind, value: string): void {
+  updateNg((ng) => withNgEntry(ng, kind, value));
+}
+
+export function removeNgEntry(kind: NgListKind, value: string): void {
+  updateNg((ng) => withoutNgEntry(ng, kind, value));
+}
+
+/** 種類ごとの全解除（設定画面の「すべて解除」）。 */
+export function clearNgEntries(kind: NgListKind): void {
+  updateNg((ng) => withoutNgKind(ng, kind));
+}
+
+/** スレを ID 単位で無視する（似たタイトルの別スレは隠さない）。 */
+export function ignoreThread(thread: { id: number; board: string; title: string }): void {
+  updateNg((ng) => withIgnoredThread(ng, thread));
+}
+
+export function unignoreThread(id: number): void {
+  updateNg((ng) => withoutIgnoredThread(ng, id));
+}
+
+export function clearIgnoredThreads(): void {
+  updateNg((ng) => (ng.ignoredThreads.length === 0 ? ng : { ...ng, ignoredThreads: [] }));
 }
 
 /** 新着音（WebAudio の短いビープ。外部素材を使わない）。 */

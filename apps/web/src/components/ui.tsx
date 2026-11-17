@@ -121,12 +121,25 @@ export function Modal({
   );
 }
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface Toast {
   id: number;
   message: string;
+  action?: ToastAction;
 }
 
-const ToastContext = createContext<{ show: (message: string) => void; clear: () => void }>({
+interface ToastShowOptions {
+  /** 「元に戻す」などの操作ボタン。押すとトーストは閉じる。 */
+  action?: ToastAction;
+  /** 表示時間（ミリ秒）。既定 3800。 */
+  duration?: number;
+}
+
+const ToastContext = createContext<{ show: (message: string, options?: ToastShowOptions) => void; clear: () => void }>({
   show: () => undefined,
   clear: () => undefined,
 });
@@ -135,14 +148,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(1);
 
-  const show = useCallback((message: string) => {
-    const id = nextId.current;
-    nextId.current += 1;
-    setToasts((prev) => [...prev, { id, message }]);
-    window.setTimeout(() => {
-      setToasts((prev) => prev.filter((toast) => toast.id !== id));
-    }, 3800);
+  const dismiss = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
+
+  const show = useCallback(
+    (message: string, options: ToastShowOptions = {}) => {
+      const id = nextId.current;
+      nextId.current += 1;
+      setToasts((prev) => [...prev, { id, message, action: options.action }]);
+      window.setTimeout(() => dismiss(id), options.duration ?? 3800);
+    },
+    [dismiss],
+  );
 
   /** 表示中のトーストを即座に消す（新しい操作を始めたとき、前の成功表示と矛盾しないように）。 */
   const clear = useCallback(() => setToasts([]), []);
@@ -156,6 +174,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((toast) => (
           <div key={toast.id} className="oc-toast">
             {toast.message}
+            {toast.action ? (
+              <button
+                type="button"
+                className="oc-toast-action"
+                onClick={() => {
+                  dismiss(toast.id);
+                  toast.action?.onClick();
+                }}
+              >
+                {toast.action.label}
+              </button>
+            ) : null}
           </div>
         ))}
       </div>

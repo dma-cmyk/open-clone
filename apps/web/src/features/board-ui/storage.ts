@@ -10,6 +10,8 @@ export interface LocalStore<T> {
   update(partial: Partial<T>): void;
   subscribe(listener: () => void): () => void;
   use(): T;
+  /** 保存値を読み直して購読者へ配る（別タブの変更の取り込み）。 */
+  reload(): void;
   reset(): void;
 }
 
@@ -92,17 +94,22 @@ export function createLocalStore<T extends object>(
     reset() {
       write(fallback);
     },
+    reload() {
+      // キャッシュを捨てて localStorage から読み直す（storage イベント用）。
+      cache = null;
+      emit();
+    },
   };
 }
 
 /** 別タブの更新を取り込む（同一起源の他タブで設定が変わった場合）。 */
-export function syncAcrossTabs(store: LocalStore<object>): () => void {
+export function syncAcrossTabs<T extends object>(store: LocalStore<T>): () => void {
   if (typeof window === "undefined") {
     return () => undefined;
   }
   const handler = (event: StorageEvent) => {
     if (event.key === store.key) {
-      store.set(store.get());
+      store.reload();
     }
   };
   window.addEventListener("storage", handler);

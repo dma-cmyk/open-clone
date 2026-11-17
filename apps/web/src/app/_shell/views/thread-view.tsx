@@ -10,7 +10,15 @@ import { PostForm } from "@/features/board-ui/post-form";
 import { PostRow } from "@/features/board-ui/post-row";
 import { TsubuyakiOverlay } from "@/features/board-ui/tsubuyaki-overlay";
 import { ReportModal } from "@/features/board-ui/report-modal";
-import { addNgEntry, matchNg, playNewPostSound, settingsStore, speak } from "@/features/board-ui/settings";
+import {
+  addNgEntry,
+  matchNg,
+  playNewPostSound,
+  removeNgEntry,
+  settingsStore,
+  speak,
+  type NgVerdict,
+} from "@/features/board-ui/settings";
 import { useApiData, errorMessage } from "@/features/board-ui/use-api-data";
 import { useThreadLive, type LiveStatus } from "@/features/board-ui/use-thread-live";
 import { pageLinks, parseRange, rangeLabel, rangeQuery } from "@/features/board-ui/range";
@@ -344,7 +352,17 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   const onNgId = (idHash: string) => {
     if (!idHash) return;
     addNgEntry("ids", idHash);
-    toast.show(`ID:${idHash} を NG に追加しました`);
+    toast.show(`ID:${idHash} を NG に追加しました`, {
+      action: { label: "元に戻す", onClick: () => removeNgEntry("ids", idHash) },
+      duration: 6000,
+    });
+  };
+
+  // NG の帯から、その 1 件だけを解除する（どの NG に当たったかを出したうえで消す）。
+  const undoNg = (verdict: NgVerdict) => {
+    if (!verdict.entry) return;
+    removeNgEntry(verdict.entry.kind, verdict.entry.value);
+    toast.show(`NG（${verdict.reason ?? verdict.entry.value}）を解除しました`);
   };
 
   const onDelete = async (post: Post, mode: "hide" | "delete") => {
@@ -573,6 +591,9 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   const lastRead = getLastRead(threadKey);
   const imagesOnly = range.kind === "images";
   const ordered = settings.display.reverse ? [...postsWithBacklinks].reverse() : postsWithBacklinks;
+  // 「完全に無視」ではレス自体が出ないため、末尾に件数と設定への導線を出す。
+  const ngHiddenPosts =
+    settings.ng.mode === "ignore" ? ordered.filter((post) => matchNg(post, settings.ng).hit).length : 0;
   const images: AttachmentRef[] = posts.flatMap((post) => post.attachments ?? []);
   // 「最終◯分前」は画面にある最後のレスの時刻を使う（受信直後に古いままだと F-09 になる）。
 
@@ -858,6 +879,9 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
                       >
                         表示
                       </button>
+                      <button type="button" className="oc-btn oc-btn-sm" onClick={() => undoNg(verdict)}>
+                        NG を解除
+                      </button>
                     </div>
                   );
                 }
@@ -867,6 +891,9 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
                   {verdict.hit ? (
                     <div className="oc-ng-block">
                       <span className="oc-ng-badge">NG</span> {verdict.reason} に一致（確認モード）
+                      <button type="button" className="oc-btn oc-btn-sm" onClick={() => undoNg(verdict)}>
+                        NG を解除
+                      </button>
                     </div>
                   ) : null}
                   <PostRow
@@ -894,6 +921,12 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
                 </div>
               );
             })}
+            {ngHiddenPosts > 0 ? (
+              <div className="oc-ng-note">
+                NG で隠れている: {ngHiddenPosts} 件（
+                <Link href="/settings?tab=ng">設定で確認</Link>）
+              </div>
+            ) : null}
             <div ref={bottomRef} />
           </div>
           <div className="oc-panel-title oc-mt">
