@@ -30,6 +30,7 @@ async function prepare(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const widgets = new Map<string, { callback?: (token: string) => void }>();
     let seq = 0;
+    const runId = `${Date.now()}${Math.floor(Math.random() * 1_000_000)}`;
     (window as unknown as { turnstile: unknown }).turnstile = {
       render(_element: HTMLElement, options: { callback?: (token: string) => void }) {
         seq += 1;
@@ -40,7 +41,7 @@ async function prepare(page: Page): Promise<void> {
         box.textContent = "Turnstile（スタブ）";
         box.style.cssText = "width:300px;height:65px;background:#eef;border:1px dashed #88a";
         _element.appendChild(box);
-        setTimeout(() => options.callback?.(`stub-token-${seq}`), 0);
+        setTimeout(() => options.callback?.(`stub-token-${runId}-${seq}`), 0);
         return id;
       },
       reset() {},

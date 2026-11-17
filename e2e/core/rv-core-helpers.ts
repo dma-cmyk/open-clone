@@ -99,6 +99,9 @@ export async function postReply(
 export async function stubTurnstile(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const state: TurnstileState = { renders: 0, sizes: [], tokens: 0 };
+    // 実 siteverify はトークンを使い切るため、ページ間・並列実行で衝突しない値にする
+    // （数字だけにするのは、スタブが fail/invalid/timeout を含む値を失敗扱いするため）。
+    const runId = `${Date.now()}${Math.floor(Math.random() * 1_000_000)}`;
     window.__ocTurnstile = state;
     const widgets = new Map<string, { callback?: (token: string) => void; box?: HTMLElement }>();
     window.turnstile = {
@@ -116,7 +119,7 @@ export async function stubTurnstile(page: Page): Promise<void> {
         widgets.set(id, { ...options, box });
         window.setTimeout(() => {
           state.tokens += 1;
-          options.callback?.(`stub-token-${state.tokens}`);
+          options.callback?.(`stub-token-${runId}-${state.tokens}`);
         }, 0);
         return id;
       },
@@ -125,7 +128,7 @@ export async function stubTurnstile(page: Page): Promise<void> {
         if (!options) return;
         window.setTimeout(() => {
           state.tokens += 1;
-          options.callback?.(`stub-token-${state.tokens}`);
+          options.callback?.(`stub-token-${runId}-${state.tokens}`);
         }, 0);
       },
       remove(id: string) {

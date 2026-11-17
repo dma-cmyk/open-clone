@@ -42,6 +42,8 @@ async function stubTurnstileWidget(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const widgets = new Map<string, { callback?: (token: string) => void }>();
     let seq = 0;
+    // 実 siteverify はトークンを使い切る。pc/mobile 並列でも衝突しないよう一意にする。
+    const runId = `${Date.now()}${Math.floor(Math.random() * 1_000_000)}`;
     window.__ocWidgetRenders = 0;
     (window as unknown as { turnstile: unknown }).turnstile = {
       render(_element: HTMLElement, options: { callback?: (token: string) => void }) {
@@ -53,12 +55,12 @@ async function stubTurnstileWidget(page: Page): Promise<void> {
         box.className = "stub-turnstile";
         box.textContent = "stub";
         _element.appendChild(box);
-        setTimeout(() => options.callback?.(`stub-token-${seq}`), 0);
+        setTimeout(() => options.callback?.(`stub-token-${runId}-${seq}`), 0);
         return id;
       },
       reset(id: string) {
         const options = widgets.get(id);
-        if (options) setTimeout(() => options.callback?.(`stub-token-${Date.now()}`), 0);
+        if (options) setTimeout(() => options.callback?.(`stub-token-${runId}-reset-${Date.now()}`), 0);
       },
       remove(id: string) {
         document.getElementById(id)?.remove();

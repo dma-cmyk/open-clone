@@ -16,6 +16,7 @@ export default function PasswordResetPage() {
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [siteInfo, setSiteInfo] = useState<PublicSiteInfo | null>(null);
   const [result, setResult] = useState<PasswordResetResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +49,9 @@ export default function PasswordResetPage() {
       setResult(data);
     } catch (err) {
       setError(errorMessage(err));
+      // 失敗した送信でトークンは消費済み。捨ててウィジェットを取り直す。
       setTurnstileToken("");
+      setTurnstileResetKey((value) => value + 1);
     } finally {
       setBusy(false);
     }
@@ -141,7 +144,7 @@ export default function PasswordResetPage() {
             onChange={(event) => setNewPasswordConfirm(event.target.value)}
           />
         </div>
-        <TurnstileWidget onToken={onToken} onInvalidate={onInvalidate} />
+        <TurnstileWidget onToken={onToken} onInvalidate={onInvalidate} resetKey={turnstileResetKey} />
         <button type="submit" className="oc-btn oc-btn-primary" disabled={busy || !turnstileToken}>
           {busy ? "再設定中…" : "パスワードを再設定"}
         </button>

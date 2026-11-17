@@ -86,6 +86,11 @@ export default defineConfig({
         ...process.env,
         E2E_WEB_PORT: String(WEB_PORT),
         API_ORIGIN: API_URL,
+        // アカウント画面（ログイン・登録）の Turnstile を E2E でも描画させる。
+        // 公式テストキーは板側ウィジェットの既定値と同じ。未設定だとウィジェットが
+        // 出ずトークンが付かないため、トークン使い切り系の回帰を検証できない。
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY:
+          process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA",
       },
     },
     {

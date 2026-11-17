@@ -154,6 +154,9 @@ export function TsubuyakiOverlay({
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "つぶやきの送信に失敗しました");
+      // 失敗した送信でトークンは消費済み。再送に同じ値を送らないよう取り直す。
+      setToken("");
+      setResetKey((value) => value + 1);
       // NG・429 などでもサーバーは確認済みを取り消している。画面を追随させる（R82-03）。
       if (boardSlug) {
         void api

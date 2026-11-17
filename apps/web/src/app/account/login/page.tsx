@@ -14,6 +14,8 @@ export default function LoginPage() {
   const [totpCode, setTotpCode] = useState("");
   const [needTotp, setNeedTotp] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const [turnstileWaiting, setTurnstileWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [next, setNext] = useState("/account");
@@ -42,7 +44,20 @@ export default function LoginPage() {
     }
   };
 
-  const onToken = useCallback((token: string | null) => setTurnstileToken(token), []);
+  const onToken = useCallback((token: string | null) => {
+    setTurnstileToken(token);
+    if (token) setTurnstileWaiting(false);
+  }, []);
+
+  // 一度送るとトークンは API 側で使い切られる。成功以外の応答の後は捨てて取り直し、
+  // 新しいトークンが届くまで送信させない（同じ値の再送は siteverify で弾かれる）。
+  const resetTurnstile = useCallback(() => {
+    setTurnstileToken(null);
+    setTurnstileWaiting(true);
+    setTurnstileResetKey((value) => value + 1);
+  }, []);
+
+  const onTurnstileUnavailable = useCallback(() => setTurnstileWaiting(false), []);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -60,6 +75,7 @@ export default function LoginPage() {
       // 明示的なフルページ遷移にし、戻り先は検証済みの `next` だけを使う。
       window.location.assign(next);
     } catch (err) {
+      resetTurnstile();
       if (err instanceof ApiRequestError && err.code === "TOTP_REQUIRED") {
         setNeedTotp(true);
         setError("TOTP コードを入力してください。");
@@ -123,9 +139,13 @@ export default function LoginPage() {
             />
           </div>
         ) : null}
-        <TurnstileWidget onToken={onToken} />
-        <button type="submit" className="oc-btn oc-btn-primary" disabled={busy}>
-          {busy ? "ログイン中…" : "ログイン"}
+        <TurnstileWidget
+          onToken={onToken}
+          onUnavailable={onTurnstileUnavailable}
+          resetKey={turnstileResetKey}
+        />
+        <button type="submit" className="oc-btn oc-btn-primary" disabled={busy || turnstileWaiting}>
+          {busy ? "ログイン中…" : turnstileWaiting ? "確認中…" : "ログイン"}
         </button>
       </form>
       {githubAvailable ? (

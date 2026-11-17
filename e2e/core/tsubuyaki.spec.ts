@@ -38,17 +38,18 @@ test.describe("core: 未ログイン つぶやき", () => {
     await page.addInitScript(() => {
       const widgets = new Map<string, { callback?: (token: string) => void }>();
       let seq = 0;
+      const runId = `${Date.now()}${Math.floor(Math.random() * 1_000_000)}`;
       (window as unknown as { turnstile: unknown }).turnstile = {
         render(_element: HTMLElement, options: { callback?: (token: string) => void }) {
           seq += 1;
           const id = `stub-${seq}`;
           widgets.set(id, options);
-          setTimeout(() => options.callback?.(`stub-token-${seq}`), 0);
+          setTimeout(() => options.callback?.(`stub-token-${runId}-${seq}`), 0);
           return id;
         },
         reset(id: string) {
           const options = widgets.get(id);
-          if (options) setTimeout(() => options.callback?.(`stub-token-${Date.now()}`), 0);
+          if (options) setTimeout(() => options.callback?.(`stub-token-${runId}-reset-${Date.now()}`), 0);
         },
         remove(id: string) {
           widgets.delete(id);

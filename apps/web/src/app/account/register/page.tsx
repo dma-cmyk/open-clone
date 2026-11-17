@@ -15,6 +15,8 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const [turnstileWaiting, setTurnstileWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // 登録完了後の任意ステップ（復旧コードの作成。設計 50 ①）
@@ -30,7 +32,19 @@ export default function RegisterPage() {
     setNext(resolveSafeNext(params.get("next"), "/account"));
   }, []);
 
-  const onToken = useCallback((token: string | null) => setTurnstileToken(token), []);
+  const onToken = useCallback((token: string | null) => {
+    setTurnstileToken(token);
+    if (token) setTurnstileWaiting(false);
+  }, []);
+
+  // トークンは送信で消費されるため、成功以外の応答の後は捨てて取り直す。
+  const resetTurnstile = useCallback(() => {
+    setTurnstileToken(null);
+    setTurnstileWaiting(true);
+    setTurnstileResetKey((value) => value + 1);
+  }, []);
+
+  const onTurnstileUnavailable = useCallback(() => setTurnstileWaiting(false), []);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -47,6 +61,7 @@ export default function RegisterPage() {
       setRegistered(true);
       setTurnstileToken(null);
     } catch (err) {
+      resetTurnstile();
       setError(errorMessage(err));
     } finally {
       setBusy(false);
@@ -170,9 +185,13 @@ export default function RegisterPage() {
             onChange={(event) => setPasswordConfirm(event.target.value)}
           />
         </div>
-        <TurnstileWidget onToken={onToken} />
-        <button type="submit" className="oc-btn oc-btn-primary" disabled={busy}>
-          {busy ? "登録中…" : "登録する"}
+        <TurnstileWidget
+          onToken={onToken}
+          onUnavailable={onTurnstileUnavailable}
+          resetKey={turnstileResetKey}
+        />
+        <button type="submit" className="oc-btn oc-btn-primary" disabled={busy || turnstileWaiting}>
+          {busy ? "登録中…" : turnstileWaiting ? "確認中…" : "登録する"}
         </button>
       </form>
       <div className="oc-small oc-muted">

@@ -3,6 +3,10 @@
 // Turnstile ウィジェット（登録・ログインの異常検知時に使用）。
 // NEXT_PUBLIC_TURNSTILE_SITE_KEY 未設定なら何も描画しない（ローカル開発）。
 // グローバル宣言は WP2 と衝突するため行わず、window の型付きアクセサ経由で扱う。
+//
+// トークンは API 側の siteverify で 1 回使うと無効になる（本物と同じ）。送信が
+// 成功以外で終わったら `resetKey` を進めてウィジェットを取り直し、新しいトークンを
+// 受け取るまで呼び出し側は送信させない（同じ値の再送で 400 TURNSTILE_FAILED にしない）。
 
 import { useEffect, useRef } from "react";
 
@@ -18,6 +22,7 @@ interface TurnstileApi {
     },
   ) => string;
   remove: (widgetId: string) => void;
+  reset: (widgetId: string) => void;
 }
 
 function getTurnstile(): TurnstileApi | undefined {
@@ -50,36 +55,84 @@ function loadScript(onReady: () => void, onError: () => void): void {
   document.head.appendChild(script);
 }
 
-export function TurnstileWidget({ onToken }: { onToken: (token: string | null) => void }) {
+export function TurnstileWidget({
+  onToken,
+  onUnavailable,
+  resetKey = 0,
+}: {
+  /** トークン取得・失効の通知。呼び出し側で安定させる（useCallback）前提。 */
+  onToken: (token: string | null) => void;
+  /**
+   * ウィジェットを用意できない（サイトキー未設定・スクリプト読み込み失敗）ときに呼ぶ。
+   * 呼び出し側は「新しいトークン待ち」で送信ボタンを閉じたままにしない。
+   */
+  onUnavailable?: () => void;
+  /** 増やすとウィジェットをリセットして新しいトークンを取り直す（トークンは 1 回限り）。 */
+  resetKey?: number;
+}) {
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
   const containerRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string | null>(null);
+  const renderedKeyRef = useRef<number | null>(null);
+  const unavailableRef = useRef(onUnavailable);
+  unavailableRef.current = onUnavailable;
 
   useEffect(() => {
-    if (!siteKey || !containerRef.current) return;
-    let widgetId: string | null = null;
+    if (!siteKey) {
+      unavailableRef.current?.();
+      return;
+    }
+    if (!containerRef.current) return;
     let cancelled = false;
 
     loadScript(
       () => {
         const api = getTurnstile();
         if (cancelled || !containerRef.current || !api) return;
-        widgetId = api.render(containerRef.current, {
+        if (widgetIdRef.current) {
+          // React の再マウントや resetKey 変更で同じコンテナに 2 個目を積まない
+          // （実ウィジェットの reset はウィジェットを生かしたまま新しいトークンを発行する）。
+          if (renderedKeyRef.current !== resetKey) {
+            renderedKeyRef.current = resetKey;
+            api.reset(widgetIdRef.current);
+          }
+          return;
+        }
+        renderedKeyRef.current = resetKey;
+        widgetIdRef.current = api.render(containerRef.current, {
           sitekey: siteKey,
           theme: "light",
           callback: (token: string) => onToken(token),
           "expired-callback": () => onToken(null),
-          "error-callback": () => onToken(null),
+          // チャレンジ自体が失敗したときは新しいトークンが来ない。送信を閉じたままにしない。
+          "error-callback": () => {
+            onToken(null);
+            unavailableRef.current?.();
+          },
         });
       },
-      () => onToken(null),
+      () => {
+        onToken(null);
+        if (!cancelled) unavailableRef.current?.();
+      },
     );
 
     return () => {
       cancelled = true;
-      const api = getTurnstile();
-      if (widgetId && api) api.remove(widgetId);
     };
-  }, [siteKey, onToken]);
+  }, [siteKey, onToken, resetKey]);
+
+  useEffect(
+    () => () => {
+      const api = getTurnstile();
+      if (widgetIdRef.current && api) {
+        api.remove(widgetIdRef.current);
+        widgetIdRef.current = null;
+        renderedKeyRef.current = null;
+      }
+    },
+    [],
+  );
 
   if (!siteKey) return null;
   return <div ref={containerRef} className="oc-mb" />;

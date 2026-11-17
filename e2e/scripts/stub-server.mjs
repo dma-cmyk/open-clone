@@ -25,6 +25,22 @@ const requests = [];
 const MAX_LOG = 500;
 let counter = 0;
 
+/**
+ * siteverify が受け付けた Turnstile トークン（使い切り）。本物の siteverify は
+ * 同じトークンの 2 回目を `timeout-or-duplicate` で拒否する。
+ * 公式テストキーの固定ダミートークンだけは、実 siteverify のテストキーと同じく常に成功
+ * させる（E2E の API 直叩きは板・スレ作成で同じ値を使い回すため）。
+ */
+const consumedTurnstileTokens = new Map();
+const TURNSTILE_TOKEN_TTL_MS = 5 * 60 * 1000;
+const ALWAYS_OK_TURNSTILE_TOKENS = new Set([
+  "1x00000000000000000000AA",
+  "1x00000000000000000000BB",
+  "1x00000000000000000000FF",
+  // 公式テストキーが実際に発行する固定ダミートークン（毎回同じ値）。
+  "XXXX.DUMMY.TOKEN.XXXX",
+]);
+
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-credentials": "true",
@@ -248,11 +264,26 @@ async function handle(req, res, url, body) {
   // ---- Turnstile ----
   if (pathname === "/turnstile/v0/siteverify" || pathname === "/siteverify") {
     const token = formField(body, "response");
-    const decoded = token;
-    const success = decoded !== "" && !/fail|invalid|timeout/i.test(decoded);
+    const now = Date.now();
+    // 期限切れ（本物は 300 秒）の記録は捨てる。トークンは 1 回だけ通す。
+    for (const [key, at] of consumedTurnstileTokens) {
+      if (now - at > TURNSTILE_TOKEN_TTL_MS) consumedTurnstileTokens.delete(key);
+    }
+    const rejected = token === "" || /fail|invalid|timeout/i.test(token);
+    let success = !rejected;
+    let errorCodes = rejected ? ["invalid-input-response"] : undefined;
+    if (success && !ALWAYS_OK_TURNSTILE_TOKENS.has(token)) {
+      if (consumedTurnstileTokens.has(token)) {
+        // 本物と同じ: 使用済みトークンの再送は timeout-or-duplicate。
+        success = false;
+        errorCodes = ["timeout-or-duplicate"];
+      } else {
+        consumedTurnstileTokens.set(token, now);
+      }
+    }
     sendJson(res, 200, {
       success,
-      ...(success ? {} : { "error-codes": ["invalid-input-response"] }),
+      ...(success ? {} : { "error-codes": errorCodes }),
       challenge_ts: new Date().toISOString(),
       hostname: "127.0.0.1",
       action: "e2e",

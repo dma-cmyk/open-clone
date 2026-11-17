@@ -56,6 +56,9 @@ export function ReportModal({
       setResetKey((value) => value + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "通報に失敗しました");
+      // 失敗した送信でトークンは消費済み。再送に同じ値を送らないよう取り直す。
+      setToken("");
+      setResetKey((value) => value + 1);
     } finally {
       setSending(false);
     }
