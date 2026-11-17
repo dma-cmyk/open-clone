@@ -2,7 +2,7 @@
 
 // アプリシェル。静的エクスポート + クライアントルーティングのディスパッチャ。
 // 本番は Vercel の rewrite で全パスが index.html（このシェル）に落ち、pathname から画面を決める。
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 // WP3 のプラグインホスト（sandbox ランナー）をスロットへ登録する。
 import "@/features/plugin-host/register";
 import { PluginPageScopeProvider, type PluginPageScope } from "@/components/plugin-scope";
@@ -99,19 +99,15 @@ export function AppShell() {
   }
 
   // プラグインスロット（ヘッダー・サイドバー・スレ）が共有するページ文脈。
-  // スレ画面はスレ ID まで、板画面は板 slug までを配る。
-  const pluginScope = useMemo((): PluginPageScope | null => {
-    if (!mounted) return null;
-    switch (effectiveRoute.name) {
-      case "thread":
-        return { boardSlug: effectiveRoute.slug, threadId: effectiveRoute.threadId };
-      case "board":
-      case "manage":
-        return { boardSlug: effectiveRoute.slug };
-      default:
-        return {};
-    }
-  }, [mounted, effectiveRoute]);
+  // スレ画面はスレ ID まで、板画面は板 slug までを配る。ルートの解決は軽いので
+  // （parseRoute の正規表現のみ）毎回計算し、useMemo の依存で警告を出さない。
+  const pluginScope: PluginPageScope | null = !mounted
+    ? null
+    : effectiveRoute.name === "thread"
+      ? { boardSlug: effectiveRoute.slug, threadId: effectiveRoute.threadId }
+      : effectiveRoute.name === "board" || effectiveRoute.name === "manage"
+        ? { boardSlug: effectiveRoute.slug }
+        : {};
 
   return (
     <PluginPageScopeProvider value={pluginScope}>

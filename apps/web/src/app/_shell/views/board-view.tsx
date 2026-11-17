@@ -355,13 +355,7 @@ export function BoardView({ slug }: { slug: string }) {
           boardId={Number(board.id) || undefined}
           turnstile={board.settings?.turnstile ?? "anonymous"}
           quoteThreadId={validQuoteThreadId}
-          onQuoteCancel={() => {
-            // ?quote= だけを外す（並び順・検索は維持）。
-            const next = new URLSearchParams(params.toString());
-            next.delete("quote");
-            const search = next.toString();
-            navigate(`${boardPath(slug)}${search ? `?${search}` : ""}`);
-          }}
+          onQuoteCancel={() => updateQuery({ quote: null })}
           onPosted={({ threadId }) => {
             if (threadId) {
               toast.show("スレを立てました");
