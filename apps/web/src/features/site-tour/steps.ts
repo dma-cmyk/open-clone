@@ -270,7 +270,7 @@ const SETTINGS: TourDefinition = {
       id: "settings-ng",
       selector: '[data-tour="settings-ng"]',
       title: "NG 設定",
-      body: "見たくないワード・ID・名前・スレタイを登録できます。設定はこの端末にだけ保存されます。",
+      body: "見たくないワード・ID・名前・トリップ・スレタイを登録できます。「無視したスレ」もここに追加日時つきで並び、いつでも解除できます。設定はこの端末にだけ保存されます。",
       helpAnchor: "#reading",
     },
   ],
