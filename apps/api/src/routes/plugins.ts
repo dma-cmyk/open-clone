@@ -22,6 +22,7 @@ import {
   pluginActiveQuerySchema,
   pluginPreviewCheckSchema,
   pluginPublishSchema,
+  pluginReportHandleSchema,
   pluginReportSchema,
   pluginRepoImportSchema,
   pluginStateQuerySchema,
@@ -66,6 +67,7 @@ import {
   getPluginRow,
   getReviewRow,
   getVersionRow,
+  handleReport,
   installPlugin,
   installRowToInfo,
   listActiveInstalls,
@@ -907,7 +909,39 @@ app.get("/:id/reports", async (c) => {
     throw ApiError.forbidden();
   }
   const items = await listReports(c.env.DB, plugin.id);
-  return c.json(ok({ items }));
+  // 通報者の ID はサイト管理者にだけ返す（作者には出さない）。undefined は JSON で落ちる。
+  return c.json(
+    ok({
+      items: items.map((item) =>
+        actor.isAdmin ? item : { ...item, reporterKind: undefined, reporterId: undefined },
+      ),
+    }),
+  );
+});
+
+/**
+ * プラグイン通報の対応（対応済み / 却下）。サイト管理者のみ。
+ * 既存のレス通報 `POST /v1/reports/:id/handle` と同じ action + note の形。
+ */
+app.post("/reports/:id/handle", requireAuth, async (c) => {
+  const actor = pluginActorFrom(getReqCtx(c));
+  if (!actor.isAdmin || !actor.accountId) {
+    throw ApiError.forbidden("プラグイン通報の対応はサイト管理者のみ可能です");
+  }
+  const body = pluginReportHandleSchema.parse(await c.req.json());
+  const status = body.action === "resolve" ? "resolved" : "dismissed";
+  const result = await handleReport(c.env.DB, c.req.param("id"), {
+    status,
+    handledBy: actor.accountId,
+  });
+  await writeAudit(c.env.DB, {
+    actorType: "special_admin",
+    actorId: actor.accountId,
+    action: `plugin.report.${body.action}`,
+    target: c.req.param("id"),
+    detail: { pluginId: result.pluginId, note: body.note, openCount: result.openCount },
+  });
+  return c.json(ok({ id: c.req.param("id"), status, openCount: result.openCount }));
 });
 
 /** キルスイッチ。boardId 指定時はその板の導入だけ停止（板管理人以上）。 */

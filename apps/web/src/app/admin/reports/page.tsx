@@ -8,6 +8,7 @@ import { REPORT_REASON_LABELS, type Report, type ReportStatus } from "shared";
 import { threadPath } from "@/features/board-ui/format";
 import { formatDate } from "@/features/board-ui/format";
 import { Wp1ApiError, queryString, wp1Request } from "../../_wp1/api";
+import { PluginReportsPanel } from "./plugin-reports-panel";
 
 type ReportAction = "reject" | "resolve" | "hide" | "delete";
 
@@ -38,6 +39,8 @@ interface ListResponse {
 
 export default function AdminReportsPage() {
   const toast = useToast();
+  // レス（既存）とプラグインの通報を同じ「通報」メニューに並べる。
+  const [tab, setTab] = useState<"posts" | "plugins">("posts");
   const [status, setStatus] = useState("pending");
   const [board, setBoard] = useState("");
   const [items, setItems] = useState<Report[]>([]);
@@ -111,28 +114,53 @@ export default function AdminReportsPage() {
     <div className="oc-stack">
       <div className="oc-row-between">
         <h1 style={{ fontSize: 18, margin: 0 }}>通報処理</h1>
-        <span className="oc-row">
-          <select className="oc-select" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="状態">
-            <option value="pending">未処理</option>
-            <option value="resolved">対応済み</option>
-            <option value="rejected">却下</option>
-            <option value="accepted">受理</option>
-            <option value="">すべて</option>
-          </select>
-          <input
-            className="oc-input"
-            style={{ width: 150 }}
-            value={board}
-            placeholder="板 slug（任意）"
-            aria-label="板 slug"
-            onChange={(event) => setBoard(event.target.value)}
-          />
-          <Button size="sm" onClick={() => void load()}>
-            更新
-          </Button>
-        </span>
+        {tab === "posts" ? (
+          <span className="oc-row">
+            <select className="oc-select" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="状態">
+              <option value="pending">未処理</option>
+              <option value="resolved">対応済み</option>
+              <option value="rejected">却下</option>
+              <option value="accepted">受理</option>
+              <option value="">すべて</option>
+            </select>
+            <input
+              className="oc-input"
+              style={{ width: 150 }}
+              value={board}
+              placeholder="板 slug（任意）"
+              aria-label="板 slug"
+              onChange={(event) => setBoard(event.target.value)}
+            />
+            <Button size="sm" onClick={() => void load()}>
+              更新
+            </Button>
+          </span>
+        ) : null}
       </div>
 
+      <nav className="oc-tabs" aria-label="通報の種類">
+        <button
+          type="button"
+          className={tab === "posts" ? "active" : undefined}
+          aria-pressed={tab === "posts"}
+          onClick={() => setTab("posts")}
+        >
+          レス
+        </button>
+        <button
+          type="button"
+          className={tab === "plugins" ? "active" : undefined}
+          aria-pressed={tab === "plugins"}
+          onClick={() => setTab("plugins")}
+        >
+          プラグイン
+        </button>
+      </nav>
+
+      {tab === "plugins" ? (
+        <PluginReportsPanel />
+      ) : (
+        <>
       {loading && items.length === 0 ? <Spinner label="通報を読み込み中…" /> : null}
       {error ? <Notice kind="error" onRetry={() => void load()}>{error}</Notice> : null}
       {!loading && !error && items.length === 0 ? <div className="oc-empty">該当する通報はありません。</div> : null}
@@ -264,6 +292,8 @@ export default function AdminReportsPage() {
           </div>
         ) : null}
       </Modal>
+        </>
+      )}
     </div>
   );
 }

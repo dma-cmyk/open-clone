@@ -55,6 +55,46 @@ test.describe("権限マトリクス: owner 専用", () => {
   });
 });
 
+test.describe("権限マトリクス: プラグイン通報", () => {
+  test("GET /v1/admin/plugin-reports: anon=401, user=403, owner=200", async ({ request }) => {
+    const anon = await fetchAs(request, "anon", "GET", "/v1/admin/plugin-reports");
+    if (await skipIfUnimplemented(anon)) return;
+    expect(anon.status()).toBe(401);
+
+    const user = await fetchAs(request, "user", "GET", "/v1/admin/plugin-reports");
+    expect(user.status()).toBe(403);
+
+    const owner = await fetchAs(request, "owner", "GET", "/v1/admin/plugin-reports");
+    expect(owner.status()).toBe(200);
+    const body = await readEnvelope<{ items: unknown[] }>(owner);
+    expect(body?.ok).toBe(true);
+    if (body?.ok) expect(Array.isArray(body.data.items)).toBe(true);
+  });
+
+  test("POST /v1/plugins/reports/:id/handle: anon=401, user=403, owner=404（対象なし）", async ({ request }) => {
+    const path = "/v1/plugins/reports/does-not-exist/handle";
+    const anon = await fetchAs(request, "anon", "POST", path);
+    if (await skipIfUnimplemented(anon)) return;
+    expect(anon.status()).toBe(401);
+
+    const user = await fetchAs(request, "user", "POST", path);
+    expect(user.status()).toBe(403);
+
+    const owner = await request.fetch(`${API_BASE}/v1/plugins/reports/does-not-exist/handle`, {
+      method: "POST",
+      headers: {
+        Origin: ALLOWED_ORIGIN,
+        "content-type": "application/json",
+        Cookie: `oc_sess=${SESSION.owner}`,
+      },
+      data: { action: "resolve" },
+    });
+    expect(owner.status()).toBe(404);
+    const body = await readEnvelope(owner);
+    if (body && !body.ok) expect(body.code).toBe("NOT_FOUND");
+  });
+});
+
 test.describe("権限マトリクス: 一般ユーザー", () => {
   test("GET /v1/accounts/me: user は自分の情報を取得できる", async ({ request }) => {
     const user = await fetchAs(request, "user", "GET", "/v1/accounts/me");

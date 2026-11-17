@@ -96,21 +96,22 @@
 | GET | `/me/sessions` | `requireAuth` | `accounts.ts` | 100 |
 | DELETE | `/me/sessions/:id` | `requireAuth` | `accounts.ts` | 118 |
 | POST | `/me/sessions/revoke-others` | `requireAuth` | `accounts.ts` | 139 |
-| POST | `/owner/setup` | — | `admin.ts` | 57 |
-| GET | `/overview` | `requireAdminActive` | `admin.ts` | 109 |
-| GET | `/users` | `requireAdminActive` | `admin.ts` | 137 |
-| GET | `/users/:id` | `requireAdminActive` | `admin.ts` | 200 |
-| GET | `/suspensions` | `requireAdminActive` | `admin.ts` | 228 |
-| POST | `/suspensions` | `requireAdminActive` | `admin.ts` | 238 |
-| POST | `/suspensions/:id/lift` | `requireAdminActive` | `admin.ts` | 253 |
-| DELETE | `/suspensions/:id` | `requireAdminActive` | `admin.ts` | 268 |
-| GET | `/audit` | `requireAdminActive` | `admin.ts` | 285 |
-| GET | `/site-config` | `requireAdminActive`, `requireOwnerActive` | `admin.ts` | 352 |
-| PUT | `/site-config` | `requireOwnerActive` | `admin.ts` | 356 |
-| GET | `/special-admins` | `requireOwnerActive` | `admin.ts` | 373 |
-| POST | `/special-admins/:id/stop` | `requireOwnerActive` | `admin.ts` | 387 |
-| POST | `/special-admins/:id/restore` | `requireOwnerActive` | `admin.ts` | 406 |
-| POST | `/special-admins/:id/totp-reset` | `requireOwnerActive` | `admin.ts` | 423 |
+| POST | `/owner/setup` | — | `admin.ts` | 59 |
+| GET | `/overview` | `requireAdminActive` | `admin.ts` | 111 |
+| GET | `/users` | `requireAdminActive` | `admin.ts` | 139 |
+| GET | `/users/:id` | `requireAdminActive` | `admin.ts` | 202 |
+| GET | `/suspensions` | `requireAdminActive` | `admin.ts` | 230 |
+| POST | `/suspensions` | `requireAdminActive` | `admin.ts` | 240 |
+| POST | `/suspensions/:id/lift` | `requireAdminActive` | `admin.ts` | 255 |
+| DELETE | `/suspensions/:id` | `requireAdminActive` | `admin.ts` | 270 |
+| GET | `/audit` | `requireAdminActive` | `admin.ts` | 287 |
+| GET | `/plugin-reports` | `requireAdminActive`, `requireOwnerActive` | `admin.ts` | 355 |
+| GET | `/site-config` | `requireAdminActive`, `requireOwnerActive` | `admin.ts` | 363 |
+| PUT | `/site-config` | `requireOwnerActive` | `admin.ts` | 367 |
+| GET | `/special-admins` | `requireOwnerActive` | `admin.ts` | 384 |
+| POST | `/special-admins/:id/stop` | `requireOwnerActive` | `admin.ts` | 398 |
+| POST | `/special-admins/:id/restore` | `requireOwnerActive` | `admin.ts` | 417 |
+| POST | `/special-admins/:id/totp-reset` | `requireOwnerActive` | `admin.ts` | 434 |
 | POST | `/complete` | — | `ai.ts` | 195 |
 | GET | `/me` | — | `ai.ts` | 209 |
 | POST | `/act` | — | `ai.ts` | 220 |
@@ -223,38 +224,39 @@
 | GET | `/log` | `requireRole` | `plugin-net.ts` | 116 |
 | POST | `/revoke-all` | `requireAuth` | `plugin-tokens.ts` | 83 |
 | DELETE | `/:id` | `requireAuth` | `plugin-tokens.ts` | 97 |
-| GET | `/mine` | — | `plugins.ts` | 157 |
-| GET | `/active` | — | `plugins.ts` | 172 |
-| GET | `/installed` | — | `plugins.ts` | 205 |
-| GET | `/reviews` | `requireRole` | `plugins.ts` | 271 |
-| POST | `/preview-check` | `requireAuth` | `plugins.ts` | 285 |
-| POST | `/import/gist` | `requireAuth` | `plugins.ts` | 292 |
-| POST | `/import/repo` | `requireAuth` | `plugins.ts` | 316 |
-| POST | `/hooks/github` | — | `plugins.ts` | 348 |
-| GET | `/:id` | — | `plugins.ts` | 527 |
-| GET | `/:id/versions` | — | `plugins.ts` | 538 |
-| GET | `/:id/code` | — | `plugins.ts` | 562 |
-| POST | `/:id/versions` | — | `plugins.ts` | 620 |
-| POST | `/:id/publish` | `requireAuth` | `plugins.ts` | 694 |
-| POST | `/:id/install` | — | `plugins.ts` | 744 |
-| POST | `/:id/update` | — | `plugins.ts` | 824 |
-| POST | `/:id/uninstall` | — | `plugins.ts` | 856 |
-| POST | `/:id/report` | — | `plugins.ts` | 878 |
-| GET | `/:id/reports` | — | `plugins.ts` | 902 |
-| POST | `/:id/disable` | — | `plugins.ts` | 914 |
-| POST | `/:id/enable` | — | `plugins.ts` | 951 |
-| DELETE | `/:id` | — | `plugins.ts` | 973 |
-| POST | `/:id/disable-install` | — | `plugins.ts` | 1013 |
-| POST | `/:id/enable-install` | — | `plugins.ts` | 1037 |
-| POST | `/:id/fork` | `requireAuth` | `plugins.ts` | 1060 |
-| GET | `/:id/state` | — | `plugins.ts` | 1104 |
-| POST | `/:id/state` | — | `plugins.ts` | 1128 |
-| DELETE | `/:id/state` | — | `plugins.ts` | 1164 |
-| POST | `/:id/review` | `requireRole` | `plugins.ts` | 1193 |
-| GET | `/:id/review` | `requireRole` | `plugins.ts` | 1225 |
-| POST | `/:id/export/gist` | `requireAuth` | `plugins.ts` | 1241 |
-| POST | `/:id/export/repo` | `requireAuth` | `plugins.ts` | 1268 |
-| POST | `/:id/sync` | `requireAuth` | `plugins.ts` | 1308 |
+| GET | `/mine` | — | `plugins.ts` | 159 |
+| GET | `/active` | — | `plugins.ts` | 174 |
+| GET | `/installed` | — | `plugins.ts` | 207 |
+| GET | `/reviews` | `requireRole` | `plugins.ts` | 273 |
+| POST | `/preview-check` | `requireAuth` | `plugins.ts` | 287 |
+| POST | `/import/gist` | `requireAuth` | `plugins.ts` | 294 |
+| POST | `/import/repo` | `requireAuth` | `plugins.ts` | 318 |
+| POST | `/hooks/github` | — | `plugins.ts` | 350 |
+| GET | `/:id` | — | `plugins.ts` | 529 |
+| GET | `/:id/versions` | — | `plugins.ts` | 540 |
+| GET | `/:id/code` | — | `plugins.ts` | 564 |
+| POST | `/:id/versions` | — | `plugins.ts` | 622 |
+| POST | `/:id/publish` | `requireAuth` | `plugins.ts` | 696 |
+| POST | `/:id/install` | — | `plugins.ts` | 746 |
+| POST | `/:id/update` | — | `plugins.ts` | 826 |
+| POST | `/:id/uninstall` | — | `plugins.ts` | 858 |
+| POST | `/:id/report` | — | `plugins.ts` | 880 |
+| GET | `/:id/reports` | — | `plugins.ts` | 904 |
+| POST | `/reports/:id/handle` | `requireAuth` | `plugins.ts` | 926 |
+| POST | `/:id/disable` | — | `plugins.ts` | 948 |
+| POST | `/:id/enable` | — | `plugins.ts` | 985 |
+| DELETE | `/:id` | — | `plugins.ts` | 1007 |
+| POST | `/:id/disable-install` | — | `plugins.ts` | 1047 |
+| POST | `/:id/enable-install` | — | `plugins.ts` | 1071 |
+| POST | `/:id/fork` | `requireAuth` | `plugins.ts` | 1094 |
+| GET | `/:id/state` | — | `plugins.ts` | 1138 |
+| POST | `/:id/state` | — | `plugins.ts` | 1162 |
+| DELETE | `/:id/state` | — | `plugins.ts` | 1198 |
+| POST | `/:id/review` | `requireRole` | `plugins.ts` | 1227 |
+| GET | `/:id/review` | `requireRole` | `plugins.ts` | 1259 |
+| POST | `/:id/export/gist` | `requireAuth` | `plugins.ts` | 1275 |
+| POST | `/:id/export/repo` | `requireAuth` | `plugins.ts` | 1302 |
+| POST | `/:id/sync` | `requireAuth` | `plugins.ts` | 1342 |
 | GET | `/:id` | — | `posts.ts` | 56 |
 | POST | `/` | — | `posts.ts` | 82 |
 | POST | `/tsubuyaki` | — | `posts.ts` | 115 |
@@ -10562,6 +10564,51 @@
   "required": [
     "repo"
   ]
+}
+```
+
+#### `pluginReportHandleSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "resolve",
+        "dismiss"
+      ]
+    },
+    "note": {
+      "default": "",
+      "type": "string",
+      "maxLength": 1000
+    }
+  },
+  "required": [
+    "action"
+  ]
+}
+```
+
+#### `pluginReportListQuerySchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "includeResolved": {
+      "default": "0",
+      "type": "string",
+      "enum": [
+        "0",
+        "1"
+      ]
+    }
+  }
 }
 ```
 

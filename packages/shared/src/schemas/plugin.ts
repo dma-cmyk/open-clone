@@ -89,6 +89,15 @@ export type PluginHookName = (typeof PLUGIN_HOOKS)[number];
 export const PLUGIN_REPORT_REASONS = ["malicious", "spam", "broken", "inappropriate", "other"] as const;
 export type PluginReportReason = (typeof PLUGIN_REPORT_REASONS)[number];
 
+/** 通報理由の表示名（プラグイン詳細と管理画面で共有）。 */
+export const PLUGIN_REPORT_REASON_LABELS: Record<PluginReportReason, string> = {
+  malicious: "悪意のあるコード",
+  spam: "スパム",
+  broken: "動作しない",
+  inappropriate: "不適切",
+  other: "その他",
+};
+
 /** 審査（レビュー）状態。 */
 export const PLUGIN_REVIEW_STATUSES = ["pending", "approved", "rejected"] as const;
 export type PluginReviewStatus = (typeof PLUGIN_REVIEW_STATUSES)[number];
@@ -397,6 +406,24 @@ export const pluginReportSchema = z.object({
   version: semverSchema.optional(),
 });
 export type PluginReportInput = z.infer<typeof pluginReportSchema>;
+
+/**
+ * POST /v1/plugins/reports/:id/handle — 通報の対応（サイト管理者のみ）。
+ * 既存のレス通報 `POST /v1/reports/:id/handle` と同じく action + note。
+ * note は plugin_reports に列が無いため監査ログにだけ残す。
+ */
+export const pluginReportHandleSchema = z.object({
+  action: z.enum(["resolve", "dismiss"]),
+  note: z.string().max(1000).default(""),
+});
+export type PluginReportHandleInput = z.infer<typeof pluginReportHandleSchema>;
+
+/** GET /v1/admin/plugin-reports — 未対応の通報があるプラグインの一覧。 */
+export const pluginReportListQuerySchema = z.object({
+  /** "1" で対応済み・却下の通報だけが残っているプラグインも含める。 */
+  includeResolved: z.enum(["0", "1"]).default("0"),
+});
+export type PluginReportListQuery = z.infer<typeof pluginReportListQuerySchema>;
 
 /** POST /v1/plugins/:id/disable — キルスイッチ（停止）。boardId 指定時はその板の導入だけ無効化。 */
 export const pluginDisableSchema = z.object({
@@ -724,6 +751,45 @@ export interface PluginReportInfo {
   detail: string | null;
   status: "open" | "resolved" | "dismissed";
   createdAt: number;
+  /** 対応した日時（未対応は null）。 */
+  handledAt: number | null;
+  /**
+   * 通報者の種別・ID。サイト管理者向けの応答にだけ入る
+   * （作者には出さない。匿名端末の場合は端末ハッシュ）。
+   */
+  reporterKind?: "account" | "device";
+  reporterId?: string | null;
+}
+
+/** 未対応の通報の理由ごとの内訳（管理画面のプラグインタブ用）。 */
+export interface PluginReportReasonCounts {
+  malicious: number;
+  spam: number;
+  broken: number;
+  inappropriate: number;
+  other: number;
+}
+
+/** GET /v1/admin/plugin-reports の 1 行（プラグイン単位の集計）。 */
+export interface PluginReportGroup {
+  pluginId: string;
+  name: string;
+  latestVersion: string | null;
+  status: PluginStatus;
+  ownership: "account" | "device" | "official";
+  /** 作者のアカウント名（端末所有・公式は null。UI 側で「ログインなしの作成」等に読み替える）。 */
+  ownerName: string | null;
+  /** 未対応（status=open）の通報件数。 */
+  openCount: number;
+  /** 通報の累計件数（report_count ではなく実際の行数）。 */
+  totalCount: number;
+  /** 未対応の通報の理由別件数。 */
+  byReason: PluginReportReasonCounts;
+  /** そのプラグインの最新の通報日時。 */
+  latestReportAt: number;
+  /** 未対応の通報のうち最新の日時（全部対応済みなら null）。 */
+  latestOpenAt: number | null;
+  flagged: boolean;
 }
 
 /** 静的検査結果（`runStaticChecks` の戻り値と一致させる）。 */
