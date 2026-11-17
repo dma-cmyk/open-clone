@@ -20,9 +20,20 @@ async function loadPostRow(db: D1Database, postId: number): Promise<PostRow> {
   return row;
 }
 
+/**
+ * 削除板（`boards.status !== 'active'`）の内容は変更しない（K2 / T11-04）。
+ * ルート・通報処理・AI など、呼び出し元によらず同じ結果にするため mutation の直前で検査する。
+ */
+export async function assertBoardContentWritable(db: D1Database, boardId: number): Promise<void> {
+  const row = await db.prepare("SELECT status FROM boards WHERE id = ?").bind(boardId).first<{ status: string }>();
+  if (!row) throw ApiError.notFound("板が見つかりません");
+  if (row.status !== "active") throw ApiError.conflict("この板は削除されています");
+}
+
 /** レスを非表示にする（可逆・medium リスク）。 */
 export async function hidePost(postId: number, deps: BoardServiceDeps): Promise<void> {
   const row = await loadPostRow(deps.env.DB, postId);
+  await assertBoardContentWritable(deps.env.DB, row.board_id);
   await deps.env.DB.prepare("UPDATE posts SET hidden = 1 WHERE id = ?").bind(postId).run();
   await publishToThreadAndBoard(deps.env, deps.ctx, row.thread_id, row.board_id, "post.hidden", {
     postId,
@@ -34,6 +45,7 @@ export async function hidePost(postId: number, deps: BoardServiceDeps): Promise<
 /** 非表示を解除する。 */
 export async function unhidePost(postId: number, deps: BoardServiceDeps): Promise<void> {
   const row = await loadPostRow(deps.env.DB, postId);
+  await assertBoardContentWritable(deps.env.DB, row.board_id);
   await deps.env.DB.prepare("UPDATE posts SET hidden = 0 WHERE id = ?").bind(postId).run();
   await publishToThreadAndBoard(deps.env, deps.ctx, row.thread_id, row.board_id, "post.updated", {
     postId,
@@ -47,6 +59,7 @@ export async function unhidePost(postId: number, deps: BoardServiceDeps): Promis
 export async function deletePost(postId: number, deps: BoardServiceDeps): Promise<void> {
   const db = deps.env.DB;
   const row = await loadPostRow(db, postId);
+  await assertBoardContentWritable(db, row.board_id);
   const statements = [
     db.prepare("UPDATE posts SET deleted = 1, hidden = 1 WHERE id = ?").bind(postId),
     // スタッフ削除も不可逆: 履歴の旧本文を消す（本人削除と同じ扱い。履歴 API のガードと二重に防ぐ）。

@@ -6,9 +6,32 @@ import { ApiError, REALTIME_CHANNEL_PATTERN, ok, rtTicketRequestSchema } from "s
 import type { AppEnv } from "../lib/env";
 import { getReqCtx } from "../lib/context";
 import { assertReadRateLimit, realtimeStub } from "../lib/do";
+import { canReadBoardContent, actorFrom, type AccessActor } from "../services/board/access";
+import { getBoardRow } from "../services/board/store";
 import { signRealtimeTicket, verifyRealtimeTicket } from "../services/board/realtime";
 
 const app = new Hono<AppEnv>();
+
+/**
+ * 削除板のチャンネルは、板スタッフ（moderator 以上）・サイト管理者だけが購読できる（K2 / T11-01）。
+ * 削除前のリングバッファ（過去イベントの本文）を匿名が取り直せないよう、
+ * ticket・WebSocket 接続・recent の各入口で同じ判定を通す。
+ */
+async function assertChannelReadable(env: AppEnv["Bindings"], actor: AccessActor, channel: string): Promise<void> {
+  const [kind, rawId] = channel.split(":");
+  const id = Number(rawId);
+  if (!Number.isInteger(id) || id <= 0) throw ApiError.validation("channel が不正です");
+  const boardId =
+    kind === "board"
+      ? id
+      : (await env.DB.prepare("SELECT board_id FROM threads WHERE id = ?").bind(id).first<{ board_id: number }>())
+          ?.board_id ?? null;
+  if (boardId === null) throw ApiError.notFound("チャンネルが見つかりません");
+  const board = await getBoardRow(env.DB, boardId);
+  if (!board || !(await canReadBoardContent(env.DB, actor, board))) {
+    throw ApiError.notFound("チャンネルが見つかりません");
+  }
+}
 
 function assertOriginAllowed(c: { req: { header(name: string): string | undefined }; env: AppEnv["Bindings"] }): void {
   const origin = c.req.header("origin");
@@ -29,6 +52,9 @@ app.post("/ticket", async (c) => {
   const reqCtx = getReqCtx(c);
   // 無制限の発行は HMAC 計算と DO 呼び出しを枯渇させる（H-3）。
   await assertReadRateLimit(c.env, "rtTicket", reqCtx.device.ipHash);
+  for (const channel of input.channels) {
+    await assertChannelReadable(c.env, actorFrom(reqCtx.session?.account), channel);
+  }
   const { ticket, expiresAt } = await signRealtimeTicket(c.env, input.channels, reqCtx.device.deviceHash);
   return c.json(ok({ ticket, expiresAt, channels: input.channels, wsPath: "/rt" }));
 });
@@ -46,6 +72,7 @@ app.get("/", async (c) => {
   if (!REALTIME_CHANNEL_PATTERN.test(channel)) throw ApiError.validation("channel が不正です");
   const payload = await verifyRealtimeTicket(c.env, ticket);
   if (!payload.channels.includes(channel)) throw ApiError.forbidden("このチャンネルの ticket ではありません");
+  await assertChannelReadable(c.env, actorFrom(getReqCtx(c).session?.account), channel);
 
   const since = Math.max(0, Number(c.req.query("since") ?? 0) || 0);
   const stub = realtimeStub(c.env, channel);
@@ -67,6 +94,7 @@ app.get("/", async (c) => {
 app.get("/stats", async (c) => {
   const channel = c.req.query("channel");
   if (channel && !REALTIME_CHANNEL_PATTERN.test(channel)) throw ApiError.validation("channel が不正です");
+  if (channel) await assertChannelReadable(c.env, actorFrom(getReqCtx(c).session?.account), channel);
   const stub = realtimeStub(c.env, channel ?? "board:0");
   const response = await stub.fetch(`https://do/stats${channel ? `?channel=${encodeURIComponent(channel)}` : ""}`);
   const data = (await response.json()) as { connections: number; channels: Record<string, number> };
@@ -77,6 +105,7 @@ app.get("/stats", async (c) => {
 app.get("/recent", async (c) => {
   const channel = c.req.query("channel") ?? "";
   if (!REALTIME_CHANNEL_PATTERN.test(channel)) throw ApiError.validation("channel が不正です");
+  await assertChannelReadable(c.env, actorFrom(getReqCtx(c).session?.account), channel);
   const limit = Number(c.req.query("limit") ?? 20);
   const stub = realtimeStub(c.env, channel);
   const response = await stub.fetch(`https://do/recent?channel=${encodeURIComponent(channel)}&limit=${limit}`);

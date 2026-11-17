@@ -7,6 +7,7 @@ import { ApiError, likeContains, likePrefix, ok } from "shared";
 import type { AppEnv } from "../lib/env";
 import { getReqCtx } from "../lib/context";
 import { assertReadRateLimit } from "../lib/do";
+import { canReadBoardContent, actorFrom } from "../services/board/access";
 import { resolveBoardRow } from "../services/board/store";
 
 const app = new Hono<AppEnv>();
@@ -115,7 +116,14 @@ app.get("/", async (c) => {
   const boardParam = c.req.query("board");
   const board = boardParam ? await resolveBoardRow(db, boardParam) : null;
   if (boardParam && !board) throw ApiError.notFound("板が見つかりません");
+  // 削除板を指定した検索は、板スタッフ・サイト管理者だけ（K2 / T11-01）。
+  if (board && !(await canReadBoardContent(db, actorFrom(reqCtx.session?.account), board))) {
+    throw ApiError.notFound("板が見つかりません");
+  }
   const boardId = board?.id ?? null;
+  // 削除板を指定した検索は、上の判定を通った板スタッフ・サイト管理者だけ。
+  // その場合は指定板の中を見るので板 status の絞り込みは外し、指定なしなら削除板を除外する。
+  const boardStatusCondition = board === null ? " AND b.status = 'active'" : "";
   const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 30), 1), 100);
   const offset = decodeOffset(c.req.query("cursor") ?? undefined);
   const boardCondition = boardId === null ? "" : " AND p.board_id = ?";
@@ -133,7 +141,7 @@ app.get("/", async (c) => {
              JOIN posts p ON p.id = posts_fts.rowid
              JOIN threads t ON t.id = p.thread_id
              JOIN boards b ON b.id = t.board_id
-             WHERE posts_fts MATCH ? AND p.num = 1 AND t.status = 'active'${boardCondition}
+             WHERE posts_fts MATCH ? AND p.num = 1 AND t.status = 'active'${boardStatusCondition}${boardCondition}
              ORDER BY rank LIMIT ? OFFSET ?`,
           )
           .bind(parsed.ftsExpression, ...boardBindings, limit + 1, offset)
@@ -153,7 +161,7 @@ app.get("/", async (c) => {
       .prepare(
         `SELECT t.id, t.title, t.post_count, t.last_post_at, t.created_at, b.slug AS board_slug, b.name AS board_name
          FROM threads t JOIN boards b ON b.id = t.board_id
-         WHERE t.status = 'active' AND ${conditions}${threadBoardCondition}
+         WHERE t.status = 'active'${boardStatusCondition} AND ${conditions}${threadBoardCondition}
          ORDER BY t.bump_at DESC LIMIT ? OFFSET ?`,
       )
       .bind(...bindings, ...(boardId === null ? [] : [boardId]), limit + 1, offset)
@@ -166,7 +174,7 @@ app.get("/", async (c) => {
       .prepare(
         `SELECT p.id, p.thread_id, p.num, p.name, p.body, p.created_at, p.post_id_hash, t.title, b.slug AS board_slug, b.name AS board_name
          FROM posts p JOIN threads t ON t.id = p.thread_id JOIN boards b ON b.id = p.board_id
-         WHERE p.kind = 'post' AND p.hidden = 0 AND p.deleted = 0
+         WHERE p.kind = 'post' AND p.hidden = 0 AND p.deleted = 0${boardStatusCondition}
            AND (p.post_id_hash = ? OR p.post_id_hash LIKE ? ESCAPE '\\')${boardCondition}
          ORDER BY p.id DESC LIMIT ? OFFSET ?`,
       )
@@ -186,7 +194,7 @@ app.get("/", async (c) => {
              JOIN posts p ON p.id = posts_fts.rowid
              JOIN threads t ON t.id = p.thread_id
              JOIN boards b ON b.id = p.board_id
-             WHERE posts_fts MATCH ? AND p.kind = 'post' AND p.hidden = 0 AND p.deleted = 0
+             WHERE posts_fts MATCH ? AND p.kind = 'post' AND p.hidden = 0 AND p.deleted = 0${boardStatusCondition}
                AND p.attachments IS NOT NULL AND p.attachments != '[]'${boardCondition}
              ORDER BY rank LIMIT ? OFFSET ?`,
           )
@@ -207,8 +215,7 @@ app.get("/", async (c) => {
       .prepare(
         `SELECT p.id, p.thread_id, p.num, p.name, p.body, p.created_at, p.post_id_hash, t.title, b.slug AS board_slug, b.name AS board_name
          FROM posts p JOIN threads t ON t.id = p.thread_id JOIN boards b ON b.id = p.board_id
-         WHERE p.hidden = 0 AND p.deleted = 0 AND p.attachments IS NOT NULL AND p.attachments != '[]'
-           AND ${conditions}${boardCondition}
+         WHERE p.hidden = 0 AND p.deleted = 0 AND p.attachments IS NOT NULL AND p.attachments != '[]'${boardStatusCondition} AND ${conditions}${boardCondition}
          ORDER BY p.id DESC LIMIT ? OFFSET ?`,
       )
       .bind(...bindings, ...boardBindings, limit + 1, offset)
@@ -227,7 +234,7 @@ app.get("/", async (c) => {
            JOIN posts p ON p.id = posts_fts.rowid
            JOIN threads t ON t.id = p.thread_id
            JOIN boards b ON b.id = p.board_id
-           WHERE posts_fts MATCH ? AND p.kind = 'post' AND p.hidden = 0 AND p.deleted = 0${boardCondition}
+           WHERE posts_fts MATCH ? AND p.kind = 'post' AND p.hidden = 0 AND p.deleted = 0${boardStatusCondition}${boardCondition}
            ORDER BY rank LIMIT ? OFFSET ?`,
         )
         .bind(parsed.ftsExpression, ...boardBindings, limit + 1, offset)
@@ -245,7 +252,7 @@ app.get("/", async (c) => {
     .prepare(
       `SELECT p.id, p.thread_id, p.num, p.name, p.body, p.created_at, p.post_id_hash, t.title, b.slug AS board_slug, b.name AS board_name
        FROM posts p JOIN threads t ON t.id = p.thread_id JOIN boards b ON b.id = p.board_id
-       WHERE p.kind = 'post' AND p.hidden = 0 AND p.deleted = 0 AND ${conditions}${boardCondition}
+       WHERE p.kind = 'post' AND p.hidden = 0 AND p.deleted = 0${boardStatusCondition} AND ${conditions}${boardCondition}
        ORDER BY p.id DESC LIMIT ? OFFSET ?`,
     )
     .bind(...parsed.likeTerms.map(likeContains), ...boardBindings, limit + 1, offset)
