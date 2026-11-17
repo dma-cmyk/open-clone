@@ -35,4 +35,4 @@ export {
   TOUR_PAGES,
 } from "./use-tour";
 export { tourDefinitionOf, resolveSteps, TOUR_DEFINITIONS } from "./steps";
-export type { TourDefinition, TourPageKey, TourStep } from "./types";
+export type { TourDefinition, TourListContext, TourPageKey, TourStep } from "./types";

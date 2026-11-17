@@ -36,10 +36,33 @@ export interface TourStep {
   requires?: "boardStaff" | "boardAdmin" | "siteAdmin" | "siteOwner";
 }
 
+/**
+ * ツアーの一覧（ヘルプ `#tour`）で、行を出すか・どこを開くかを決めるための利用者の情報。
+ * 一覧側がまとめて取得して各ツアーに渡す（取得中は管理系の行を出さない）。
+ */
+export interface TourListContext {
+  loggedIn: boolean;
+  siteOwner: boolean;
+  siteSpecialAdmin: boolean;
+  /** 管理人・副管理人・モデレーターを務める板のスラッグ。 */
+  staffBoardSlugs: readonly string[];
+  /** 管理人（板にプラグインを導入できる立場）を務める板のスラッグ。 */
+  adminBoardSlugs: readonly string[];
+}
+
 export interface TourDefinition {
   /** 画面名（ツールチップの見出しに出す）。 */
   label: string;
   /** 最後の手順の後に出すヘルプ先。 */
   helpPath: string;
   steps: readonly TourStep[];
+  /** 一覧に出す 1 行の説明。無いツアーは一覧に出さない。 */
+  summary?: string;
+  /** 一覧に出してよい人か（省略時は全員）。 */
+  listVisible?: (ctx: TourListContext) => boolean;
+  /**
+   * 一覧から始めるときに開く URL。開ける先が無ければ null（行を無効にして理由を出す）。
+   * 板・スレ・プラグイン詳細など、開く先を API で選ぶものは非同期でよい。無いツアーは一覧に出さない。
+   */
+  entry?: (ctx: TourListContext) => string | null | Promise<string | null>;
 }
