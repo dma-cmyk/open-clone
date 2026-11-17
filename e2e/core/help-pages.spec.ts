@@ -18,7 +18,7 @@ const HELP_SECTIONS = [
   "tour",
 ] as const;
 
-const ADMIN_SECTIONS = ["roles", "board-staff", "site-admin", "owner", "plugin-review", "ai", "security"] as const;
+const ADMIN_SECTIONS = ["roles", "board-staff", "site-admin", "owner", "plugin-review", "plugin-reports", "ai", "security"] as const;
 
 /**
  * スクリーンショットの出力先。既定は Playwright のテスト出力ディレクトリで、

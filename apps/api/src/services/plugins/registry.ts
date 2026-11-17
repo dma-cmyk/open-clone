@@ -15,8 +15,10 @@ import {
   type PluginInstallInfo,
   type PluginListPage,
   type PluginManifest,
+  type PluginReportGroup,
   type PluginReportInfo,
   type PluginReportReason,
+  type PluginReportReasonCounts,
   type PluginReviewInfo,
   type PluginScope,
   type PluginStatus,
@@ -1270,10 +1272,19 @@ export async function recordReport(
     detail: params.detail ?? null,
     status: "open",
     createdAt: timestamp,
+    handledAt: null,
   };
 }
 
-export async function listReports(db: D1Database, pluginId: string, limit = 50): Promise<PluginReportInfo[]> {
+/**
+ * 通報一覧（新しい順）。
+ * 通報者の種別・ID は呼び出し側が権限に応じて落とす（作者には出さない）。
+ */
+export async function listReports(
+  db: D1Database,
+  pluginId: string,
+  limit = 50,
+): Promise<PluginReportInfo[]> {
   const result = await db
     .prepare("SELECT * FROM plugin_reports WHERE plugin_id = ? ORDER BY created_at DESC LIMIT ?")
     .bind(pluginId, limit)
@@ -1281,9 +1292,12 @@ export async function listReports(db: D1Database, pluginId: string, limit = 50):
       id: string;
       plugin_id: string;
       version: string | null;
+      reporter_kind: "account" | "device";
+      reporter_id: string;
       reason: PluginReportReason;
       detail: string | null;
       status: "open" | "resolved" | "dismissed";
+      handled_at: number | null;
       created_at: number;
     }>();
   return (result.results ?? []).map((row) => ({
@@ -1294,7 +1308,147 @@ export async function listReports(db: D1Database, pluginId: string, limit = 50):
     detail: row.detail,
     status: row.status,
     createdAt: row.created_at,
+    handledAt: row.handled_at,
+    reporterKind: row.reporter_kind,
+    reporterId: row.reporter_id,
   }));
+}
+
+/** 未対応（status=open）の通報件数。 */
+export async function countOpenReports(db: D1Database, pluginId: string): Promise<number> {
+  const row = await db
+    .prepare("SELECT COUNT(*) AS count FROM plugin_reports WHERE plugin_id = ? AND status = 'open'")
+    .bind(pluginId)
+    .first<{ count: number }>();
+  return row?.count ?? 0;
+}
+
+/**
+ * 通報への対応（対応済み / 却下）。サイト管理者だけが呼ぶ（ルート側で強制）。
+ * - report_count は累計の意味なので変えない。
+ * - 条件付き UPDATE で二重対応を防ぐ（同時押しは片方だけ通る）。
+ * - 未対応が 0 件になったら `flagged`（要確認）を外す。
+ */
+export async function handleReport(
+  db: D1Database,
+  reportId: string,
+  params: { status: "resolved" | "dismissed"; handledBy: string },
+): Promise<{ pluginId: string; openCount: number }> {
+  const row = await db
+    .prepare("SELECT id, plugin_id, status FROM plugin_reports WHERE id = ?")
+    .bind(reportId)
+    .first<{ id: string; plugin_id: string; status: "open" | "resolved" | "dismissed" }>();
+  if (!row) throw ApiError.notFound("通報が見つかりません");
+
+  const timestamp = now();
+  const updated = await db
+    .prepare(
+      "UPDATE plugin_reports SET status = ?, handled_by = ?, handled_at = ? WHERE id = ? AND status = 'open'",
+    )
+    .bind(params.status, params.handledBy, timestamp, row.id)
+    .run();
+  if ((updated.meta.changes ?? 0) === 0) {
+    throw ApiError.conflict("この通報は既に対応済みです");
+  }
+
+  const openCount = await countOpenReports(db, row.plugin_id);
+  if (openCount === 0) {
+    await db.prepare("UPDATE plugins SET flagged = 0 WHERE id = ? AND flagged = 1").bind(row.plugin_id).run();
+  }
+  return { pluginId: row.plugin_id, openCount };
+}
+
+/**
+ * 通報があるプラグインの集計（管理画面のプラグインタブ）。
+ * 既定は未対応の通報が残っているプラグインだけを、未対応の最新通報が新しい順に返す。
+ * `includeResolved` で対応済みしか残っていないプラグインも含める（全通報の新しい順）。
+ */
+export async function listReportedPlugins(
+  db: D1Database,
+  options: { includeResolved?: boolean; limit?: number } = {},
+): Promise<PluginReportGroup[]> {
+  const includeResolved = options.includeResolved === true;
+  const limit = Math.min(options.limit ?? 200, 200);
+  const having = includeResolved
+    ? ""
+    : "HAVING SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) > 0";
+  const order = includeResolved ? "g.latest_report_at DESC" : "g.latest_open_at DESC";
+
+  const result = await db
+    .prepare(
+      `SELECT g.plugin_id, g.total_count, g.open_count, g.latest_report_at, g.latest_open_at,
+              g.open_malicious, g.open_spam, g.open_broken, g.open_inappropriate, g.open_other,
+              p.name, p.latest_version, p.status, p.flagged,
+              p.owner_account_id, p.owner_device_hash, a.name AS owner_name
+         FROM (
+           SELECT plugin_id,
+                  COUNT(*) AS total_count,
+                  SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) AS open_count,
+                  MAX(created_at) AS latest_report_at,
+                  MAX(CASE WHEN status = 'open' THEN created_at END) AS latest_open_at,
+                  SUM(CASE WHEN status = 'open' AND reason = 'malicious' THEN 1 ELSE 0 END) AS open_malicious,
+                  SUM(CASE WHEN status = 'open' AND reason = 'spam' THEN 1 ELSE 0 END) AS open_spam,
+                  SUM(CASE WHEN status = 'open' AND reason = 'broken' THEN 1 ELSE 0 END) AS open_broken,
+                  SUM(CASE WHEN status = 'open' AND reason = 'inappropriate' THEN 1 ELSE 0 END) AS open_inappropriate,
+                  SUM(CASE WHEN status = 'open' AND reason = 'other' THEN 1 ELSE 0 END) AS open_other
+             FROM plugin_reports
+            GROUP BY plugin_id
+            ${having}
+         ) g
+         JOIN plugins p ON p.id = g.plugin_id
+         LEFT JOIN accounts a ON a.id = p.owner_account_id
+        ORDER BY ${order}, g.plugin_id DESC
+        LIMIT ?`,
+    )
+    .bind(limit)
+    .all<{
+      plugin_id: string;
+      total_count: number;
+      open_count: number;
+      latest_report_at: number;
+      latest_open_at: number | null;
+      open_malicious: number;
+      open_spam: number;
+      open_broken: number;
+      open_inappropriate: number;
+      open_other: number;
+      name: string;
+      latest_version: string | null;
+      status: PluginStatus;
+      flagged: number;
+      owner_account_id: string | null;
+      owner_device_hash: string | null;
+      owner_name: string | null;
+    }>();
+
+  return (result.results ?? []).map((row) => {
+    const byReason: PluginReportReasonCounts = {
+      malicious: row.open_malicious ?? 0,
+      spam: row.open_spam ?? 0,
+      broken: row.open_broken ?? 0,
+      inappropriate: row.open_inappropriate ?? 0,
+      other: row.open_other ?? 0,
+    };
+    return {
+      pluginId: row.plugin_id,
+      name: row.name,
+      latestVersion: row.latest_version,
+      status: row.status,
+      ownership:
+        row.owner_account_id !== null
+          ? "account"
+          : row.owner_device_hash !== null
+            ? "device"
+            : "official",
+      ownerName: row.owner_name,
+      openCount: row.open_count ?? 0,
+      totalCount: row.total_count ?? 0,
+      byReason,
+      latestReportAt: row.latest_report_at,
+      latestOpenAt: row.latest_open_at,
+      flagged: row.flagged === 1,
+    };
+  });
 }
 
 /** キルスイッチ: disabled + kill_seq 加算（実行中ホストはポーリングで kill を受ける）。 */

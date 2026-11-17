@@ -3,7 +3,8 @@
 // プラグイン詳細（公開・導入・更新・通報・停止・審査・GitHub 発行）
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { PluginDetail, PluginInstallInfo, PluginReviewInfo, PluginScope } from "shared";
+import type { PluginDetail, PluginInstallInfo, PluginReportInfo, PluginReviewInfo, PluginScope } from "shared";
+import { PLUGIN_REPORT_REASON_LABELS } from "shared";
 import { pluginApi } from "@/features/plugin-host";
 import { parseTemplateOrigin } from "@/features/plugin-templates";
 import { clearQueuedTour, setTourContext, setTourContextPending } from "@/features/site-tour";
@@ -24,6 +25,12 @@ import {
 const RISK_LABEL: Record<string, string> = { low: "低", medium: "中", high: "高" };
 // サーバー側では useEffect に落とす（useLayoutEffect の SSR 警告を出さない）。
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+const REPORT_STATUS_LABEL: Record<PluginReportInfo["status"], string> = {
+  open: "未対応",
+  resolved: "対応済み",
+  dismissed: "却下",
+};
 
 interface BoardOption {
   id: number;
@@ -54,6 +61,10 @@ export default function PluginViewPage() {
   const [publishScopes, setPublishScopes] = useState<PluginScope[]>(["personal"]);
   const [reportReason, setReportReason] = useState("broken");
   const [reportDetail, setReportDetail] = useState("");
+  // 通報の一覧（作者・サイト管理者だけが取得できる）。
+  // undefined = 読み込み中 / null = 取得失敗 / 配列 = 取得済み。
+  const [reports, setReports] = useState<PluginReportInfo[] | null | undefined>(undefined);
+  const [reportNote, setReportNote] = useState("");
   const [repoTarget, setRepoTarget] = useState("");
   const [reviewNote, setReviewNote] = useState("");
 
@@ -81,6 +92,18 @@ export default function PluginViewPage() {
         }
       } else {
         setPendingReview(null);
+      }
+      // 通報の中身は作者とサイト管理者だけが見られる（API と同じ権限）。
+      // 通報直後の `run()` もここを通るので、件数バッジと一覧が同時に更新される。
+      if (loaded.viewer.isOwner || loaded.viewer.isAdmin) {
+        try {
+          const list = await pluginApi.reports(loaded.id);
+          setReports(list.items);
+        } catch {
+          setReports(null);
+        }
+      } else {
+        setReports(undefined);
       }
     } catch (caught) {
       setError(errorText(caught));
@@ -187,6 +210,7 @@ export default function PluginViewPage() {
   }
 
   const plugin = detail;
+  const openReportCount = reports?.filter((report) => report.status === "open").length ?? 0;
   // 作成元（report27 §5.4 / 29 決定 4）: changelog 先頭の `[template:<id>]` を解析するだけ。
   const templateOrigin = parseTemplateOrigin(
     plugin?.versions.find((version) => version.version === plugin.latestVersion)?.changelog,
@@ -662,7 +686,7 @@ export default function PluginViewPage() {
                 </div>
               ) : null}
 
-              <div style={{ ...ui.row, marginTop: 8 }}>
+              <div id="plugin-stop" style={{ ...ui.row, marginTop: 8 }}>
                 <button
                   type="button"
                   className="oc-btn oc-btn-danger"
@@ -875,6 +899,110 @@ export default function PluginViewPage() {
             </div>
           </Card>
           </div>
+
+          {plugin.viewer.isOwner || plugin.viewer.isAdmin ? (
+            <Card title="通報の一覧">
+              {reports === undefined ? (
+                <p className="oc-muted oc-small">通報を読み込み中…</p>
+              ) : reports === null ? (
+                <p className="oc-muted oc-small">通報の一覧を読み込めませんでした。</p>
+              ) : (
+                <>
+                  <div className="oc-row" style={{ flexWrap: "wrap", marginBottom: 6 }}>
+                    <Badge tone={openReportCount > 0 ? "warn" : "ok"}>未対応 {openReportCount} 件</Badge>
+                    <span className="oc-muted oc-small">累計 {reports.length} 件</span>
+                    {plugin.viewer.isAdmin ? (
+                      <a className="oc-btn oc-btn-sm" href="#plugin-stop">
+                        停止（キルスイッチ）へ
+                      </a>
+                    ) : null}
+                  </div>
+                  {plugin.viewer.isAdmin && openReportCount > 0 ? (
+                    <Field label="対応メモ（任意・監査ログに残ります）">
+                      <input
+                        className="oc-input"
+                        value={reportNote}
+                        maxLength={1000}
+                        onChange={(event) => setReportNote(event.target.value)}
+                      />
+                    </Field>
+                  ) : null}
+                  {reports.length === 0 ? (
+                    <p className="oc-muted oc-small">通報はありません。</p>
+                  ) : (
+                    <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                      {reports.map((report) => (
+                        <li key={report.id} style={{ borderTop: "1px solid #eee", padding: "6px 0" }}>
+                          <div className="oc-row" style={{ flexWrap: "wrap" }}>
+                            <Badge tone={report.status === "open" ? "warn" : "ok"}>
+                              {REPORT_STATUS_LABEL[report.status] ?? report.status}
+                            </Badge>
+                            <strong style={{ fontSize: 12 }}>
+                              {PLUGIN_REPORT_REASON_LABELS[report.reason] ?? report.reason}
+                            </strong>
+                            {report.version ? <span className="oc-muted oc-small">v{report.version}</span> : null}
+                            <span className="oc-muted oc-small">{formatTime(report.createdAt)}</span>
+                            {report.handledAt ? (
+                              <span className="oc-muted oc-small">対応 {formatTime(report.handledAt)}</span>
+                            ) : null}
+                          </div>
+                          {report.detail ? (
+                            <div className="oc-small" style={{ whiteSpace: "pre-wrap" }}>
+                              {report.detail}
+                            </div>
+                          ) : (
+                            <div className="oc-muted oc-small">詳細の記入なし</div>
+                          )}
+                          {plugin.viewer.isAdmin && report.reporterId ? (
+                            <div className="oc-muted oc-small" style={{ fontFamily: "var(--oc-mono)", wordBreak: "break-all" }}>
+                              通報者: {report.reporterKind === "account" ? "アカウント " : "端末 "}
+                              {report.reporterId}
+                            </div>
+                          ) : null}
+                          {plugin.viewer.isAdmin && report.status === "open" ? (
+                            <div className="oc-row" style={{ marginTop: 4 }}>
+                              <button
+                                type="button"
+                                className="oc-btn oc-btn-sm oc-btn-primary"
+                                disabled={busy}
+                                onClick={() =>
+                                  void run(async () => {
+                                    const result = await pluginApi.handleReport(report.id, {
+                                      action: "resolve",
+                                      note: reportNote || undefined,
+                                    });
+                                    return `対応済みにしました（未対応 ${result.openCount} 件）`;
+                                  })
+                                }
+                              >
+                                対応済み
+                              </button>
+                              <button
+                                type="button"
+                                className="oc-btn oc-btn-sm"
+                                disabled={busy}
+                                onClick={() =>
+                                  void run(async () => {
+                                    const result = await pluginApi.handleReport(report.id, {
+                                      action: "dismiss",
+                                      note: reportNote || undefined,
+                                    });
+                                    return `却下しました（未対応 ${result.openCount} 件）`;
+                                  })
+                                }
+                              >
+                                却下
+                              </button>
+                            </div>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+            </Card>
+          ) : null}
 
           <div data-tour="plugin-detail-versions">
           <Card title="バージョン">

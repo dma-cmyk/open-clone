@@ -11,6 +11,7 @@ import {
   OWNER_SETUP_FAILURE_WINDOW_SECONDS,
   OWNER_SETUP_MAX_FAILURES,
   ownerBootstrapRequestSchema,
+  pluginReportListQuerySchema,
   siteSettingsUpdateSchema,
   specialAdminStopRequestSchema,
   suspensionCreateRequestSchema,
@@ -46,6 +47,7 @@ import {
   stopSpecialAdmin,
 } from "../services/account/special-admin";
 import type { AdminOverview, AdminUser, AuditLogEntry } from "shared";
+import { listReportedPlugins } from "../services/plugins/registry";
 
 const app = new Hono<AppEnv>();
 
@@ -345,6 +347,15 @@ app.get("/audit", requireAdminActive, async (c) => {
     createdAt: row.created_at,
   }));
   return c.json(ok({ items, total: totalRow?.n ?? 0, page: query.page, limit: query.limit }));
+});
+
+// --- プラグインの通報 ---------------------------------------------------
+// 未対応の通報があるプラグインを新しい順に集計して返す（管理画面「通報」のプラグインタブ）。
+// 通報の中身はプラグイン詳細（GET /v1/plugins/:id/reports）で見る。
+app.get("/plugin-reports", requireAdminActive, async (c) => {
+  const query = pluginReportListQuerySchema.parse({ includeResolved: c.req.query("includeResolved") });
+  const items = await listReportedPlugins(c.env.DB, { includeResolved: query.includeResolved === "1" });
+  return c.json(ok({ items }));
 });
 
 // --- サイト設定 ---------------------------------------------------------

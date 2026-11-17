@@ -8,6 +8,8 @@ import type {
   PluginListPage,
   PluginManifest,
   PluginNetFetchResult,
+  PluginReportGroup,
+  PluginReportInfo,
   PluginReviewInfo,
   PluginScope,
   PluginStaticCheckResult,
@@ -239,6 +241,24 @@ export const pluginApi = {
     input: { reason: string; detail?: string; version?: string },
   ): Promise<{ id: string }> {
     return request("POST", `/plugins/${encodeURIComponent(id)}/report`, input);
+  },
+
+  /** 通報の一覧（作者とサイト管理者のみ）。通報者 ID はサイト管理者にだけ返る。 */
+  reports(id: string): Promise<{ items: PluginReportInfo[] }> {
+    return request("GET", `/plugins/${encodeURIComponent(id)}/reports`);
+  },
+
+  /** 通報への対応（サイト管理者のみ）。note は監査ログに残る。 */
+  handleReport(
+    reportId: string,
+    input: { action: "resolve" | "dismiss"; note?: string },
+  ): Promise<{ id: string; status: "resolved" | "dismissed"; openCount: number }> {
+    return request("POST", `/plugins/reports/${encodeURIComponent(reportId)}/handle`, input);
+  },
+
+  /** 未対応の通報があるプラグインの集計（サイト管理者のみ）。 */
+  pluginReports(includeResolved = false): Promise<{ items: PluginReportGroup[] }> {
+    return request("GET", `/admin/plugin-reports${query({ includeResolved: includeResolved ? "1" : "0" })}`);
   },
 
   disable(id: string, input: { reason: string; boardId?: number }): Promise<{ stopped: string }> {

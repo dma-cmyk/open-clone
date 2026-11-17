@@ -34,6 +34,8 @@ const PROTECTED: ProtectedEndpoint[] = [
   // plugin/anon-create.spec.ts と API の anon-create.test.ts で検証する。
   { method: "GET", path: "/v1/plugins/reviews" },
   { method: "GET", path: "/v1/reports" },
+  { method: "GET", path: "/v1/admin/plugin-reports" },
+  { method: "POST", path: "/v1/plugins/reports/unknown/handle" },
   { method: "POST", path: "/v1/boards" },
 ];
 
