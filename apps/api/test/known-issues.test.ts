@@ -367,3 +367,154 @@ describe("T11-04: 通報処理からも削除板の内容を変えられない",
     }
   });
 });
+
+describe("T13-01: 削除板が増えても AI の横断読み取りが壊れない", () => {
+  it("無関係な削除板 105 件があっても公開板の板一覧・検索・feed は 200 で内容を返す", async () => {
+    const owner = await authedClient({ name: "t13-01-owner" });
+    const board = await createBoard(owner.client, { settings: { turnstile: "off", cooldownSeconds: 0 } });
+    const thread = await createThread(owner.client, board.board.slug, { title: "T1301 公開スレ", body: "T1301 本文" });
+    await postReply(owner.client, thread.threadId, "T1301 レス");
+    const reader = await authedClient({ name: "t13-01-reader" });
+    const cookie = await makeSession(reader.account.id);
+    const agent = await createAgent(cookie, {
+      name: "T1301 scale reader",
+      ownerType: "account",
+      allowedBoards: [board.board.id],
+      riskCap: "low",
+    });
+    const paths = [
+      `/v1/ai/boards`,
+      `/v1/ai/search?q=T1301&boardId=${board.board.id}`,
+      `/v1/ai/feed?boardId=${board.board.id}`,
+    ];
+    for (const path of paths) expect((await api(path, { key: agent.apiKey })).status, path).toBe(200);
+
+    // 無関係な削除板を 105 件つくる（D1 の 1 クエリ 100 bind を超える規模）。
+    const now = Math.floor(Date.now() / 1000);
+    for (let i = 0; i < 105; i += 1) {
+      await env.DB.prepare(
+        `INSERT INTO boards (slug, name, category, description, rules_md, design, settings, owner_account_id, status, last_post_at, created_at)
+         VALUES (?, ?, '雑談', '', '', '{}', '{}', NULL, 'deleted', NULL, ?)`,
+      )
+        .bind(`t1301-del-${i}`, `削除板 ${i}`, now)
+        .run();
+    }
+
+    for (const path of paths) {
+      const response = await api(path, { key: agent.apiKey });
+      expect(response.status, `削除板 105 件の後: ${path}`).toBe(200);
+    }
+    const search = await api(`/v1/ai/search?q=T1301&boardId=${board.board.id}`, { key: agent.apiKey });
+    expect(await search.text()).toContain("T1301 本文");
+  });
+});
+
+describe("T13-02: スタッフが指定した削除板の集計", () => {
+  it("ランキング全指標とヘッドラインが削除後もスレタイを返し、横断一覧には出ない", async () => {
+    const owner = await authedClient({ name: "t13-02-owner" });
+    const board = await createBoard(owner.client, { settings: { turnstile: "off", cooldownSeconds: 0 } });
+    const thread = await createThread(owner.client, board.board.slug, { title: "T1302 集計スレ", body: "本文" });
+    await postReply(owner.client, thread.threadId, "T1302 レス");
+    const paths = [
+      `/v1/ranking?board=${board.board.slug}`,
+      `/v1/ranking?board=${board.board.slug}&metric=posts`,
+      `/v1/ranking?board=${board.board.slug}&metric=connections`,
+      `/v1/headline?board=${board.board.slug}`,
+    ];
+    for (const path of paths) {
+      expect(JSON.stringify((await owner.client.get(path)).body), `削除前: ${path}`).toContain("T1302 集計スレ");
+    }
+
+    await owner.client.delete(`/v1/boards/${board.board.slug}?confirm=1`);
+
+    for (const path of paths) {
+      const response = await owner.client.get(path);
+      expect(response.status, `削除後（板スタッフ）: ${path}`).toBe(200);
+      expect(JSON.stringify(response.body), `削除後の内容: ${path}`).toContain("T1302 集計スレ");
+    }
+    // 一般は板指定が 404、横断一覧には出ない。
+    const anon = new TestClient();
+    expect((await anon.get(`/v1/ranking?board=${board.board.slug}`)).status).toBe(404);
+    expect(JSON.stringify((await anon.get("/v1/ranking")).body)).not.toContain("T1302 集計スレ");
+    expect(JSON.stringify((await anon.get("/v1/headline")).body)).not.toContain("T1302 集計スレ");
+  });
+});
+
+describe("T13-03: Cookie 非依存の WS 接続", () => {
+  it("正当なスタッフの ticket は Cookie なしで接続でき、古い匿名 ticket・再利用・権限剥奪は拒否する", async () => {
+    const owner = await authedClient({ name: "t13-03-owner" });
+    const board = await createBoard(owner.client, { settings: { turnstile: "off", cooldownSeconds: 0 } });
+    const thread = await createThread(owner.client, board.board.slug, { title: "T1303", body: "本文" });
+    const channel = `thread:${thread.threadId}`;
+    const connect = (client: TestClient, ticket: string) =>
+      client.fetch(`/rt?channel=${encodeURIComponent(channel)}&ticket=${encodeURIComponent(ticket)}`, {
+        headers: { upgrade: "websocket" },
+      });
+    const close = (response: { webSocket?: { accept(): void; close(code: number, reason: string): void } | null }) => {
+      response.webSocket?.accept();
+      response.webSocket?.close(1000, "done");
+    };
+
+    // 公開板: Cookie なしの接続は従来どおり 101。
+    const anon = new TestClient();
+    const publicTicket = await anon.post<{ ticket: string }>("/rt/ticket", { channels: [channel] });
+    expect(publicTicket.status).toBe(200);
+    if (!publicTicket.body.ok) throw new Error("public ticket");
+    const publicSocket = await connect(new TestClient(), publicTicket.body.data.ticket);
+    expect(publicSocket.status).toBe(101);
+    close(publicSocket);
+
+    // 削除前に発行した匿名 ticket は、削除後の再取得に使えない。
+    const oldTicket = await anon.post<{ ticket: string }>("/rt/ticket", { channels: [channel] });
+    if (!oldTicket.body.ok) throw new Error("old ticket");
+    await owner.client.delete(`/v1/boards/${board.board.slug}?confirm=1`);
+    expect((await connect(anon, oldTicket.body.data.ticket)).status).toBe(404);
+
+    // 削除後にスタッフ（板の管理人）へ発行した ticket は Cookie なしでも接続できる。
+    const staffTicket = await owner.client.post<{ ticket: string }>("/rt/ticket", { channels: [channel] });
+    expect(staffTicket.status).toBe(200);
+    if (!staffTicket.body.ok) throw new Error("staff ticket");
+    const staffSocket = await connect(new TestClient(), staffTicket.body.data.ticket);
+    expect(staffSocket.status).toBe(101);
+    close(staffSocket);
+    // 同じ ticket は使い回せない。
+    expect((await connect(new TestClient(), staffTicket.body.data.ticket)).status).toBe(401);
+
+    // チケット発行後にスタッフ権限を外された主体は、接続時に拒否される（接続時点の権限で判定）。
+    const revokedTicket = await owner.client.post<{ ticket: string }>("/rt/ticket", { channels: [channel] });
+    if (!revokedTicket.body.ok) throw new Error("revoked ticket");
+    await env.DB.prepare("DELETE FROM board_staff WHERE board_id = ? AND account_id = ?")
+      .bind(board.board.id, owner.account.id)
+      .run();
+    expect((await connect(new TestClient(), revokedTicket.body.data.ticket)).status).toBe(404);
+  });
+});
+
+describe("T13-04: AI の実況解除も削除板では凍結する", () => {
+  it("公開板では 200 で live が 0 になり、削除後は 409 で live が変わらない", async () => {
+    const owner = await authedClient({ name: "t13-04-owner" });
+    const board = await createBoard(owner.client, { settings: { turnstile: "off", cooldownSeconds: 0 } });
+    const thread = await createThread(owner.client, board.board.slug, { title: "T1304", body: "本文" });
+    const cookie = await makeSession(owner.account.id);
+    const agent = await createAgent(cookie, {
+      name: "T1304 board moderator",
+      ownerType: "board",
+      boardId: board.board.id,
+      allowedBoards: [board.board.id],
+      riskCap: "medium",
+    });
+    const liveOff = () =>
+      api("/v1/ai/act", { key: agent.apiKey, body: { action: "thread.live_off", params: { threadId: thread.threadId } } });
+    const liveRow = () =>
+      env.DB.prepare("SELECT live FROM threads WHERE id = ?").bind(thread.threadId).first<{ live: number }>();
+
+    await env.DB.prepare("UPDATE threads SET live = 1 WHERE id = ?").bind(thread.threadId).run();
+    expect((await liveOff()).status).toBe(200);
+    expect(await liveRow()).toEqual({ live: 0 });
+
+    await env.DB.prepare("UPDATE threads SET live = 1 WHERE id = ?").bind(thread.threadId).run();
+    await owner.client.delete(`/v1/boards/${board.board.slug}?confirm=1`);
+    expect((await liveOff()).status).toBe(409);
+    expect(await liveRow()).toEqual({ live: 1 });
+  });
+});

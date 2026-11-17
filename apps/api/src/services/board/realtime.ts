@@ -19,6 +19,8 @@ export interface TicketPayload {
   channels: string[];
   exp: number;
   deviceHash: string;
+  /** 発行時のログイン主体（Cookie 非依存の WS 接続でも、接続時に現行権限を引くために署名へ含める）。 */
+  accountId?: string | null;
 }
 
 function base64UrlEncode(value: string): string {
@@ -34,9 +36,10 @@ export async function signRealtimeTicket(
   env: Env,
   channels: string[],
   deviceHash: string,
+  accountId: string | null,
 ): Promise<{ ticket: string; expiresAt: number }> {
   const expiresAt = Math.floor(Date.now() / 1000) + RT_TICKET_TTL_SECONDS;
-  const payload: TicketPayload = { jti: randomHex(16), channels, exp: expiresAt, deviceHash };
+  const payload: TicketPayload = { jti: randomHex(16), channels, exp: expiresAt, deviceHash, accountId };
   const encoded = base64UrlEncode(JSON.stringify(payload));
   const signature = await hmacSha256Hex(env.ID_SALT, `rt-ticket:${encoded}`);
   return { ticket: `${encoded}.${signature}`, expiresAt };

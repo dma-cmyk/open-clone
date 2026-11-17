@@ -72,7 +72,10 @@ async function handleRanking(c: Context<AppEnv>) {
 
   const now = Math.floor(Date.now() / 1000);
   const since = PERIOD_SECONDS[period] === 0 ? 0 : now - PERIOD_SECONDS[period]!;
-  const conditions = ["p.kind = 'post'", "p.hidden = 0", "p.deleted = 0", "t.status = 'active'", "b.status = 'active'"];
+  const conditions = ["p.kind = 'post'", "p.hidden = 0", "p.deleted = 0", "t.status = 'active'"];
+  // 板を指定した場合は、上の権限判定を通った板（スタッフの削除板を含む）の内容をそのまま集計する。
+  // 指定なしの横断一覧だけ削除板を除外する（検索と同じ方針。T13-02）。
+  if (board === null) conditions.push("b.status = 'active'");
   const bindings: unknown[] = [];
   if (since > 0) {
     conditions.push("p.created_at >= ?");
@@ -150,7 +153,9 @@ async function handleHeadline(c: Context<AppEnv>) {
 
   const now = Math.floor(Date.now() / 1000);
   const since = PERIOD_SECONDS[period] === 0 ? 0 : now - PERIOD_SECONDS[period]!;
-  const conditions = ["t.status = 'active'", "b.status = 'active'"];
+  const conditions = ["t.status = 'active'"];
+  // 板を指定した場合は、上の権限判定を通った板（スタッフの削除板を含む）をそのまま集計する。
+  if (board === null) conditions.push("b.status = 'active'");
   const bindings: unknown[] = [];
   if (since > 0) {
     conditions.push("t.last_post_at >= ?");
