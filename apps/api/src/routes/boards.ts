@@ -32,7 +32,7 @@ import {
   resolveBoardRow,
   type BoardRow,
 } from "../services/board/store";
-import { actorFrom, hasBoardStaff, isSiteAdmin, resolveManageableBoard } from "../services/board/access";
+import { actorFrom, canReadBoardContent, hasBoardStaff, isSiteAdmin, resolveManageableBoard } from "../services/board/access";
 import { assertReadRateLimit } from "../lib/do";
 import { createThreadInternal } from "../lib/pipeline";
 import { publishEvent } from "../services/board/realtime";
@@ -173,6 +173,9 @@ app.get("/:slug", async (c) => {
   const row = await resolveBoardRow(db, c.req.param("slug"));
   if (!row) throw ApiError.notFound("板が見つかりません");
   const actor = actorFrom(getReqCtx(c).session?.account);
+  // 削除板は一般の閲覧者には「無い板」として 404（板スタッフ・サイト管理者だけが見える。K2）。
+  // 板そのものの公開 API をこの判定に揃え、スレ単位の読み取り API も同じ判定を使う。
+  if (!(await canReadBoardContent(db, actor, row))) throw ApiError.notFound("板が見つかりません");
   const canManage = row.status === "active" ? await hasBoardStaff(db, actor, row.id, "admin") : false;
 
   const staff = await db
@@ -226,6 +229,9 @@ app.get("/:slug/turnstile", async (c) => {
   const db = c.env.DB;
   const row = await resolveBoardRow(db, c.req.param("slug"));
   if (!row) throw ApiError.notFound("板が見つかりません");
+  if (!(await canReadBoardContent(db, actorFrom(getReqCtx(c).session?.account), row))) {
+    throw ApiError.notFound("板が見つかりません");
+  }
   const settings = boardSettingsOf(row);
   const ctx = getReqCtx(c);
   const hasSession = ctx.session !== null;
@@ -314,6 +320,9 @@ app.get("/:slug/threads", async (c) => {
   const db = c.env.DB;
   const row = await resolveBoardRow(db, c.req.param("slug"));
   if (!row) throw ApiError.notFound("板が見つかりません");
+  if (!(await canReadBoardContent(db, actorFrom(getReqCtx(c).session?.account), row))) {
+    throw ApiError.notFound("板が見つかりません");
+  }
   const query = threadListQuerySchema.parse({
     sort: c.req.query("sort") ?? undefined,
     q: c.req.query("q") ?? undefined,
@@ -384,6 +393,9 @@ app.get("/:slug/staff", async (c) => {
   const db = c.env.DB;
   const row = await resolveBoardRow(db, c.req.param("slug"));
   if (!row) throw ApiError.notFound("板が見つかりません");
+  if (!(await canReadBoardContent(db, actorFrom(getReqCtx(c).session?.account), row))) {
+    throw ApiError.notFound("板が見つかりません");
+  }
   const result = await db
     .prepare(
       `SELECT s.board_id, s.account_id, s.level, s.created_at, a.name AS account_name

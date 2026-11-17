@@ -14,9 +14,20 @@ import type { AppEnv } from "../lib/env";
 import { getReqCtx } from "../lib/context";
 import { assertReadRateLimit } from "../lib/do";
 import { createPostInternal, createThreadInternal } from "../lib/pipeline";
-import { getThreadRow, resolveBoardRow, type PostRow } from "../services/board/store";
+import { actorFrom, canReadBoardContent, type AccessActor } from "../services/board/access";
+import { getThreadRow, resolveBoardRow, type BoardRow, type PostRow } from "../services/board/store";
 
 const app = new Hono<AppEnv>();
+
+/**
+ * 削除板（`boards.status !== 'active'`）は専ブラ互換の読み取りでも返さない（K2）。
+ * 板スタッフ（moderator 以上）とサイト管理者だけが見られる（板の公開 API と同じ判定）。
+ */
+async function readableBoardOr404(db: D1Database, row: BoardRow | null, actor: AccessActor): Promise<BoardRow> {
+  if (!row) throw ApiError.notFound("板が見つかりません");
+  if (!(await canReadBoardContent(db, actor, row))) throw ApiError.notFound("板が見つかりません");
+  return row;
+}
 
 // 専ブラは subject.txt 等を数秒おきに取得する。通常運用（10 板 × 5 秒間隔 ≒ 120 req/min）を
 // 妨げない 180 req/min（3 req/s）を IP 単位の上限とする（H-3）。書き込みは pipeline 側で制限。
@@ -58,8 +69,11 @@ function utf8Response(body: string, contentType: string): Response {
 /** subject.txt（更新順 150 件・Shift_JIS）。ETag / Last-Modified で 304 を返す。 */
 app.get("/:slug/subject.txt", async (c) => {
   const db = c.env.DB;
-  const board = await resolveBoardRow(db, c.req.param("slug"));
-  if (!board) throw ApiError.notFound("板が見つかりません");
+  const board = await readableBoardOr404(
+    db,
+    await resolveBoardRow(db, c.req.param("slug")),
+    actorFrom(getReqCtx(c).session?.account),
+  );
   const result = await db
     .prepare(
       "SELECT id, title, post_count, bump_at FROM threads WHERE board_id = ? AND status = 'active' ORDER BY bump_at DESC LIMIT ?",
@@ -104,8 +118,11 @@ app.get("/:slug/subject.txt", async (c) => {
 /** dat（1 レス 1 行・5 フィールド・Shift_JIS）。 */
 app.get("/:slug/dat/:file", async (c) => {
   const db = c.env.DB;
-  const board = await resolveBoardRow(db, c.req.param("slug"));
-  if (!board) throw ApiError.notFound("板が見つかりません");
+  const board = await readableBoardOr404(
+    db,
+    await resolveBoardRow(db, c.req.param("slug")),
+    actorFrom(getReqCtx(c).session?.account),
+  );
   const file = c.req.param("file");
   const threadId = Number(file.replace(/\.dat$/i, ""));
   if (!Number.isInteger(threadId) || threadId <= 0) throw ApiError.notFound("dat が見つかりません");
@@ -179,8 +196,11 @@ app.get("/:slug/SETTING.TXT", async (c) => {
 /** index.rdf（RSS 2.0・UTF-8）。 */
 app.get("/:slug/index.rdf", async (c) => {
   const db = c.env.DB;
-  const board = await resolveBoardRow(db, c.req.param("slug"));
-  if (!board) throw ApiError.notFound("板が見つかりません");
+  const board = await readableBoardOr404(
+    db,
+    await resolveBoardRow(db, c.req.param("slug")),
+    actorFrom(getReqCtx(c).session?.account),
+  );
   const origin = new URL(c.req.url).origin;
   const result = await db
     .prepare("SELECT id, title, post_count, last_post_at FROM threads WHERE board_id = ? AND status = 'active' ORDER BY bump_at DESC LIMIT 50")

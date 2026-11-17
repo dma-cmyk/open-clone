@@ -34,9 +34,39 @@ const DEFAULT_CONTEXT: TourContext = {
 
 let context: TourContext = { ...DEFAULT_CONTEXT };
 
+/** 画面が権限を読み込み中か（読み込み中に押された「使い方」は、読み込み後に開始する）。 */
+let contextPending = false;
+/** 読み込み中に押された「使い方」の画面種別。 */
+let queuedStart: TourPageKey | null = null;
+
 /** 画面が自分の権限をツアーへ知らせる（同じ画面でも開始経路によらず同じ判定にする）。 */
 export function setTourContext(partial: Partial<TourContext>): void {
   context = { ...context, ...partial };
+  if (!contextPending) flushQueuedTour();
+}
+
+/**
+ * 画面が権限を読み込み中か知らせる。
+ * 読み込み中に「使い方」を押されても権限不足と取り違えないよう、開始要求を保持し、
+ * 読み込みが終わった時点で開始する（本当に権限が無ければヘルプへ案内する）。
+ */
+export function setTourContextPending(pending: boolean): void {
+  contextPending = pending;
+  if (!pending) flushQueuedTour();
+}
+
+/** 保持している開始要求を捨てる（画面を離れたとき）。 */
+export function clearQueuedTour(): void {
+  queuedStart = null;
+}
+
+function flushQueuedTour(): void {
+  const page = queuedStart;
+  if (!page) return;
+  queuedStart = null;
+  if (beginTour(page)) return;
+  // 読み込みの結果、権限が足りない/未対応だった場合は、押した操作を失わせずヘルプへ送る。
+  if (typeof window !== "undefined") window.location.assign("/help/#tour");
 }
 
 export function resetTourContext(): void {
@@ -108,12 +138,23 @@ export function visibleStepsFor(page: TourPageKey): TourStep[] {
 
 /**
  * ツアーを開始する。
- * @returns 開始したら true。未対応の画面・権限不足なら false（呼び出し側はヘルプへ案内する）。
+ * @returns 開始したら true。読み込み中なら開始要求を保持して true（読み込み後に開始する）。
+ *          未対応の画面・権限不足なら false（呼び出し側はヘルプへ案内する）。
  */
 export function startTour(page?: TourPageKey): boolean {
   if (typeof window === "undefined") return false;
   const target = page ?? tourPageKeyForPath(window.location.pathname);
   if (!target) return false;
+  if (contextPending) {
+    // 権限の読み込みが終わるまで待つ。ここで false を返すと呼び出し側が
+    // ヘルプへ飛ばしてしまい、読み込み中に押した「使い方」が失われる（K3）。
+    queuedStart = target;
+    return true;
+  }
+  return beginTour(target);
+}
+
+function beginTour(target: TourPageKey): boolean {
   if (!canStartTour(target)) return false;
   const steps = visibleStepsFor(target);
   if (steps.length === 0) return false;

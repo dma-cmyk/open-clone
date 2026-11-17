@@ -19,6 +19,7 @@ import { assertReadRateLimit } from "../lib/do";
 import { createTsubuyakiInternal, createPostInternal, editThreadInternal, type Identity } from "../lib/pipeline";
 import { parsePostCreateBody } from "../lib/post-input";
 import {
+  assertBoardActive,
   assertThreadActive,
   boardDesignOf,
   boardSettingsOf,
@@ -31,7 +32,7 @@ import {
   type PostRow,
   type ThreadRow,
 } from "../services/board/store";
-import { assertBoardStaff, hasBoardStaff, isSiteAdmin, actorFrom } from "../services/board/access";
+import { assertBoardStaff, hasBoardStaff, isSiteAdmin, actorFrom, canReadBoardContent, type AccessActor } from "../services/board/access";
 import { listThreads, loadThreadPosts } from "../services/board/threads";
 import { publishEvent } from "../services/board/realtime";
 
@@ -41,6 +42,19 @@ function parseThreadId(value: string): number {
   const id = Number(value);
   if (!Number.isInteger(id) || id <= 0) throw ApiError.validation("スレッド ID が不正です");
   return id;
+}
+
+/**
+ * スレの内容を読み取ってよいか（K2）。
+ * 削除板（`boards.status !== 'active'`）のスレは、板スタッフ（moderator 以上）と
+ * サイト管理者だけが見られる。一般の閲覧者には「無いスレ」として 404 を返し、
+ * 削除板のスレタイ・本文・レスを漏らさない（板の公開 API と同じ判定を使う）。
+ */
+async function assertThreadReadable(db: D1Database, thread: ThreadRow, actor: AccessActor): Promise<void> {
+  const board = await getBoardRow(db, thread.board_id);
+  if (!board || !(await canReadBoardContent(db, actor, board))) {
+    throw ApiError.notFound("スレッドが見つかりません");
+  }
 }
 
 /** スレ一覧（板スラッグまたは数値 boardId 指定）。一覧系の IP 窓（readList）を消費する。 */
@@ -58,6 +72,10 @@ app.get("/", async (c) => {
   if (!boardParam) throw ApiError.validation("board（スラッグまたは板 ID）が必要です");
   const board = await resolveBoardRow(db, boardParam);
   if (!board) throw ApiError.notFound("板が見つかりません");
+  // 削除板のスレ一覧は一般に見せない（板スタッフ・サイト管理者だけ）。
+  if (!(await canReadBoardContent(db, actorFrom(getReqCtx(c).session?.account), board))) {
+    throw ApiError.notFound("板が見つかりません");
+  }
   const result = await listThreads(db, board.id, query);
   return c.json(ok({ items: result.items, nextCursor: result.nextCursor, boardId: board.id }));
 });
@@ -68,6 +86,7 @@ app.get("/:id", async (c) => {
   const threadRow = await getThreadRow(db, parseThreadId(c.req.param("id")));
   const thread = await assertThreadActive(threadRow);
   const reqCtx = getReqCtx(c);
+  await assertThreadReadable(db, thread, actorFrom(reqCtx.session?.account));
   const query = threadPostsQuerySchema.parse({
     r: c.req.query("r") ?? undefined,
     from: c.req.query("from") ?? undefined,
@@ -186,6 +205,7 @@ app.get("/:id/posts", async (c) => {
   const db = c.env.DB;
   const thread = await assertThreadActive(await getThreadRow(db, parseThreadId(c.req.param("id"))));
   const reqCtx = getReqCtx(c);
+  await assertThreadReadable(db, thread, actorFrom(reqCtx.session?.account));
   const query = threadPostsQuerySchema.parse({
     r: c.req.query("r") ?? undefined,
     from: c.req.query("from") ?? undefined,
@@ -268,6 +288,8 @@ app.patch("/:id", async (c) => {
   const db = c.env.DB;
   const thread = await assertThreadActive(await getThreadRow(db, parseThreadId(c.req.param("id"))));
   const reqCtx = getReqCtx(c);
+  // 削除板ではスレの変更（本人編集・ピン留め・close）を受け付けない（K2・投稿と同じ 409）。
+  const board = await assertBoardActive(await getBoardRow(db, thread.board_id));
   const identity: Identity = {
     deviceHash: reqCtx.device.deviceHash,
     ipHash: reqCtx.device.ipHash,
@@ -289,8 +311,6 @@ app.patch("/:id", async (c) => {
       // 設計 70: スレ停止中（close）・削除済みでは編集不可。
       throw new ApiError(409, ErrorCode.CONFLICT, "停止中・削除済みのスレでは編集できません");
     }
-    const board = await getBoardRow(db, thread.board_id);
-    if (!board) throw ApiError.notFound("板が見つかりません");
     const settings = boardSettingsOf(board);
     if (!settings.allowThreadEdit) throw ApiError.forbidden("この板ではスレの本人編集が許可されていません");
     if (settings.selfEditWindowMinutes > 0 && thread.created_at + settings.selfEditWindowMinutes * 60 < Math.floor(Date.now() / 1000)) {
@@ -336,6 +356,8 @@ app.delete("/:id", async (c) => {
   const db = c.env.DB;
   const thread = await assertThreadActive(await getThreadRow(db, parseThreadId(c.req.param("id"))));
   const reqCtx = getReqCtx(c);
+  // 削除板のスレは消せない（板ごと消えている。K2・投稿と同じ 409）。
+  const board = await assertBoardActive(await getBoardRow(db, thread.board_id));
   const identity: Identity = {
     deviceHash: reqCtx.device.deviceHash,
     ipHash: reqCtx.device.ipHash,
@@ -354,8 +376,6 @@ app.delete("/:id", async (c) => {
     (isSiteAdmin(actor) || (await hasBoardStaff(db, actor, thread.board_id, "deputy")));
 
   if (isOwner && !ownerIsStaff) {
-    const board = await getBoardRow(db, thread.board_id);
-    if (!board) throw ApiError.notFound("板が見つかりません");
     const settings = boardSettingsOf(board);
     if (!settings.allowThreadDelete) {
       throw ApiError.forbidden("この板ではスレの本人削除が許可されていません");
@@ -391,6 +411,7 @@ app.delete("/:id", async (c) => {
 app.get("/:id/quotes", async (c) => {
   const db = c.env.DB;
   const thread = await assertThreadActive(await getThreadRow(db, parseThreadId(c.req.param("id"))));
+  await assertThreadReadable(db, thread, actorFrom(getReqCtx(c).session?.account));
   const items = await listThreadQuotes(db, thread.id);
   return c.json(ok({ items, count: items.length }));
 });
@@ -399,6 +420,7 @@ app.get("/:id/quotes", async (c) => {
 app.get("/:id/range", async (c) => {
   const db = c.env.DB;
   const thread = await assertThreadActive(await getThreadRow(db, parseThreadId(c.req.param("id"))));
+  await assertThreadReadable(db, thread, actorFrom(getReqCtx(c).session?.account));
   const range = parsePostRange(c.req.query("r"), thread.post_count);
   return c.json(ok({ range, postCount: thread.post_count }));
 });

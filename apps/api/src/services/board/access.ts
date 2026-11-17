@@ -44,12 +44,27 @@ export async function assertBoardStaff(
   }
 }
 
+/**
+ * 板の内容（スレ・レス・板の設定など）を読み取ってよいか。
+ * 削除板（`boards.status !== 'active'`）は一般の閲覧者には「無い板」として扱い、
+ * 板スタッフ（moderator 以上）とサイト管理者だけが見られる（管理・確認のため）。
+ * `/v1/posts/:id/history` の既存の扱い（板削除後は 404、板スタッフには見える）に揃える。
+ */
+export async function canReadBoardContent(
+  db: D1Database,
+  actor: AccessActor,
+  board: BoardRow,
+): Promise<boolean> {
+  if (board.status === "active") return true;
+  return hasBoardStaff(db, actor, board.id, "moderator");
+}
+
 /** 板管理（設定・スタッフ任免）権限。board_admin 以上。 */
 export async function assertBoardAdmin(db: D1Database, actor: AccessActor, boardId: number): Promise<void> {
   await assertBoardStaff(db, actor, boardId, "admin");
 }
 
-/** 板を ID/スラッグから解決し、権限込みで返す。 */
+/** 板を ID/スラッグから解決し、権限込みで返す。削除板は管理できない（409・K2）。 */
 export async function resolveManageableBoard(
   db: D1Database,
   actor: AccessActor,
@@ -58,6 +73,9 @@ export async function resolveManageableBoard(
 ): Promise<{ board: BoardRow; isOwner: boolean; isStaff: boolean }> {
   const board = await resolveBoardRow(db, idOrSlug);
   if (!board) throw ApiError.notFound("板が見つかりません");
+  // 削除板は閲覧（板スタッフ・サイト管理者のみ）はできるが、設定・スタッフ・アク禁の
+  // 管理操作は受け付けない（投稿と同じ「この板は削除されています」）。
+  if (board.status !== "active") throw ApiError.conflict("この板は削除されています");
   const isOwner = isSiteAdmin(actor);
   const isStaff = isOwner || (await hasBoardStaff(db, actor, board.id, "moderator"));
   if (minLevel === "owner") {

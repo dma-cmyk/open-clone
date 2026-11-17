@@ -4,6 +4,7 @@
 //  - 板の管理画面: 板設定・スタッフ・通報を案内し、/help/admin/#board-staff へ
 // 所有者・特別管理人は **テスト用 D1 の seed**（e2e/fixtures/seed.sql）だけで作り、本番は使わない。
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
+import { setTimeout as delay } from "node:timers/promises";
 import { ALLOWED_ORIGIN, apiUrl } from "../helpers/api";
 import { unique } from "../helpers/ids";
 import { collectPageErrors, hideNextDevOverlay } from "./dev-overlay";
@@ -393,5 +394,33 @@ test.describe("板の管理画面のツアー（板の管理人）", () => {
     await expect(page.locator('[data-tour="admin-help"]')).toHaveCount(0);
     await expect(page.locator('[data-tour="admin-nav"]')).toHaveCount(0);
     await expect(page.locator(".oc-tour-tooltip")).toHaveCount(0);
+  });
+
+  // K3: 権限の読み込み前に「使い方」を押すと、startTour() が権限不足と同じ false を返し、
+  // ヘッダー／フッターの分岐でヘルプへ飛んでいた。読み込み完了後に押した操作で開始する。
+  test("K3: 権限の読み込み中に「使い方」を押してもヘルプへ飛ばず、読み込み後にツアーが始まる", async ({
+    page,
+    context,
+    request,
+  }) => {
+    await hideNextDevOverlay(page);
+    await loginAsOwner(context); // 板を作成した所有者 = 板の管理人
+    const slug = await createBoard(request);
+    // 権限（セッション）の取得を遅らせ、読み込み中に押した状態を作る。
+    await page.route("**/api/v1/auth/session", async (route) => {
+      await delay(3000);
+      await route.continue();
+    });
+    // 初回案内は出さない（読み込み中のクリックだけを見る）。
+    await page.addInitScript(() => window.localStorage.setItem("oc.tour.intro.v1", "1"));
+
+    await page.goto(`/b/${slug}/manage`);
+    // 板情報・セッションの応答を待たずに、フッターの「使い方ツアー」を押す。
+    await page.locator(".oc-footer-tour").click();
+
+    // 押した直後にヘルプへ移動しない（以前はここで /help/#tour へ飛んでいた）。
+    await expect(page.locator(".oc-tour-tooltip")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".oc-tour-tooltip-title").first()).toHaveText("板の管理メニュー");
+    expect(new URL(page.url()).pathname, "押した画面に留まる").toBe(`/b/${slug}/manage`);
   });
 });

@@ -990,8 +990,17 @@ export async function createTsubuyakiInternal(input: CreateTsubuyakiInput, deps:
   });
 
   const state = await loadThreadState(db, thread.id);
+  // 表示 ID の忍法帖 Lv はレス・スレ本文と同じ計算（端末の投稿数 + 1）にする。
+  // つぶやきは端末の post_count を進めない（現状仕様）ため、固定値にすると Lv2 以上の
+  // !jien 表示 ID アク禁を、同じ IP の別端末からつぶやきで回避できてしまう（K1）。
+  // 表示に出す ID とアク禁判定は、下の `displayId` 1 つを両方に使う。
+  const deviceRow = await db
+    .prepare("SELECT post_count FROM devices WHERE device_hash = ?")
+    .bind(identity.deviceHash)
+    .first<{ post_count: number }>();
+  const ninjaLv = ninjaLevelFor((deviceRow?.post_count ?? 0) + 1);
   const baseId = await computeDisplayId({ salt: env.ID_SALT, boardId: board.id, ipHash: identity.ipHash, now });
-  const displayId = settings.noId ? "???" : state.jien ? jienDisplayId(baseId, identity.ipHash, 1) : baseId;
+  const displayId = settings.noId ? "???" : state.jien ? jienDisplayId(baseId, identity.ipHash, ninjaLv) : baseId;
   try {
     assertNotAku(state, identity, displayId, now);
   } catch (error) {
@@ -1012,7 +1021,8 @@ export async function createTsubuyakiInternal(input: CreateTsubuyakiInput, deps:
 
   const parsedName = parseNameCommands(input.name ?? "");
   const { name: rawName } = parseTripName(parsedName.name);
-  const name = decorateName(rawName, 1, parsedName.commands);
+  // 名前の !ninja もレスと同じ Lv を出す（ID の Lv と食い違わせない）。
+  const name = decorateName(rawName, ninjaLv, parsedName.commands);
 
   // DB の posts.kind は本番 D1 のテーブル作り直しを避けるため 'kome' のまま保存する
   // （CHECK 制約と既存 migration を変えない）。外向けの PostKind は 'tsubuyaki'。
@@ -1020,7 +1030,7 @@ export async function createTsubuyakiInternal(input: CreateTsubuyakiInput, deps:
     .prepare(
       `INSERT INTO posts
          (thread_id, board_id, num, title, name, mail, trip, cap, body, sage, post_id_hash, device_hash, ip_hash, ninja_lv, kind, parent_post_id, attachments, hashtags, ai_agent_id, created_at)
-       VALUES (?, ?, 0, NULL, ?, '', NULL, NULL, ?, 1, ?, ?, ?, 1, 'kome', ?, NULL, NULL, ?, ?)
+       VALUES (?, ?, 0, NULL, ?, '', NULL, NULL, ?, 1, ?, ?, ?, ?, 'kome', ?, NULL, NULL, ?, ?)
        RETURNING id`,
     )
     .bind(
@@ -1031,6 +1041,7 @@ export async function createTsubuyakiInternal(input: CreateTsubuyakiInput, deps:
       displayId,
       identity.deviceHash,
       identity.ipHash,
+      ninjaLv,
       input.parentPostId ?? null,
       input.aiAgentId ?? null,
       now,
