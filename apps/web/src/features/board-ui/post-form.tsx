@@ -13,6 +13,8 @@ import { settingsStore } from "./settings";
 import { getTurnstilePass, setTurnstilePass, useTurnstilePass } from "./turnstile-pass-store";
 import { recordWrite } from "./history";
 import { THREAD_MODES, type AttachmentRef, type Post } from "./types";
+import { threadPath } from "./format";
+import { useApiData } from "./use-api-data";
 
 // API の本文上限は UTF-8 バイト数（shared の POST_BODY_MAX_BYTES = 4096。pipeline.ts が
 // TextEncoder の長さで判定する）。日本語は 1 文字あたり約 3 バイトなので、文字数ではなく
@@ -31,6 +33,8 @@ interface PostFormProps {
   disabledReason?: string;
   /** 引用スレ: 引用元スレ ID（板ページの ?quote= から渡る）。板設定で不許可なら API が 403。 */
   quoteThreadId?: number;
+  /** 引用をやめる（?quote= を外す）。呼び出し元が URL を更新する。 */
+  onQuoteCancel?: () => void;
   /** 板設定の Turnstile 方針。ログイン済みなら anonymous では表示しない。 */
   turnstile?: "off" | "anonymous" | "always";
 }
@@ -46,8 +50,14 @@ export function PostForm({
   disabled,
   disabledReason,
   quoteThreadId,
+  onQuoteCancel,
   turnstile = "anonymous",
 }: PostFormProps) {
+  // 引用元のスレタイ・板名・レス数（既存の GET /v1/threads/:id/card。本文は取らない）。
+  const quoteCard = useApiData(
+    () => (mode === "thread" && quoteThreadId ? api.getThreadCard(quoteThreadId) : Promise.resolve(null)),
+    [mode, quoteThreadId],
+  );
   const [name, setName] = useState("");
   const [mail, setMail] = useState("");
   const [title, setTitle] = useState("");
@@ -333,9 +343,38 @@ export function PostForm({
         {mode === "thread" && quoteThreadId ? (
           <div className="oc-form-row" data-quote-thread={quoteThreadId}>
             <span className="oc-badge oc-badge-yellow" title="引用元スレのカードが新スレの先頭に表示されます">
-              引用スレ（元スレ ID: {quoteThreadId}）
+              引用元
             </span>
-            <span className="oc-muted oc-small">このスレを引用して新しいスレを立てます。</span>
+            {quoteCard.loading ? (
+              <span className="oc-muted oc-small">引用元を読み込み中…</span>
+            ) : quoteCard.data && !quoteCard.data.unavailable && quoteCard.data.boardSlug ? (
+              <>
+                <a
+                  href={threadPath(quoteCard.data.boardSlug, quoteCard.data.threadId)}
+                  className="oc-quote-thread-title"
+                  title={quoteCard.data.title}
+                  style={{
+                    maxWidth: "min(100%, 420px)",
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {quoteCard.data.title}
+                </a>
+                <span className="oc-muted oc-small">
+                  （{quoteCard.data.boardName ?? quoteCard.data.boardSlug}・{quoteCard.data.postCount}レス）
+                </span>
+              </>
+            ) : (
+              <span className="oc-muted oc-small">引用元のスレを表示できません（ID: {quoteThreadId}）</span>
+            )}
+            {onQuoteCancel ? (
+              <button type="button" className="oc-btn oc-btn-sm" onClick={onQuoteCancel}>
+                引用をやめる
+              </button>
+            ) : null}
           </div>
         ) : null}
 

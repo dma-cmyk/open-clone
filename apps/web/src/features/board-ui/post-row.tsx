@@ -32,6 +32,9 @@ interface PostRowProps {
   onJump: (num: number) => void;
   /** プラグインの宣言的レンダー規則（WP3）。空なら標準レンダラを使う。 */
   renderRules?: readonly PluginPostRenderRule[];
+  /** post-actions スロットの板・スレ文脈（板スコープのプラグインを解決する）。 */
+  boardSlug?: string;
+  threadId?: number;
 }
 
 function Attachments({ items, showImages }: { items: AttachmentRef[]; showImages: boolean }) {
@@ -117,6 +120,8 @@ export function PostRow({
   onHistory,
   onJump,
   renderRules,
+  boardSlug,
+  threadId,
 }: PostRowProps) {
   const backlinks = post.backlinks ?? [];
   return (
@@ -227,7 +232,13 @@ export function PostRow({
             </button>
           </>
         ) : null}
-        <PluginSlot slot="post-actions" postId={post.id} postBody={post.body} />
+        <PluginSlot
+          slot="post-actions"
+          boardSlug={boardSlug}
+          threadId={threadId}
+          postId={post.id}
+          postBody={post.body}
+        />
       </div>
     </article>
   );

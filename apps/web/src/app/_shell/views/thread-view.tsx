@@ -101,7 +101,8 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   // スレ主かどうかは >>1 の mine フラグで判定（API が端末・アカウント一致を計算する）。
   const isThreadOwner = useMemo(() => posts.some((post) => post.num === 1 && post.mine === true), [posts]);
   const renderRules = usePluginPostRenderRules({
-    boardId: Number(boardInfo.data?.board.id) || undefined,
+    // スロットと同じ条件（板 slug・スレ）で取得する。boardId は slug から API が解決するため
+    // 渡さない（boardId が後から届くと別キーになり `/active` が 2 回走る）。
     boardSlug: slug,
     threadId,
   });
@@ -807,6 +808,9 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
         </span>
       </div>
 
+      {/* スレのナビ（範囲リンクの下）。スレ内の移動を補助するプラグインの差し込み点。 */}
+      <PluginSlot slot="thread-nav" boardSlug={slug} threadId={threadId} />
+
       {imagesOnly ? (
         <div className="oc-panel">
           <div className="oc-panel-title">画像一覧（{images.length}）</div>
@@ -917,6 +921,8 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
                     onHistory={onHistory}
                     onJump={jumpTo}
                     renderRules={renderRules}
+                    boardSlug={slug}
+                    threadId={threadId}
                   />
                 </div>
               );
@@ -974,6 +980,9 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
           </div>
         </div>
       )}
+
+      {/* 投稿フォームの下（定型文ボタンなど）。 */}
+      <PluginSlot slot="post-form-extra" boardSlug={slug} threadId={threadId} />
 
       <AnchorPopup
         target={anchor}

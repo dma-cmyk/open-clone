@@ -5,11 +5,19 @@
 import { useMemo } from "react";
 import { api } from "@/features/board-ui/api";
 import { useApiData } from "@/features/board-ui/use-api-data";
-import { Link, useLocation } from "./router";
+import { PluginSlot } from "@/components/plugin-slot";
+import { Link, useLocation, useRoute } from "./router";
 
 export function BoardSidebar() {
   const boards = useApiData(() => api.listBoards(), []);
   const location = useLocation();
+  // 板スコープのプラグインを解決するための slug とスレ ID。スレ本体のスロットと同じ条件に
+  // して `/plugins/active` をページで 1 回に保つ。互換 URL（/test/read.cgi/<board>/<key>/）も
+  // シェルと同じ `parseRoute` で解決する（レビュー 63 M2）。
+  const route = useRoute();
+  const boardSlug =
+    route.name === "board" || route.name === "thread" || route.name === "manage" ? route.slug : undefined;
+  const threadId = route.name === "thread" ? route.threadId : undefined;
 
   const grouped = useMemo(() => {
     const groups = new Map<string, { slug: string; name: string }[]>();
@@ -51,6 +59,8 @@ export function BoardSidebar() {
         </div>
       ))}
       {boards.error ? <div className="oc-sidebar-title">板一覧を取得できません</div> : null}
+      {/* 板のサイドバー（板ページでは板スコープのプラグインも対象）。 */}
+      <PluginSlot slot="board-sidebar" boardSlug={boardSlug} threadId={threadId} />
     </nav>
   );
 }

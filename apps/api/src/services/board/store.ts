@@ -269,20 +269,25 @@ export async function loadSubHashes(db: D1Database, threadId: number): Promise<S
 export async function loadBacklinks(db: D1Database, postIds: number[]): Promise<Map<number, number[]>> {
   const map = new Map<number, number[]>();
   if (postIds.length === 0) return map;
-  const placeholders = postIds.map(() => "?").join(",");
-  const result = await db
-    .prepare(
-      `SELECT bl.target_post_id AS target, p.num AS num
-       FROM backlinks bl JOIN posts p ON p.id = bl.post_id
-       WHERE bl.target_post_id IN (${placeholders}) AND p.deleted = 0
-       ORDER BY p.num ASC`,
-    )
-    .bind(...postIds)
-    .all<{ target: number; num: number }>();
-  for (const row of result.results) {
-    const list = map.get(row.target);
-    if (list) list.push(row.num);
-    else map.set(row.target, [row.num]);
+  // D1/SQLite のバインド変数上限を超えないよう分割する（1000 レスでも 500 にしない）。
+  const CHUNK = 50;
+  for (let start = 0; start < postIds.length; start += CHUNK) {
+    const chunk = postIds.slice(start, start + CHUNK);
+    const placeholders = chunk.map(() => "?").join(",");
+    const result = await db
+      .prepare(
+        `SELECT bl.target_post_id AS target, p.num AS num
+         FROM backlinks bl JOIN posts p ON p.id = bl.post_id
+         WHERE bl.target_post_id IN (${placeholders}) AND p.deleted = 0
+         ORDER BY p.num ASC`,
+      )
+      .bind(...chunk)
+      .all<{ target: number; num: number }>();
+    for (const row of result.results) {
+      const list = map.get(row.target);
+      if (list) list.push(row.num);
+      else map.set(row.target, [row.num]);
+    }
   }
   return map;
 }
@@ -296,18 +301,31 @@ export async function loadReactionStats(
   const counts = new Map<number, number>();
   const liked = new Set<number>();
   if (postIds.length === 0) return { counts, liked };
-  const placeholders = postIds.map(() => "?").join(",");
-  const result = await db
-    .prepare(
-      `SELECT post_id, COUNT(*) AS n, MAX(CASE WHEN identity_hash = ? THEN 1 ELSE 0 END) AS mine
-       FROM post_reactions WHERE post_id IN (${placeholders})
-       GROUP BY post_id`,
-    )
-    .bind(identityHash, ...postIds)
-    .all<{ post_id: number; n: number; mine: number }>();
-  for (const row of result.results) {
-    counts.set(row.post_id, row.n);
-    if (row.mine === 1) liked.add(row.post_id);
+  // D1/SQLite のバインド変数上限を超えないよう分割する（1000 レスのスレでも 1 回で
+  // 取得できないとスレ自体が 500 になる）。
+  const CHUNK = 50;
+  const chunks: number[][] = [];
+  for (let start = 0; start < postIds.length; start += CHUNK) {
+    chunks.push(postIds.slice(start, start + CHUNK));
+  }
+  const results = await Promise.all(
+    chunks.map((chunk) => {
+      const placeholders = chunk.map(() => "?").join(",");
+      return db
+        .prepare(
+          `SELECT post_id, COUNT(*) AS n, MAX(CASE WHEN identity_hash = ? THEN 1 ELSE 0 END) AS mine
+           FROM post_reactions WHERE post_id IN (${placeholders})
+           GROUP BY post_id`,
+        )
+        .bind(identityHash, ...chunk)
+        .all<{ post_id: number; n: number; mine: number }>();
+    }),
+  );
+  for (const result of results) {
+    for (const row of result.results) {
+      counts.set(row.post_id, row.n);
+      if (row.mine === 1) liked.add(row.post_id);
+    }
   }
   return { counts, liked };
 }

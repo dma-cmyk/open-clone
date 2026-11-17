@@ -4,7 +4,8 @@
 // 実体のサンドボックス iframe ランナーは WP3 が `features/plugin-host/` に実装し、
 // ここへレンダラを登録する（registerPluginSlotRenderer）。WP2 はスロット位置だけを提供する。
 
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { usePluginPageScope } from "./plugin-scope";
 
 export type PluginSlotName =
   | "site-header"
@@ -65,12 +66,27 @@ export function PluginSlot(props: Omit<PluginSlotContext, "slot"> & { slot: Plug
     () => 0,
   );
 
-  if (!mounted || renderers.size === 0) {
+  const scope = usePluginPageScope();
+
+  // シェルが実際の URL を確定する前（静的書き出しの初期描画）は何も出さない。
+  // 仮の文脈（トップ）で `/plugins/active` を 1 回余計に呼ばないため。
+  if (!mounted || scope === null || renderers.size === 0) {
     return null;
   }
-  const context: PluginSlotContext = { ...props };
-  const nodes = Array.from(renderers).map((renderer, index) => (
-    <span key={index}>{renderer(context)}</span>
-  ));
-  return <div data-plugin-slot={props.slot}>{nodes}</div>;
+  // スロット自身が持たない板・スレ文脈は、シェルが配るページ文脈で補う
+  //（ヘッダー等もページと同じ `/plugins/active` を共有する）。
+  const context: PluginSlotContext = {
+    ...props,
+    boardSlug: props.boardSlug ?? scope.boardSlug,
+    threadId: props.threadId ?? scope.threadId,
+  };
+  // ラッパー要素は置かない（レスごとのスロットが 1000 件並ぶ。プラグイン未導入なら
+  // DOM を増やさない）。`data-plugin-slot` は各レンダラ側の実体が持つ。
+  return (
+    <>
+      {Array.from(renderers).map((renderer, index) => (
+        <Fragment key={index}>{renderer(context)}</Fragment>
+      ))}
+    </>
+  );
 }

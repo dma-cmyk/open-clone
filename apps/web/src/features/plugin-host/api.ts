@@ -66,6 +66,17 @@ export function loadActiveInstalls(
 /** 書き込み後・停止直後に呼ばれる（次の取得で最新を取り直す）。 */
 export function invalidateActiveInstalls(): void {
   activeCache.clear();
+  for (const listener of invalidationListeners) listener();
+}
+
+const invalidationListeners = new Set<() => void>();
+
+/** 導入・停止・版の更新を購読中のスロットへ即時反映するための通知口。 */
+export function onActiveInstallsInvalidated(listener: () => void): () => void {
+  invalidationListeners.add(listener);
+  return () => {
+    invalidationListeners.delete(listener);
+  };
 }
 
 async function request<T>(

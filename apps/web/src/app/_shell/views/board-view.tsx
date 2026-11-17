@@ -392,6 +392,7 @@ export function BoardView({ slug }: { slug: string }) {
           boardId={Number(board.id) || undefined}
           turnstile={board.settings?.turnstile ?? "anonymous"}
           quoteThreadId={validQuoteThreadId}
+          onQuoteCancel={() => updateQuery({ quote: null })}
           onPosted={({ threadId }) => {
             if (threadId) {
               toast.show("スレを立てました");
