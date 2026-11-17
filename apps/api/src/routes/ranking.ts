@@ -7,6 +7,7 @@ import { ApiError, ok } from "shared";
 import type { AppEnv } from "../lib/env";
 import { getReqCtx } from "../lib/context";
 import { assertReadRateLimit } from "../lib/do";
+import { canReadBoardContent, actorFrom } from "../services/board/access";
 import { resolveBoardRow } from "../services/board/store";
 
 const app = new Hono<AppEnv>();
@@ -64,10 +65,14 @@ async function handleRanking(c: Context<AppEnv>) {
   const boardParam = c.req.query("board");
   const board = boardParam ? await resolveBoardRow(db, boardParam) : null;
   if (boardParam && !board) throw ApiError.notFound("板が見つかりません");
+  // 削除板の指定は板スタッフ・サイト管理者だけ。集計そのものからは削除板を除く（K2 / T11-01）。
+  if (board && !(await canReadBoardContent(db, actorFrom(getReqCtx(c).session?.account), board))) {
+    throw ApiError.notFound("板が見つかりません");
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const since = PERIOD_SECONDS[period] === 0 ? 0 : now - PERIOD_SECONDS[period]!;
-  const conditions = ["p.kind = 'post'", "p.hidden = 0", "p.deleted = 0", "t.status = 'active'"];
+  const conditions = ["p.kind = 'post'", "p.hidden = 0", "p.deleted = 0", "t.status = 'active'", "b.status = 'active'"];
   const bindings: unknown[] = [];
   if (since > 0) {
     conditions.push("p.created_at >= ?");
@@ -139,10 +144,13 @@ async function handleHeadline(c: Context<AppEnv>) {
   const boardParam = c.req.query("board");
   const board = boardParam ? await resolveBoardRow(db, boardParam) : null;
   if (boardParam && !board) throw ApiError.notFound("板が見つかりません");
+  if (board && !(await canReadBoardContent(db, actorFrom(getReqCtx(c).session?.account), board))) {
+    throw ApiError.notFound("板が見つかりません");
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const since = PERIOD_SECONDS[period] === 0 ? 0 : now - PERIOD_SECONDS[period]!;
-  const conditions = ["t.status = 'active'"];
+  const conditions = ["t.status = 'active'", "b.status = 'active'"];
   const bindings: unknown[] = [];
   if (since > 0) {
     conditions.push("t.last_post_at >= ?");

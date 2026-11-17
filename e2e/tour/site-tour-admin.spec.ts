@@ -423,4 +423,32 @@ test.describe("板の管理画面のツアー（板の管理人）", () => {
     await expect(page.locator(".oc-tour-tooltip-title").first()).toHaveText("板の管理メニュー");
     expect(new URL(page.url()).pathname, "押した画面に留まる").toBe(`/b/${slug}/manage`);
   });
+
+  // T11-05: 保留中に管理画面の別タブへ移ると、URL はそのまま・ツアーも遅延ヘルプも起きない。
+  // 同じ ManageView のまま URL だけ変わる経路（アンマウントしない）を対象にする。
+  test("T11-05: 権限の読み込み中に「使い方」→別タブへ移動すると、保留は破棄されツアーが始まらない", async ({
+    page,
+    context,
+    request,
+  }) => {
+    await hideNextDevOverlay(page);
+    await loginAsOwner(context); // 板を作成した所有者 = 板の管理人
+    const slug = await createBoard(request);
+    await page.route("**/api/v1/auth/session", async (route) => {
+      await delay(3000);
+      await route.continue();
+    });
+    await page.addInitScript(() => window.localStorage.setItem("oc.tour.intro.v1", "1"));
+
+    await page.goto(`/b/${slug}/manage`);
+    // 板情報は先に届くのでタブは押せる。セッション（権限）は保留中。
+    await page.locator(".oc-footer-tour").click();
+    await page.locator('[data-tour="manage-tab-rules"]').click();
+    await expect(page).toHaveURL(new RegExp(`/b/${slug}/manage/rules$`));
+
+    // 遅延させたセッション応答が終わるまで待ってから、開始していないことを確かめる。
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator(".oc-tour-tooltip")).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`/b/${slug}/manage/rules$`));
+  });
 });

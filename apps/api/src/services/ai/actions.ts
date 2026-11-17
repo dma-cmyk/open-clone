@@ -22,6 +22,7 @@ import {
 } from "../plugins/registry";
 import { runStaticChecks } from "../plugins/static-checks";
 import { setAgentStatus } from "./agents";
+import { aiBoardVisibility, assertAiBoardVisible, assertAiBoardWritable } from "./access";
 import { asRecord, parseJsonRecord } from "./json";
 import type { AiAgentContext } from "./policy-engine";
 import {
@@ -68,6 +69,7 @@ async function updateBoardSettings(
   boardId: number,
   patch: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  await assertAiBoardWritable(env, boardId);
   const row = await env.DB.prepare("SELECT settings FROM boards WHERE id = ?")
     .bind(boardId)
     .first<{ settings: string }>();
@@ -140,6 +142,8 @@ async function approvePluginReview(
  */
 export async function executeAiAction(input: ActionExecutionInput): Promise<unknown> {
   const { env, agent, action, params, boardId } = input;
+  // 削除板の内容は、委譲元アカウントの実権限（サイト管理者・板スタッフ）が無ければ返さない（T11-02）。
+  const visibility = await aiBoardVisibility(env, agent.id);
 
   switch (action) {
     // ── 読み取り ──
@@ -148,51 +152,86 @@ export async function executeAiAction(input: ActionExecutionInput): Promise<unkn
         category: typeof params.category === "string" ? params.category : undefined,
         limit: typeof params.limit === "number" ? params.limit : undefined,
         cursor: typeof params.cursor === "string" ? params.cursor : undefined,
+        excludeBoardIds: visibility.hiddenDeletedBoardIds,
       });
-    case "board.get":
-      return getBoard(env, {
+    case "board.get": {
+      const board = await getBoard(env, {
         boardId: typeof params.boardId === "number" ? params.boardId : undefined,
         slug: typeof params.slug === "string" ? params.slug : undefined,
       });
-    case "thread.list":
-      return listThreads(env, Number(params.boardId), {
+      assertAiBoardVisible(visibility, board.id);
+      return board;
+    }
+    case "thread.list": {
+      const listBoardId = Number(params.boardId);
+      assertAiBoardVisible(visibility, listBoardId);
+      return listThreads(env, listBoardId, {
         limit: typeof params.limit === "number" ? params.limit : undefined,
         cursor: typeof params.cursor === "string" ? params.cursor : undefined,
       });
-    case "thread.get":
-      return getThread(env, Number(params.threadId));
-    case "post.list":
+    }
+    case "thread.get": {
+      const thread = await getThread(env, Number(params.threadId));
+      assertAiBoardVisible(visibility, thread.boardId);
+      return thread;
+    }
+    case "post.list": {
+      // レス一覧はスレの板を先に確認する（空スレでも板の判定を飛ばさない）。
+      const thread = await getThread(env, Number(params.threadId));
+      assertAiBoardVisible(visibility, thread.boardId);
       return listPosts(env, Number(params.threadId), {
         afterPostId: typeof params.afterPostId === "number" ? params.afterPostId : undefined,
         limit: typeof params.limit === "number" ? params.limit : undefined,
       });
-    case "post.get":
-      return getPost(env, Number(params.postId));
-    case "search":
+    }
+    case "post.get": {
+      const post = await getPost(env, Number(params.postId));
+      assertAiBoardVisible(visibility, post.boardId);
+      return post;
+    }
+    case "search": {
+      const searchBoardId = typeof params.boardId === "number" ? params.boardId : undefined;
+      if (searchBoardId !== undefined) assertAiBoardVisible(visibility, searchBoardId);
       return searchPosts(env, {
         q: String(params.q),
-        boardId: typeof params.boardId === "number" ? params.boardId : undefined,
+        boardId: searchBoardId,
         threadId: typeof params.threadId === "number" ? params.threadId : undefined,
         limit: typeof params.limit === "number" ? params.limit : undefined,
         cursor: typeof params.cursor === "string" ? params.cursor : undefined,
+        excludeBoardIds: visibility.hiddenDeletedBoardIds,
       });
-    case "monitor.feed":
+    }
+    case "monitor.feed": {
+      const feedBoardId = typeof params.boardId === "number" ? params.boardId : undefined;
+      if (feedBoardId !== undefined) assertAiBoardVisible(visibility, feedBoardId);
       return monitorFeed(env, {
-        boardId: typeof params.boardId === "number" ? params.boardId : undefined,
+        boardId: feedBoardId,
         limit: typeof params.limit === "number" ? params.limit : undefined,
         cursor: typeof params.cursor === "string" ? params.cursor : undefined,
+        excludeBoardIds: visibility.hiddenDeletedBoardIds,
       });
-    case "report.list":
+    }
+    case "report.list": {
+      const reportBoardId = typeof params.boardId === "number" ? params.boardId : undefined;
+      if (reportBoardId !== undefined) assertAiBoardVisible(visibility, reportBoardId);
       return listReports(env, {
-        boardId: typeof params.boardId === "number" ? params.boardId : undefined,
+        boardId: reportBoardId,
         status: typeof params.status === "string" ? params.status : undefined,
         limit: typeof params.limit === "number" ? params.limit : undefined,
         cursor: typeof params.cursor === "string" ? params.cursor : undefined,
+        excludeBoardIds: visibility.hiddenDeletedBoardIds,
       });
-    case "report.get":
-      return getReport(env, String(params.reportId));
-    case "stats.read":
-      return boardStats(env, typeof params.boardId === "number" ? params.boardId : undefined);
+    }
+    case "report.get": {
+      const report = await getReport(env, String(params.reportId));
+      if (report.boardId !== null) assertAiBoardVisible(visibility, report.boardId);
+      return report;
+    }
+    case "stats.read": {
+      const statsBoardId = typeof params.boardId === "number" ? params.boardId : undefined;
+      if (statsBoardId !== undefined) assertAiBoardVisible(visibility, statsBoardId);
+      return boardStats(env, statsBoardId, visibility.hiddenDeletedBoardIds);
+    }
     case "classify.draft":
       return classifyDraft(String(params.text));
     case "agent.self":
@@ -299,6 +338,11 @@ export async function executeAiAction(input: ActionExecutionInput): Promise<unkn
     case "post.hide":
     case "post.mark_spam": {
       const postId = Number(params.postId);
+      const target = await env.DB.prepare("SELECT board_id FROM posts WHERE id = ?")
+        .bind(postId)
+        .first<{ board_id: number }>();
+      if (!target) throw ApiError.notFound("対象のレスが見つかりません");
+      await assertAiBoardWritable(env, target.board_id);
       const result = await env.DB.prepare("UPDATE posts SET hidden = 1 WHERE id = ? AND deleted = 0")
         .bind(postId)
         .run();
@@ -375,6 +419,11 @@ export async function executeAiAction(input: ActionExecutionInput): Promise<unkn
     // ── high（人間承認後にのみ到達） ──
     case "post.delete": {
       const postId = Number(params.postId);
+      const target = await env.DB.prepare("SELECT board_id FROM posts WHERE id = ?")
+        .bind(postId)
+        .first<{ board_id: number }>();
+      if (!target) throw ApiError.notFound("対象のレスが見つかりません");
+      await assertAiBoardWritable(env, target.board_id);
       const result = await env.DB.prepare("UPDATE posts SET deleted = 1, hidden = 1 WHERE id = ?")
         .bind(postId)
         .run();
@@ -383,10 +432,16 @@ export async function executeAiAction(input: ActionExecutionInput): Promise<unkn
     }
     case "thread.delete": {
       const threadId = Number(params.threadId);
+      const target = await env.DB.prepare("SELECT board_id FROM threads WHERE id = ?")
+        .bind(threadId)
+        .first<{ board_id: number }>();
+      if (!target) throw ApiError.notFound("スレッドが見つかりません");
+      await assertAiBoardWritable(env, target.board_id);
       await env.DB.prepare("UPDATE threads SET status = 'deleted' WHERE id = ?").bind(threadId).run();
       return { threadId, status: "deleted" };
     }
     case "board.ban":
+      await assertAiBoardWritable(env, Number(params.boardId));
       return insertBan(env, {
         boardId: Number(params.boardId),
         deviceHash: String(params.deviceHash),
@@ -406,6 +461,7 @@ export async function executeAiAction(input: ActionExecutionInput): Promise<unkn
       });
     case "board.rules_update": {
       const boardIdParam = Number(params.boardId);
+      await assertAiBoardWritable(env, boardIdParam);
       await env.DB.prepare("UPDATE boards SET rules_md = ? WHERE id = ?")
         .bind(String(params.rulesMd), boardIdParam)
         .run();
@@ -413,6 +469,7 @@ export async function executeAiAction(input: ActionExecutionInput): Promise<unkn
     }
     case "board.design_update": {
       const boardIdParam = Number(params.boardId);
+      await assertAiBoardWritable(env, boardIdParam);
       const design = params.design && typeof params.design === "object" ? params.design : {};
       await env.DB.prepare("UPDATE boards SET design = ? WHERE id = ?")
         .bind(JSON.stringify(design), boardIdParam)
@@ -421,6 +478,7 @@ export async function executeAiAction(input: ActionExecutionInput): Promise<unkn
     }
     case "board.staff_update": {
       const boardIdParam = Number(params.boardId);
+      await assertAiBoardWritable(env, boardIdParam);
       const accountId = String(params.accountId);
       if (params.level === null) {
         await env.DB.prepare("DELETE FROM board_staff WHERE board_id = ? AND account_id = ?")
@@ -506,6 +564,14 @@ export async function executeAiAction(input: ActionExecutionInput): Promise<unkn
           continue;
         }
         if (agent.allowedBoards !== "*" && !agent.allowedBoards.includes(row.board_id)) {
+          results.push({ postId, boardId: row.board_id, ok: false });
+          continue;
+        }
+        const boardRow = await env.DB.prepare("SELECT status FROM boards WHERE id = ?")
+          .bind(row.board_id)
+          .first<{ status: string }>();
+        if (!boardRow || boardRow.status !== "active") {
+          // 削除板の内容は AI からも変更しない（K2 / T11-04）。
           results.push({ postId, boardId: row.board_id, ok: false });
           continue;
         }

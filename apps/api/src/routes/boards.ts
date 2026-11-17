@@ -258,6 +258,8 @@ app.patch("/:slug", requireAuth, async (c) => {
   const db = c.env.DB;
   const actor = actorFrom(getReqCtx(c).session!.account);
   const { board } = await resolveManageableBoard(db, actor, c.req.param("slug"), "admin");
+  // 削除板は閲覧だけ。設定の書き換えは受け付けない（K2 / T11-03: 読み取り判定と書き込み凍結を分ける）。
+  await assertBoardActive(board);
   const body = (await c.req.json()) as Record<string, unknown>;
 
   const current = mapBoard(board);
@@ -419,6 +421,7 @@ app.post("/:slug/staff", requireAuth, async (c) => {
   const db = c.env.DB;
   const actor = actorFrom(getReqCtx(c).session!.account);
   const { board } = await resolveManageableBoard(db, actor, c.req.param("slug"), "admin");
+  await assertBoardActive(board);
   const input = setBoardStaffRequestSchema.parse(await c.req.json());
 
   let accountId = input.accountId ?? null;
@@ -452,6 +455,7 @@ app.delete("/:slug/staff/:accountId", requireAuth, async (c) => {
   const db = c.env.DB;
   const actor = actorFrom(getReqCtx(c).session!.account);
   const { board } = await resolveManageableBoard(db, actor, c.req.param("slug"), "admin");
+  await assertBoardActive(board);
   const accountId = c.req.param("accountId");
 
   const target = await db
@@ -526,7 +530,8 @@ app.post("/:slug/bans", requireAuth, async (c) => {
   if (input.site) {
     if (!isSiteAdmin(actor)) throw ApiError.forbidden("サイト全体のアクセス禁止は owner / special_admin のみです");
   } else {
-    await resolveManageableBoard(db, actor, row.slug, "moderator");
+    const { board } = await resolveManageableBoard(db, actor, row.slug, "moderator");
+    await assertBoardActive(board);
   }
 
   const now = Math.floor(Date.now() / 1000);
@@ -564,7 +569,8 @@ app.delete("/:slug/bans/:id", requireAuth, async (c) => {
   if (ban.board_id === null) {
     if (!isSiteAdmin(actor)) throw ApiError.forbidden("サイト全体の解除は owner / special_admin のみです");
   } else {
-    await resolveManageableBoard(db, actor, row.slug, "moderator");
+    const { board } = await resolveManageableBoard(db, actor, row.slug, "moderator");
+    await assertBoardActive(board);
   }
   await db.prepare("DELETE FROM board_bans WHERE id = ?").bind(c.req.param("id")).run();
   return c.json(ok({ removed: true }));
