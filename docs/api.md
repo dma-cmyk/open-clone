@@ -51,6 +51,7 @@
 | `STEP_UP_REQUIRED` | 高リスク操作に TOTP step-up（再認証）が必要 |
 | `INVITE_INVALID` | 招待キーが無効・期限切れ・使用済み |
 | `OWNER_SETUP_CLOSED` | owner 初期設定は完了済み（再実行不可） |
+| `RESET_INVALID` | パスワード再設定の復旧コード/URL が無効（存在しないメール・誤り・期限切れ・使用済み・失効を区別しない） |
 
 ### 1.3 認証
 
@@ -96,21 +97,24 @@
 | GET | `/me/sessions` | `requireAuth` | `accounts.ts` | 100 |
 | DELETE | `/me/sessions/:id` | `requireAuth` | `accounts.ts` | 118 |
 | POST | `/me/sessions/revoke-others` | `requireAuth` | `accounts.ts` | 139 |
-| POST | `/owner/setup` | — | `admin.ts` | 57 |
-| GET | `/overview` | `requireAdminActive` | `admin.ts` | 109 |
-| GET | `/users` | `requireAdminActive` | `admin.ts` | 137 |
-| GET | `/users/:id` | `requireAdminActive` | `admin.ts` | 200 |
-| GET | `/suspensions` | `requireAdminActive` | `admin.ts` | 228 |
-| POST | `/suspensions` | `requireAdminActive` | `admin.ts` | 238 |
-| POST | `/suspensions/:id/lift` | `requireAdminActive` | `admin.ts` | 253 |
-| DELETE | `/suspensions/:id` | `requireAdminActive` | `admin.ts` | 268 |
-| GET | `/audit` | `requireAdminActive` | `admin.ts` | 285 |
-| GET | `/site-config` | `requireAdminActive`, `requireOwnerActive` | `admin.ts` | 352 |
-| PUT | `/site-config` | `requireOwnerActive` | `admin.ts` | 356 |
-| GET | `/special-admins` | `requireOwnerActive` | `admin.ts` | 373 |
-| POST | `/special-admins/:id/stop` | `requireOwnerActive` | `admin.ts` | 387 |
-| POST | `/special-admins/:id/restore` | `requireOwnerActive` | `admin.ts` | 406 |
-| POST | `/special-admins/:id/totp-reset` | `requireOwnerActive` | `admin.ts` | 423 |
+| POST | `/owner/setup` | — | `admin.ts` | 67 |
+| GET | `/overview` | `requireAdminActive` | `admin.ts` | 119 |
+| GET | `/users` | `requireAdminActive` | `admin.ts` | 147 |
+| GET | `/users/:id` | `requireAdminActive` | `admin.ts` | 210 |
+| POST | `/password-resets` | `requireOwnerActive` | `admin.ts` | 241 |
+| GET | `/password-resets` | `requireOwnerActive` | `admin.ts` | 290 |
+| POST | `/password-resets/:id/revoke` | `requireOwnerActive` | `admin.ts` | 308 |
+| GET | `/suspensions` | `requireAdminActive` | `admin.ts` | 328 |
+| POST | `/suspensions` | `requireAdminActive` | `admin.ts` | 338 |
+| POST | `/suspensions/:id/lift` | `requireAdminActive` | `admin.ts` | 353 |
+| DELETE | `/suspensions/:id` | `requireAdminActive` | `admin.ts` | 368 |
+| GET | `/audit` | `requireAdminActive` | `admin.ts` | 385 |
+| GET | `/site-config` | `requireAdminActive`, `requireOwnerActive` | `admin.ts` | 452 |
+| PUT | `/site-config` | `requireOwnerActive` | `admin.ts` | 456 |
+| GET | `/special-admins` | `requireOwnerActive` | `admin.ts` | 473 |
+| POST | `/special-admins/:id/stop` | `requireOwnerActive` | `admin.ts` | 487 |
+| POST | `/special-admins/:id/restore` | `requireOwnerActive` | `admin.ts` | 506 |
+| POST | `/special-admins/:id/totp-reset` | `requireOwnerActive` | `admin.ts` | 523 |
 | POST | `/complete` | — | `ai.ts` | 195 |
 | GET | `/me` | — | `ai.ts` | 209 |
 | POST | `/act` | — | `ai.ts` | 220 |
@@ -157,20 +161,22 @@
 | GET | `/webhooks/:id/deliveries` | `requireAuth` | `ai.ts` | 1086 |
 | GET | `/metrics` | `requireAuth` | `ai.ts` | 1094 |
 | GET | `/actions` | `requireAuth` | `ai.ts` | 1100 |
-| POST | `/register` | `requireTurnstile` | `auth.ts` | 82 |
-| POST | `/login` | `requireTurnstile` | `auth.ts` | 155 |
-| POST | `/logout` | — | `auth.ts` | 238 |
-| GET | `/session` | `requireAuth` | `auth.ts` | 245 |
-| GET | `/totp/status` | `requireAuth` | `auth.ts` | 254 |
-| POST | `/totp/setup` | `requireAuth` | `auth.ts` | 260 |
-| POST | `/totp/enable` | `requireAuth` | `auth.ts` | 267 |
-| POST | `/totp/disable` | `requireAuth` | `auth.ts` | 281 |
-| POST | `/recovery-codes/regenerate` | `requireAuth` | `auth.ts` | 295 |
-| POST | `/recovery` | `requireTurnstile` | `auth.ts` | 310 |
-| GET | `/github/status` | — | `auth.ts` | 377 |
-| GET | `/github/start` | — | `auth.ts` | 381 |
-| POST | `/github/callback` | — | `auth.ts` | 387 |
-| POST | `/step-up` | `requireAuth` | `auth.ts` | 422 |
+| POST | `/register` | `requireTurnstile` | `auth.ts` | 101 |
+| POST | `/login` | `requireTurnstile` | `auth.ts` | 174 |
+| POST | `/logout` | — | `auth.ts` | 257 |
+| GET | `/session` | `requireAuth` | `auth.ts` | 264 |
+| GET | `/totp/status` | `requireAuth` | `auth.ts` | 273 |
+| POST | `/totp/setup` | `requireAuth` | `auth.ts` | 279 |
+| POST | `/totp/enable` | `requireAuth` | `auth.ts` | 286 |
+| POST | `/totp/disable` | `requireAuth` | `auth.ts` | 300 |
+| POST | `/recovery-codes/regenerate` | `requireAuth` | `auth.ts` | 314 |
+| POST | `/recovery` | `requireTurnstile` | `auth.ts` | 353 |
+| POST | `/password-reset` | `requireTurnstile` | `auth.ts` | 409 |
+| POST | `/password-reset/operator` | `requireTurnstile` | `auth.ts` | 473 |
+| GET | `/github/status` | — | `auth.ts` | 526 |
+| GET | `/github/start` | — | `auth.ts` | 530 |
+| POST | `/github/callback` | — | `auth.ts` | 536 |
+| POST | `/step-up` | `requireAuth` | `auth.ts` | 571 |
 | GET | `/` | — | `boards.ts` | 44 |
 | POST | `/` | `requireAuth` | `boards.ts` | 100 |
 | GET | `/:slug` | — | `boards.ts` | 171 |
@@ -217,8 +223,9 @@
 | ALL | `/legacy` | — | `mcp-plugin.ts` | 200 |
 | ALL | `/` | — | `mcp.ts` | 112 |
 | ALL | `/legacy` | — | `mcp.ts` | 113 |
-| GET | `/health` | — | `meta.ts` | 10 |
-| GET | `/usage` | `requireAdminActive` | `meta.ts` | 24 |
+| GET | `/health` | — | `meta.ts` | 11 |
+| GET | `/site` | — | `meta.ts` | 25 |
+| GET | `/usage` | `requireAdminActive` | `meta.ts` | 39 |
 | POST | `/fetch` | — | `plugin-net.ts` | 30 |
 | GET | `/log` | `requireRole` | `plugin-net.ts` | 116 |
 | POST | `/revoke-all` | `requireAuth` | `plugin-tokens.ts` | 83 |
@@ -1347,6 +1354,40 @@
 }
 ```
 
+#### `publicSiteInfoSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "operatorContact": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "email",
+          "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "name",
+    "description",
+    "operatorContact"
+  ]
+}
+```
+
 #### `siteSettingsSchema`
 
 ```json
@@ -1399,6 +1440,20 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 100
+    },
+    "site.operator_contact": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": ""
+        },
+        {
+          "type": "string",
+          "maxLength": 254,
+          "format": "email",
+          "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+        }
+      ]
     }
   },
   "required": [
@@ -1409,7 +1464,8 @@
     "security.special_admin_totp_required",
     "security.login_max_failures",
     "plugin.ai.baseUrl",
-    "plugin.ai.model"
+    "plugin.ai.model",
+    "site.operator_contact"
   ]
 }
 ```
@@ -1466,6 +1522,20 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 100
+    },
+    "site.operator_contact": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": ""
+        },
+        {
+          "type": "string",
+          "maxLength": 254,
+          "format": "email",
+          "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+        }
+      ]
     }
   }
 }
@@ -6222,6 +6292,309 @@
     "risk",
     "mode",
     "status"
+  ]
+}
+```
+
+### `packages/shared/src/schemas/password-reset.ts`
+
+#### `operatorPasswordResetRequestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "token": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 256
+    },
+    "newPassword": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256
+    }
+  },
+  "required": [
+    "token",
+    "newPassword"
+  ]
+}
+```
+
+#### `operatorPasswordResetResultSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "reset": {
+      "type": "boolean",
+      "const": true
+    },
+    "account": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "email": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "email",
+              "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "owner",
+            "special_admin",
+            "user"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "suspended"
+          ]
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "email",
+        "role",
+        "status",
+        "createdAt"
+      ]
+    }
+  },
+  "required": [
+    "reset",
+    "account"
+  ]
+}
+```
+
+#### `passwordResetIssueRequestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "accountId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    }
+  },
+  "required": [
+    "accountId"
+  ]
+}
+```
+
+#### `passwordResetIssueResultSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "accountId": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+    },
+    "token": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    },
+    "mailtoUrl": {
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "id",
+    "accountId",
+    "email",
+    "token",
+    "url",
+    "mailtoUrl",
+    "expiresAt"
+  ]
+}
+```
+
+#### `passwordResetRequestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string",
+      "format": "email",
+      "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+    },
+    "code": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 64
+    },
+    "newPassword": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256
+    }
+  },
+  "required": [
+    "email",
+    "code",
+    "newPassword"
+  ]
+}
+```
+
+#### `passwordResetResultSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "reset": {
+      "type": "boolean",
+      "const": true
+    },
+    "recoveryRemaining": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "reset",
+    "recoveryRemaining"
+  ]
+}
+```
+
+#### `passwordResetTokenListSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "expiresAt": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "createdAt",
+          "expiresAt"
+        ]
+      }
+    },
+    "now": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "items",
+    "now"
+  ]
+}
+```
+
+#### `passwordResetTokenSummarySchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "accountId": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "expiresAt": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "id",
+    "accountId",
+    "createdAt",
+    "expiresAt"
   ]
 }
 ```

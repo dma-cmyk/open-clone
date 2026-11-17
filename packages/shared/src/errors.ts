@@ -27,6 +27,8 @@ export const ErrorCode = {
   STEP_UP_REQUIRED: "STEP_UP_REQUIRED",
   INVITE_INVALID: "INVITE_INVALID",
   OWNER_SETUP_CLOSED: "OWNER_SETUP_CLOSED",
+  /** パスワード再設定の復旧コード・再設定 URL が無効（存在しないメール・誤り・期限切れ・使用済み・失効を区別しない） */
+  RESET_INVALID: "RESET_INVALID",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

@@ -266,6 +266,7 @@ async function main(): Promise<void> {
     STEP_UP_REQUIRED: "高リスク操作に TOTP step-up（再認証）が必要",
     INVITE_INVALID: "招待キーが無効・期限切れ・使用済み",
     OWNER_SETUP_CLOSED: "owner 初期設定は完了済み（再実行不可）",
+    RESET_INVALID: "パスワード再設定の復旧コード/URL が無効（存在しないメール・誤り・期限切れ・使用済み・失効を区別しない）",
   };
   for (const code of Object.values(errorCodes.ErrorCode)) {
     lines.push(`| \`${code}\` | ${errorMeanings[code] ?? "要確認"} |`);

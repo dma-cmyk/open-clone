@@ -46,6 +46,20 @@ export async function consumeRecoveryCode(db: D1Database, accountId: string, cod
   return (result.meta.changes ?? 0) === 1;
 }
 
+/**
+ * 未使用コードとして一致するか（消費しない）。
+ * パスワード再設定では「コードが正しいことを確かめてから」利用停止などの状態を返すために使う
+ * （誤ったコードでアカウントの状態を探れないようにする）。
+ */
+export async function hasUnusedRecoveryCode(db: D1Database, accountId: string, code: string): Promise<boolean> {
+  const codeHash = await hashRecoveryCode(code);
+  const row = await db
+    .prepare("SELECT id FROM recovery_codes WHERE account_id = ? AND code_hash = ? AND used_at IS NULL")
+    .bind(accountId, codeHash)
+    .first<{ id: string }>();
+  return row !== null;
+}
+
 export async function countRemainingRecoveryCodes(db: D1Database, accountId: string): Promise<number> {
   const row = await db
     .prepare("SELECT COUNT(*) AS n FROM recovery_codes WHERE account_id = ? AND used_at IS NULL")

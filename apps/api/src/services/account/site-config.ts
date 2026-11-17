@@ -14,6 +14,8 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   // プラグイン AI 連携は既定で無効（接続先未設定）。運用者が明示的に設定したときだけ有効。
   "plugin.ai.baseUrl": "",
   "plugin.ai.model": "gpt-4o-mini",
+  // 運営の連絡先。未設定（空）なら案内文だけを出す。
+  "site.operator_contact": "",
 };
 
 export const SITE_SETTING_KEYS = Object.keys(DEFAULT_SITE_SETTINGS) as (keyof SiteSettings)[];

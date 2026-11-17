@@ -15,6 +15,10 @@ import {
   recoveryRequestSchema,
   stepUpRequestSchema,
   githubLoginCallbackSchema,
+  passwordResetRequestSchema,
+  operatorPasswordResetRequestSchema,
+  PASSWORD_RESET_FAILURE_WINDOW_SECONDS,
+  PASSWORD_RESET_MAX_FAILURES,
   SESSION_COOKIE,
   SESSION_TTL_DAYS,
   ulid,
@@ -25,14 +29,29 @@ import { getReqCtx } from "../lib/context";
 import { writeAudit } from "../lib/audit";
 import { requireAuth } from "../lib/middleware/auth";
 import { requireTurnstile } from "../lib/middleware/turnstile";
+import { requestOrigin } from "../lib/middleware/origin";
 import { hashPassword, verifyPassword } from "../services/account/password";
 import { createSession, revokeAllSessions, revokeSession } from "../services/account/session";
 import { getTotpRow, verifyTotpCode, verifyTotpForAccount, beginTotpSetup, enableTotp, disableTotp, getTotpStatus, resetTotp } from "../services/account/totp";
-import { consumeRecoveryCode, countRemainingRecoveryCodes, generateRecoveryCodes } from "../services/account/recovery";
+import {
+  consumeRecoveryCode,
+  countRemainingRecoveryCodes,
+  generateRecoveryCodes,
+  hasUnusedRecoveryCode,
+} from "../services/account/recovery";
 import { findActiveSiteSuspension } from "../services/account/suspension";
 import { getSiteSettings } from "../services/account/site-config";
 import { attemptKey, cleanupOldAttempts, countAttemptsSince, recordAttempt } from "../services/account/attempts";
-import { grantStepUp, requireStepUp } from "../services/account/step-up";
+import { grantStepUp, getStepUpExpiry } from "../services/account/step-up";
+import {
+  cleanupPasswordResetFailures,
+  consumePasswordResetToken,
+  countPasswordResetFailures,
+  findPasswordResetToken,
+  passwordResetAttemptKey,
+  passwordResetTokenState,
+  recordPasswordResetFailure,
+} from "../services/account/password-reset";
 import { completeGithubLogin, githubLoginAvailable, startGithubLogin } from "../services/account/github-login";
 import { accountDto, buildAuthSession, getAccountRow, type AccountRow } from "../services/account/view";
 import { transferDeviceOwnedPlugins } from "../services/plugins/device-transfer";
@@ -292,15 +311,39 @@ app.post("/totp/disable", requireAuth, async (c) => {
   return c.json(ok({ disabled: true }));
 });
 
-app.post("/recovery-codes/regenerate", requireAuth, requireStepUp(), async (c) => {
+app.post("/recovery-codes/regenerate", requireAuth, async (c) => {
   const ctx = getReqCtx(c);
   if (!ctx.session) throw ApiError.unauthorized();
-  const recoveryCodes = await generateRecoveryCodes(c.env.DB, ctx.session.account.id);
-  await writeAudit(c.env.DB, {
+  const db = c.env.DB;
+  // TOTP を設定していない人も復旧コードを作れるようにする（設計 50 ①）。
+  // 従来どおり step-up（TOTP 再認証）が有効ならそのまま、無ければ現在のパスワードの再入力を求める。
+  // どちらも「ログイン済みセッションだけでは作れない」ための確認で、成功したら以下は同じ。
+  const stepUpExpiry = await getStepUpExpiry(db, ctx.session.tokenHash);
+  let verifiedBy: "step_up" | "password" = "step_up";
+  if (stepUpExpiry === null) {
+    const body = (await c.req.json().catch(() => ({}))) as { password?: unknown };
+    const password = typeof body.password === "string" ? body.password : "";
+    if (password.length === 0) {
+      throw new ApiError(
+        403,
+        ErrorCode.STEP_UP_REQUIRED,
+        "この操作には再認証（TOTP コードまたは現在のパスワード）が必要です",
+      );
+    }
+    const row = await getAccountRow(db, ctx.session.account.id);
+    if (!(await verifyPassword(password, row?.password_hash ?? null))) {
+      // 誤ったパスワードは STEP_UP_REQUIRED と区別する（UI が不要な TOTP ダイアログを出さない）。
+      throw ApiError.validation("現在のパスワードが正しくありません");
+    }
+    verifiedBy = "password";
+  }
+  const recoveryCodes = await generateRecoveryCodes(db, ctx.session.account.id);
+  await writeAudit(db, {
     actorType: auditActor(ctx.session.account.role),
     actorId: ctx.session.account.id,
     action: "auth.recovery_codes_regenerated",
     target: ctx.session.account.id,
+    detail: { verifiedBy },
   });
   return c.json(ok({ recoveryCodes }));
 });
@@ -357,22 +400,128 @@ app.post("/recovery", requireTurnstile({ required: false }), async (c) => {
   );
 });
 
+// --- パスワードを忘れたときの復旧（設計 50） ----------------------------
+// ① 復旧コードでの再設定: メール + 復旧コード + 新しいパスワード。TOTP の有無を問わない。
+//    ロボット確認は毎回必須（30 分省略の対象外）。失敗はログイン失敗と同じ枠で数える。
+//    アカウントの有無・利用停止は、正しい復旧コードを示した後にだけ区別する（列挙対策）。
+// ② 運営が発行した 1 回限りの URL: トークン + 新しいパスワード（有効期限・単回使用）。
+
+app.post("/password-reset", requireTurnstile({ required: true }), async (c) => {
+  const body = passwordResetRequestSchema.parse(await c.req.json());
+  const ctx = getReqCtx(c);
+  const db = c.env.DB;
+  const now = Math.floor(Date.now() / 1000);
+  const emailKey = await attemptKey(ctx.device.ipHash, body.email);
+  const loginFailures = await countAttemptsSince(db, ["login_failed"], emailKey, now - RATE_LIMITS.login.windowSeconds);
+  if (loginFailures >= RATE_LIMITS.login.max) {
+    throw ApiError.rateLimited("試行回数が多すぎます。しばらく待ってから再試行してください");
+  }
+
+  const account = await loadAccountByEmail(db, body.email);
+  // 存在しないメールは入力そのものを鍵にする（存在するアカウントと同じく、IP を変えた連打も数える）。
+  const targetKey = await passwordResetAttemptKey(c.env.ID_SALT, account?.id ?? body.email);
+  const resetFailures = await countPasswordResetFailures(db, targetKey, now - PASSWORD_RESET_FAILURE_WINDOW_SECONDS);
+  if (resetFailures >= PASSWORD_RESET_MAX_FAILURES) {
+    throw ApiError.rateLimited("試行回数が多すぎます。しばらく待ってから再試行してください");
+  }
+
+  const reject = async (): Promise<never> => {
+    // 存在しないメールと誤ったコードを同じエラー・同じ処理経路にする。
+    await recordAttempt(db, "login_failed", emailKey, account?.id ?? null);
+    await recordPasswordResetFailure(db, targetKey, ulid(), now);
+    c.executionCtx.waitUntil(cleanupOldAttempts(db));
+    c.executionCtx.waitUntil(cleanupPasswordResetFailures(db, now));
+    throw new ApiError(
+      400,
+      ErrorCode.RESET_INVALID,
+      "メールアドレスまたは復旧コードが正しくありません",
+    );
+  };
+
+  if (!account) return reject();
+  if (!(await hasUnusedRecoveryCode(db, account.id, body.code))) return reject();
+
+  // ここから先は復旧コードの持ち主だけが通る。利用停止はこの順で判定する（誤コードで状態を探れない）。
+  const suspension = await findActiveSiteSuspension(db, {
+    accountId: account.id,
+    email: account.email,
+    deviceHash: ctx.device.deviceHash,
+  });
+  if (account.status !== "active" || suspension) {
+    throw new ApiError(403, ErrorCode.BANNED, "このアカウントは利用停止中です");
+  }
+
+  if (!(await consumeRecoveryCode(db, account.id, body.code))) return reject();
+
+  const passwordHash = await hashPassword(body.newPassword);
+  await db.prepare("UPDATE accounts SET password_hash = ? WHERE id = ?").bind(passwordHash, account.id).run();
+  const revoked = await revokeAllSessions(db, account.id);
+  const remaining = await countRemainingRecoveryCodes(db, account.id);
+  // TOTP は残す（TOTP を設定している人は次のログインでコードが要る＝復旧コードだけでは乗っ取れない）。
+  await writeAudit(db, {
+    actorType: auditActor(account.role),
+    actorId: account.id,
+    action: "auth.password_reset_recovery",
+    target: account.id,
+    detail: { recoveryRemaining: remaining, revokedSessions: revoked },
+  });
+  c.executionCtx.waitUntil(cleanupOldAttempts(db));
+  c.executionCtx.waitUntil(cleanupPasswordResetFailures(db, now));
+  return c.json(ok({ reset: true as const, recoveryRemaining: remaining }));
+});
+
+app.post("/password-reset/operator", requireTurnstile({ required: true }), async (c) => {
+  const body = operatorPasswordResetRequestSchema.parse(await c.req.json());
+  const ctx = getReqCtx(c);
+  const db = c.env.DB;
+  const now = Math.floor(Date.now() / 1000);
+
+  // トークンは 32 バイト乱数で推測は不可能だが、IP 単位の試行も抑える（失敗はすべて同じ案内）。
+  const ipKey = await passwordResetAttemptKey(c.env.ID_SALT, `operator|${ctx.device.ipHash}`);
+  const failures = await countPasswordResetFailures(db, ipKey, now - PASSWORD_RESET_FAILURE_WINDOW_SECONDS);
+  if (failures >= PASSWORD_RESET_MAX_FAILURES) {
+    throw ApiError.rateLimited("試行回数が多すぎます。しばらく待ってから再試行してください");
+  }
+  const reject = async (): Promise<never> => {
+    await recordPasswordResetFailure(db, ipKey, ulid(), now);
+    c.executionCtx.waitUntil(cleanupPasswordResetFailures(db, now));
+    throw new ApiError(400, ErrorCode.RESET_INVALID, "この URL は無効か、有効期限が切れています");
+  };
+
+  const token = await findPasswordResetToken(db, body.token);
+  if (!token) return reject();
+  // 使用済み・失効・期限切れは同じ案内（URL の状態を区別しない）。
+  if (passwordResetTokenState(token, now) !== "pending") return reject();
+
+  const account = await getAccountRow(db, token.account_id);
+  if (!account) return reject();
+  // 発行後に管理者へ昇格したアカウントのパスワードを古い URL で書き換えられないようにする。
+  if (account.role !== "user") {
+    throw ApiError.forbidden("この URL はこのアカウントには使えません");
+  }
+  if (account.status !== "active") {
+    throw new ApiError(403, ErrorCode.BANNED, "このアカウントは利用停止中です");
+  }
+
+  if (!(await consumePasswordResetToken(db, token.id, now))) return reject();
+
+  const passwordHash = await hashPassword(body.newPassword);
+  await db.prepare("UPDATE accounts SET password_hash = ? WHERE id = ?").bind(passwordHash, account.id).run();
+  const revoked = await revokeAllSessions(db, account.id);
+  // TOTP は残す（次のログインでは TOTP が要る）。
+  await writeAudit(db, {
+    actorType: "account",
+    actorId: account.id,
+    action: "auth.password_reset_operator",
+    target: account.id,
+    detail: { tokenId: token.id, issuedBy: token.issued_by, revokedSessions: revoked },
+  });
+  c.executionCtx.waitUntil(cleanupPasswordResetFailures(db, now));
+  return c.json(ok({ reset: true as const, account: accountDto(account) }));
+});
+
 // --- GitHub OAuth ログイン（未認証） --------------------------------------
 // 連携（WP4）とは別に、確認済みメールでアカウント作成/既存メール紐付けを行ってセッションを発行する。
-
-function requestOrigin(c: { req: { header(name: string): string | undefined }; env: AppEnv["Bindings"] }): string {
-  const origin = c.req.header("origin");
-  if (origin) return origin;
-  const referer = c.req.header("referer");
-  if (referer) {
-    try {
-      return new URL(referer).origin;
-    } catch {
-      // fall through
-    }
-  }
-  return (c.env.ALLOWED_ORIGINS ?? "").split(",")[0]?.trim() ?? "";
-}
 
 app.get("/github/status", (c) => {
   return c.json(ok({ available: githubLoginAvailable(c.env) }));

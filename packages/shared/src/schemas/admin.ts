@@ -167,12 +167,28 @@ export const siteSettingsSchema = z.object({
    */
   "plugin.ai.baseUrl": z.union([z.literal(""), z.string().url().max(500)]),
   "plugin.ai.model": z.string().trim().min(1).max(100),
+  /**
+   * 運営の連絡先メールアドレス（パスワードを忘れた人への案内に出す）。
+   * 空文字なら案内は手順文だけを出す。実際に送るのは所有者のメールソフトから（自動送信はしない）。
+   */
+  "site.operator_contact": z.union([z.literal(""), z.string().email().max(254)]),
 });
 export type SiteSettings = z.infer<typeof siteSettingsSchema>;
 export type SiteSettingKey = keyof SiteSettings;
 
 export const siteSettingsUpdateSchema = siteSettingsSchema.partial();
 export type SiteSettingsUpdate = z.infer<typeof siteSettingsUpdateSchema>;
+
+/**
+ * 公開サイト情報（未認証で参照）。パスワード再設定の案内に運営の連絡先を出すために使う。
+ * 連絡先が未設定なら operatorContact は null。
+ */
+export const publicSiteInfoSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  operatorContact: z.string().email().nullable(),
+});
+export type PublicSiteInfo = z.infer<typeof publicSiteInfoSchema>;
 
 // --- 監査ログ -----------------------------------------------------------
 

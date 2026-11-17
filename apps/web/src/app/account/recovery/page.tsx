@@ -104,7 +104,9 @@ export default function RecoveryPage() {
         </button>
       </form>
       <div className="oc-small oc-muted">
-        コードが残っていない場合は、サイト所有者に TOTP リセットと再招待を依頼してください。
+        パスワードも忘れた場合は{" "}
+        <Link href="/account/password-reset">パスワードを忘れたとき</Link>から、メールアドレスと復旧コードで再設定できます。
+        コードが残っていない場合は、登録したメールアドレスから運営に連絡してください。
       </div>
     </div>
   );

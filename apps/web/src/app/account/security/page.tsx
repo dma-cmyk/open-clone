@@ -6,7 +6,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { SessionInfoView } from "shared";
 import { api, errorMessage } from "../../../features/account/api";
+import { RecoveryCodes } from "../../../features/account/recovery-codes";
 import { useSession } from "../../../features/account/session";
+import { useStepUp } from "../../../features/account/step-up";
 
 export default function SecurityPage() {
   const { state, loading } = useSession();
@@ -14,9 +16,21 @@ export default function SecurityPage() {
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [sessions, setSessions] = useState<SessionInfoView[]>([]);
+  // 復旧コード（パスワードを忘れたときの再設定に使う）
+  const [recoveryRemaining, setRecoveryRemaining] = useState<number | null>(null);
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const stepUp = useStepUp(setError);
+
+  const loadRecovery = useCallback(async () => {
+    const data = await api<{ totp: { recoveryRemaining: number } }>("GET", "/accounts/me");
+    setRecoveryRemaining(data.totp.recoveryRemaining);
+  }, []);
 
   const loadSessions = useCallback(async () => {
     const data = await api<{ items: SessionInfoView[] }>("GET", "/accounts/me/sessions");
@@ -26,7 +40,8 @@ export default function SecurityPage() {
   useEffect(() => {
     if (!state?.authenticated) return;
     loadSessions().catch((err) => setError(errorMessage(err)));
-  }, [state, loadSessions]);
+    loadRecovery().catch(() => setRecoveryRemaining(null));
+  }, [state, loadSessions, loadRecovery]);
 
   if (loading) return <div className="oc-loading">読み込み中…</div>;
   if (!state?.authenticated) {
@@ -36,6 +51,8 @@ export default function SecurityPage() {
       </div>
     );
   }
+
+  const totpEnabled = state.totp.enabled;
 
   const changePassword = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -84,8 +101,30 @@ export default function SecurityPage() {
     }
   };
 
+  const regenerateRecoveryCodes = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setRecoveryError(null);
+    setRecoveryCodes(null);
+    if (!totpEnabled && !recoveryPassword) {
+      setRecoveryError("現在のパスワードを入力してください（TOTP が未設定のため）。");
+      return;
+    }
+    setRecoveryBusy(true);
+    await stepUp.run(async () => {
+      const data = await api<{ recoveryCodes: string[] }>("POST", "/auth/recovery-codes/regenerate", {
+        // TOTP 設定済みで step-up（TOTP コード）を使う場合はパスワード無しでも通る。
+        ...(recoveryPassword ? { password: recoveryPassword } : {}),
+      });
+      setRecoveryCodes(data.recoveryCodes);
+      setRecoveryPassword("");
+      await loadRecovery();
+    });
+    setRecoveryBusy(false);
+  };
+
   return (
     <div className="oc-stack">
+      {stepUp.dialog}
       <h1 style={{ fontSize: 18, margin: 0 }}>セキュリティ</h1>
       {error ? <div className="oc-error">{error}</div> : null}
       {message ? <div className="oc-ok">{message}</div> : null}
@@ -139,6 +178,42 @@ export default function SecurityPage() {
           </div>
           <button type="submit" className="oc-btn oc-btn-primary" disabled={busy}>
             {busy ? "変更中…" : "パスワードを変更"}
+          </button>
+        </form>
+      </section>
+
+      <section className="oc-card oc-stack">
+        <h2 style={{ fontSize: 15, margin: 0 }}>復旧コード（パスワードを忘れたとき）</h2>
+        <p className="oc-small" style={{ margin: 0 }}>
+          復旧コードがあると、パスワードを忘れたときに<b>メールアドレスとコード</b>だけで再設定できます。
+          各コードは 1 回限りです。作り直すと古いコードはすべて無効になります。
+        </p>
+        {recoveryRemaining !== null ? (
+          <p className="oc-small oc-muted" style={{ margin: 0 }}>
+            残りの復旧コード: {recoveryRemaining} 個
+          </p>
+        ) : null}
+        {recoveryError ? <div className="oc-error">{recoveryError}</div> : null}
+        {recoveryCodes ? <RecoveryCodes codes={recoveryCodes} /> : null}
+        <form onSubmit={regenerateRecoveryCodes} className="oc-stack" style={{ maxWidth: 420 }}>
+          <div className="oc-field">
+            <label className="oc-label" htmlFor="recovery-pass">
+              現在のパスワード
+            </label>
+            <input
+              id="recovery-pass"
+              className="oc-input"
+              type="password"
+              autoComplete="current-password"
+              value={recoveryPassword}
+              onChange={(event) => setRecoveryPassword(event.target.value)}
+            />
+            <p className="oc-small oc-muted" style={{ margin: 0 }}>
+              TOTP を設定している場合は、TOTP コードでの再認証でも作成できます（その場合は空欄で実行）。
+            </p>
+          </div>
+          <button type="submit" className="oc-btn" disabled={recoveryBusy}>
+            {recoveryBusy ? "作成中…" : recoveryRemaining ? "復旧コードを作り直す" : "復旧コードを作成する"}
           </button>
         </form>
       </section>
