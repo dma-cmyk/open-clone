@@ -125,7 +125,8 @@ app.post("/register", requireTurnstile({ required: false }), async (c) => {
   if (settings["security.require_turnstile"] === "always" || (settings["security.require_turnstile"] === "auto" && emailFailures >= 3)) {
     requireTurnstileToken(c);
   }
-  if (ipRegistrations >= RATE_LIMITS.register.max) {
+  const registerMax = Number(c.env.RATE_LIMIT_REGISTER_MAX ?? RATE_LIMITS.register.max) || RATE_LIMITS.register.max;
+  if (ipRegistrations >= registerMax) {
     throw ApiError.rateLimited("新規登録の上限に達しました。しばらく待ってから再試行してください");
   }
 

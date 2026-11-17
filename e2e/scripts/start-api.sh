@@ -82,6 +82,8 @@ if [ "${E2E_RATE_LIMIT_RELAX:-1}" = "1" ]; then
   RELAX_MULTIPLIER="${E2E_RATE_LIMIT_READ_MULTIPLIER:-10}"
   EXTRA_VARS+=(--var "RATE_LIMIT_READ_MULTIPLIER:$RELAX_MULTIPLIER")
   echo "[e2e] 読み取り系レート制限を緩和: x$RELAX_MULTIPLIER"
+  # 新規登録の 5 回/日/IP も、spec が増えると同じ 127.0.0.1 で取り合って 429 になる（CI の token.spec 等）。
+  EXTRA_VARS+=(--var "RATE_LIMIT_REGISTER_MAX:${E2E_RATE_LIMIT_REGISTER_MAX:-200}")
 fi
 
 echo "[e2e] wrangler dev :$PORT (ALLOWED_ORIGINS=$ORIGINS)"

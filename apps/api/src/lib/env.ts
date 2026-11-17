@@ -24,6 +24,11 @@ export interface Env {
    * E2E は全ブラウザ操作が 127.0.0.1 に集約されるため、`start-api.sh` が E2E 実行時のみ 10 を渡す。
    */
   RATE_LIMIT_READ_MULTIPLIER?: string;
+  /**
+   * 新規登録の IP あたり上限（E2E 専用。未設定 = RATE_LIMITS.register.max で本番どおり）。
+   * E2E は全登録が 127.0.0.1 に集約され、spec が増えると 5 回/日を取り合うため `start-api.sh` が緩める。
+   */
+  RATE_LIMIT_REGISTER_MAX?: string;
 
   // --- WP4（アップローダ / GitHub 連携）任意キー ---
   // 実行時は `services/env-secrets.ts` の `readEnvSecret()` / `baseUrlOf()` が読む。
