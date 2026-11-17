@@ -44,6 +44,35 @@ app.get("/me", requireAuth, async (c) => {
   return c.json(ok({ profile, totp }));
 });
 
+/**
+ * 自分がスタッフを務める板（ツアーの一覧が「板の管理」を出してよいかの判定に使う）。
+ * 削除板は一覧に出さない（K2: 一般の閲覧 API と同じ扱い）。並びは管理画面を開く順の基準になるため、
+ * 権限の強い順（管理人→副管理人→モデレーター）、同じなら更新の新しい順にする。
+ */
+app.get("/me/boards", requireAuth, async (c) => {
+  const ctx = getReqCtx(c);
+  if (!ctx.session) throw ApiError.unauthorized();
+  const result = await c.env.DB.prepare(
+    `SELECT b.slug, b.name, s.level
+       FROM board_staff s
+       JOIN boards b ON b.id = s.board_id
+      WHERE s.account_id = ? AND b.status = 'active'
+      ORDER BY CASE s.level WHEN 'admin' THEN 0 WHEN 'deputy' THEN 1 ELSE 2 END,
+               COALESCE(b.last_post_at, b.created_at) DESC, b.id DESC`,
+  )
+    .bind(ctx.session.account.id)
+    .all<{ slug: string; name: string; level: string }>();
+  return c.json(
+    ok({
+      items: result.results.map((row) => ({
+        slug: row.slug,
+        name: row.name,
+        level: row.level === "admin" ? ("admin" as const) : row.level === "deputy" ? ("deputy" as const) : ("moderator" as const),
+      })),
+    }),
+  );
+});
+
 app.patch("/me", requireAuth, async (c) => {
   const ctx = getReqCtx(c);
   if (!ctx.session) throw ApiError.unauthorized();

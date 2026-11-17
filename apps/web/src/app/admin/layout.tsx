@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 import type { SessionState } from "shared";
 import { api } from "../../features/account/api";
 import { LogoutButton } from "../../features/account/logout-button";
-import { TourHost, setTourContext, startTour } from "../../features/site-tour";
+import { TourHost, setTourContext, setTourContextPending, startTour } from "../../features/site-tour";
 
 const PUBLIC_PATHS = ["/admin/invites/accept", "/admin/owner/setup"];
 
@@ -51,6 +51,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     setTourContext({ siteOwner: tourRole === "owner", siteSpecialAdmin: tourRole === "special_admin" });
   }, [tourRole]);
+
+  // セッションを読んでいる間は「権限不足」と取り違えないよう、ツアーの開始要求を保留する
+  // （ヘルプの一覧から来た予約も、読み込み後に開始する。K3 と同じ扱い）。
+  useEffect(() => {
+    setTourContextPending(!isPublic && loading);
+    return () => setTourContextPending(false);
+  }, [isPublic, loading]);
 
   useEffect(() => {
     if (isPublic) {

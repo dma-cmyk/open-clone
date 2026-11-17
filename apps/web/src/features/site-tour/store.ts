@@ -8,6 +8,7 @@
 // - 画面（URL）が変わったらツアーを終了する。
 
 import { resolveSteps, tourDefinitionOf, TOUR_DEFINITIONS } from "./steps";
+import { readPendingStart, writePendingStart, type PendingTourStart } from "./pending-start";
 import type { TourPageKey, TourStep } from "./types";
 
 const INTRO_KEY = "oc.tour.intro.v1";
@@ -75,6 +76,41 @@ export function resetTourContext(): void {
 
 export function tourContext(): TourContext {
   return context;
+}
+
+/** 画面が権限を読み込み中か（開始予約の待ち合わせ・開始可否の判断に使う）。 */
+export function isTourContextPending(): boolean {
+  return contextPending;
+}
+
+/**
+ * 画面をまたぐツアーの開始を予約する（ヘルプのツアー一覧から使う）。
+ * 呼び出し側はこの直後に移動する。移動先の `TourHost` が準備を待って開始する
+ * （時間切れ・権限不足ならヘルプの該当節へ）。詳細は `pending-start.ts`。
+ */
+export function reserveTourStart(page: TourPageKey): void {
+  if (typeof window === "undefined") return;
+  writePendingStart(window.sessionStorage, page, Date.now());
+}
+
+/** その画面のツアーが失敗したときに案内するヘルプ（予約の破棄先）。 */
+export function tourHelpHref(page: TourPageKey): string {
+  const definition = tourDefinitionOf(page);
+  if (definition.helpPath.includes("#")) return definition.helpPath;
+  // 見出しだけのヘルプ（/help/admin/ など）は、最初の手順の節へ送る。
+  const anchor = definition.steps[0]?.helpAnchor;
+  return anchor ? `${definition.helpPath}${anchor}` : definition.helpPath;
+}
+
+/** 保存されている開始予約（`TourHost` が移動先で受け取る）。 */
+export function pendingTourStart(): PendingTourStart | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return readPendingStart(window.sessionStorage);
+  } catch {
+    // ストレージに触れない環境（プライベートモード等）では予約なしとして扱う。
+    return null;
+  }
 }
 
 export interface TourState {
@@ -214,6 +250,15 @@ export function tourNext(): void {
 export function tourPrev(): void {
   if (state.page === null || state.index === 0) return;
   state = { ...state, index: state.index - 1 };
+  emit();
+}
+
+/** 目次から指定の手順へ移る（範囲外・同じ手順なら何もしない）。 */
+export function tourGoTo(index: number): void {
+  if (state.page === null) return;
+  if (!Number.isInteger(index) || index < 0 || index >= state.steps.length) return;
+  if (index === state.index) return;
+  state = { ...state, index };
   emit();
 }
 
