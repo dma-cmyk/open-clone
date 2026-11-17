@@ -296,6 +296,9 @@ export default function PluginEditorPage() {
   async function save() {
     setError(null);
     setNotice(null);
+    // セッション未確定では匿名の scope 制限（personal のみ）が UI に効かないため、
+    // そのまま保存すると 403 FORBIDDEN になる。確定を待たせる。
+    if (!sessionLoaded) return;
     if (!manifestResult.manifest) {
       setError(manifestResult.error ?? "manifest が不正です");
       return;
@@ -565,7 +568,7 @@ export default function PluginEditorPage() {
           <div data-tour="plugin-editor-actions">
           <Card>
             <div className="oc-row">
-              <button type="button" className="oc-btn oc-btn-primary" onClick={() => void save()} disabled={saving}>
+              <button type="button" className="oc-btn oc-btn-primary" onClick={() => void save()} disabled={saving || !sessionLoaded}>
                 {pluginId ? "新バージョンを保存" : "保存（下書き）"}
               </button>
               <button

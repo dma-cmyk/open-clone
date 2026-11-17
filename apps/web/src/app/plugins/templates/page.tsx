@@ -200,6 +200,10 @@ export default function PluginTemplatesPage() {
 
   async function save() {
     if (!template) return;
+    // セッション未確定のまま保存すると、匿名の scope 絞り込み（personal のみ）が効かず
+    // API が 403 を返す（CI で発覚。session 取得が数百 ms 遅い環境で起きる）。
+    // 読み込み中は何もしない（保存ボタンも無効化している）。
+    if (!sessionLoaded) return;
     setBusy(true);
     setError(null);
     setNeedLogin(false);
@@ -245,6 +249,8 @@ export default function PluginTemplatesPage() {
 
   function handoffToEditor() {
     if (!template) return;
+    // セッション未確定では匿名の scope 正規化（R42-07）ができないため待たせる。
+    if (!sessionLoaded) return;
     // 保存（`save` → `prepare`）と同じ `draftOnly` を通す。必須項目が空なら
     // 既定値で埋めて遷移せず、フォーム上に保存時と同じエラーを表示する（UI Low-2）。
     const draft = draftOnly();
@@ -390,7 +396,7 @@ export default function PluginTemplatesPage() {
               <button type="button" className="oc-btn oc-btn-primary" onClick={() => void preview()} disabled={busy}>
                 プレビュー
               </button>
-              <button type="button" className="oc-btn" onClick={handoffToEditor} disabled={busy}>
+              <button type="button" className="oc-btn" onClick={handoffToEditor} disabled={busy || !sessionLoaded}>
                 コードを見る・手で編集する
               </button>
               <button type="button" className="oc-btn" onClick={resetWizard} disabled={busy}>
@@ -475,7 +481,7 @@ export default function PluginTemplatesPage() {
                   type="button"
                   className="oc-btn oc-btn-primary oc-btn-block"
                   onClick={() => void save()}
-                  disabled={busy}
+                  disabled={busy || !sessionLoaded}
                 >
                   自分用に導入して保存
                 </button>
