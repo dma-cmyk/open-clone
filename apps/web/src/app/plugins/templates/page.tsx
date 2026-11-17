@@ -30,6 +30,7 @@ import {
 } from "@/features/plugin-templates";
 import { PluginApiError, pluginApi } from "@/features/plugin-host";
 import { useSession } from "@/features/account/session";
+import { clearQueuedTour, setTourContextPending } from "@/features/site-tour";
 import {
   Badge,
   Card,
@@ -55,6 +56,21 @@ export default function PluginTemplatesPage() {
   // R42-07: 読み込み中（session === null）は匿名確定と扱わない
   const sessionLoaded = session !== null;
   const anonymous = sessionLoaded && !loggedIn;
+  // セッションが確定するまではツアー開始を保留する（読み込み中に押してもヘルプへ飛ばさない）。
+  useEffect(() => {
+    if (!sessionLoaded) {
+      setTourContextPending(true);
+      return;
+    }
+    setTourContextPending(false);
+  }, [sessionLoaded]);
+  useEffect(
+    () => () => {
+      clearQueuedTour();
+      setTourContextPending(false);
+    },
+    [],
+  );
   const [step, setStep] = useState<Step>("select");
   const [template, setTemplate] = useState<PluginTemplateDefinition | null>(null);
   const [formState, setFormState] = useState<FormState>({});
@@ -273,7 +289,7 @@ export default function PluginTemplatesPage() {
       title="テンプレートから作る"
       description="フォームに言葉や数字を入れるだけで、自分だけのプラグインが作れます。コードを書く必要はありません。"
       actions={
-        <a href="/plugins/new/" className="oc-btn">
+        <a href="/plugins/new/" className="oc-btn" data-tour="plugin-templates-code-link">
           コードを直接書く
         </a>
       }
@@ -289,15 +305,18 @@ export default function PluginTemplatesPage() {
         {notice ? <Notice tone="ok">{notice}</Notice> : null}
       </div>
       {/* 報告 40: 匿名でも保存できる前提の案内（保存ボタンの近くに常に表示） */}
-      <Notice tone="warn">
-        ログインせずに保存したプラグインは、このブラウザでだけ編集できます。Cookie
-        を消すと編集できなくなります。公開申請や板への導入にはアカウントが必要です（
-        <a href="/account/login">ログイン</a>
-        すると引き継げます）。
-      </Notice>
+      <div data-tour="plugin-templates-anon-note">
+        <Notice tone="warn">
+          ログインせずに保存したプラグインは、このブラウザでだけ編集できます。Cookie
+          を消すと編集できなくなります。公開申請や板への導入にはアカウントが必要です（
+          <a href="/account/login">ログイン</a>
+          すると引き継げます）。
+        </Notice>
+      </div>
 
       {step === "select" ? (
         <>
+          <div data-tour="plugin-templates-pick">
           <Card title="テンプレートを選ぶ">
             {PLUGIN_TEMPLATES.length === 0 ? (
               <p className="oc-empty">テンプレートを準備中です。しばらくお待ちください。</p>
@@ -333,16 +352,20 @@ export default function PluginTemplatesPage() {
                 })}
               </div>
             )}
-            <p className="oc-note" style={{ marginTop: 8 }}>
-              作ったプラグインは、まず自分用（このブラウザだけ）に導入されます。板・サイト全体への公開は、
-              保存後の詳細画面から申請できます。
-            </p>
+            <div data-tour="plugin-templates-note">
+              <p className="oc-note" style={{ marginTop: 8 }}>
+                作ったプラグインは、まず自分用（このブラウザだけ）に導入されます。板・サイト全体への公開は、
+                保存後の詳細画面から申請できます。
+              </p>
+            </div>
           </Card>
+          </div>
         </>
       ) : null}
 
       {step === "edit" && template ? (
         <>
+          <div data-tour="plugin-templates-form">
           <Card
             title={`設定: ${template.label}`}
             actions={
@@ -380,9 +403,11 @@ export default function PluginTemplatesPage() {
               </p>
             ) : null}
           </Card>
+          </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
             <div style={{ flex: "1 1 420px", minWidth: 280 }}>
+              <div data-tour="plugin-templates-preview">
               <Card title="プレビュー">
                 {generated ? (
                   <TemplatePreview
@@ -398,6 +423,7 @@ export default function PluginTemplatesPage() {
                   </p>
                 )}
               </Card>
+              </div>
             </div>
 
             <div style={{ flex: "1 1 320px", minWidth: 280 }}>
@@ -439,6 +465,7 @@ export default function PluginTemplatesPage() {
                 )}
               </Card>
 
+              <div data-tour="plugin-templates-save">
               <Card title="保存">
                 <p className="oc-muted oc-small" style={{ marginTop: 0 }}>
                   保存すると、非公開のプラグインとして登録され、このブラウザに個人用として導入されます。
@@ -453,6 +480,7 @@ export default function PluginTemplatesPage() {
                   自分用に導入して保存
                 </button>
               </Card>
+              </div>
             </div>
           </div>
         </>

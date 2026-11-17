@@ -4,8 +4,9 @@
 // 静的エクスポート制約（DESIGN §A-2）のため `/b/[slug]/plugins` ではなく
 // `/plugins/board/?slug=<板スラッグ>` で板を指定する（板ページからリンクする）。
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { pluginApi } from "@/features/plugin-host";
+import { clearQueuedTour, setTourContext, setTourContextPending } from "@/features/site-tour";
 import {
   Badge,
   Card,
@@ -17,6 +18,9 @@ import {
   useQueryParam,
   ui,
 } from "../_shared";
+
+// サーバー側では useEffect に落とす（useLayoutEffect の SSR 警告を出さない）。
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 interface BoardInfo {
   id: number;
@@ -43,6 +47,9 @@ interface BoardInstall {
 export default function BoardPluginsPage() {
   const slugParam = useQueryParam("slug");
   const boardIdParam = useQueryParam("boardId");
+  // useQueryParam はマウント後に値を返す。初回の null を「slug 無し」と取り違えない。
+  const [paramReady, setParamReady] = useState(false);
+  useEffect(() => setParamReady(true), []);
 
   const [board, setBoard] = useState<BoardInfo | null>(null);
   const [manualBoardId, setManualBoardId] = useState("");
@@ -51,12 +58,19 @@ export default function BoardPluginsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // ツアーを始めてよいか（その板の管理人か）。板 API の canManage で決める。
+  const [tourPermission, setTourPermission] = useState<"loading" | "allowed" | "denied">("loading");
 
   const boardId = board?.id ?? (boardIdParam ? Number.parseInt(boardIdParam, 10) : null);
 
   // slug → 板情報（WP1 の /v1/boards/:slug を利用。未実装時は板 ID を手入力）
   useEffect(() => {
-    if (!slugParam) return;
+    if (!paramReady) return;
+    if (!slugParam) {
+      // 板 ID の手入力だけでは権限を確認できないため、ツアーは出さない。
+      setTourPermission("denied");
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
@@ -70,12 +84,19 @@ export default function BoardPluginsPage() {
           throw new Error("板 API の応答が不正です");
         }
         // `/v1/boards/:slug` は `{ board, staff, canManage, ... }` を返す（板そのものは data.board）。
-        const envelopeData = envelope.data as { board?: unknown; id?: unknown; slug?: unknown; name?: unknown };
+        const envelopeData = envelope.data as {
+          board?: unknown;
+          id?: unknown;
+          slug?: unknown;
+          name?: unknown;
+          canManage?: unknown;
+        };
         const data = (
           envelopeData.board && typeof envelopeData.board === "object" ? envelopeData.board : envelopeData
         ) as { id?: unknown; slug?: unknown; name?: unknown };
         if (typeof data.id !== "number") throw new Error("板 ID を取得できませんでした");
         if (!cancelled) {
+          setTourPermission(envelopeData.canManage === true ? "allowed" : "denied");
           setBoard({
             id: data.id,
             slug: typeof data.slug === "string" ? data.slug : slugParam,
@@ -83,13 +104,16 @@ export default function BoardPluginsPage() {
           });
         }
       } catch (caught) {
-        if (!cancelled) setError(errorText(caught));
+        if (!cancelled) {
+          setTourPermission("denied");
+          setError(errorText(caught));
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [slugParam]);
+  }, [paramReady, slugParam]);
 
   const load = useCallback(async () => {
     if (!boardId || !Number.isInteger(boardId)) {
@@ -111,6 +135,24 @@ export default function BoardPluginsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 権限が分かるまでは開始要求を保留する（読み込み中に押してもヘルプへ飛ばさない）。
+  useIsomorphicLayoutEffect(() => {
+    if (tourPermission === "loading") {
+      setTourContextPending(true);
+      return;
+    }
+    setTourContext({ canManageBoard: tourPermission === "allowed" });
+    setTourContextPending(false);
+  }, [tourPermission]);
+  useEffect(
+    () => () => {
+      clearQueuedTour();
+      setTourContextPending(false);
+      setTourContext({ canManageBoard: false });
+    },
+    [],
+  );
 
   async function run(action: () => Promise<string>): Promise<void> {
     setError(null);
@@ -136,6 +178,7 @@ export default function BoardPluginsPage() {
       {error ? <Notice tone="danger">{error}</Notice> : null}
       {notice ? <Notice tone="ok">{notice}</Notice> : null}
 
+      <div data-tour="plugins-board-target">
       <Card title="対象の板">
         {board ? (
           <p>
@@ -172,9 +215,11 @@ export default function BoardPluginsPage() {
           </>
         )}
       </Card>
+      </div>
 
       {boardId ? (
         <>
+          <div data-tour="plugins-board-install">
           <Card title="プラグインを導入">
             <div style={{ ...ui.row, alignItems: "flex-end" }}>
               <div style={{ flex: 1 }}>
@@ -208,7 +253,9 @@ export default function BoardPluginsPage() {
               板用の導入には板管理人（admin）権限が必要です。導入操作は承認として記録されます。
             </p>
           </Card>
+          </div>
 
+          <div data-tour="plugins-board-installed">
           <Card title={`この板のプラグイン（${installs.length}）`}>
             {loading ? <p className="oc-muted oc-small">読み込み中…</p> : null}
             {!loading && installs.length === 0 ? (
@@ -260,6 +307,7 @@ export default function BoardPluginsPage() {
               ))}
             </ul>
           </Card>
+          </div>
         </>
       ) : (
         <Card title="板を指定してください">

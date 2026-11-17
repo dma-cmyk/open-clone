@@ -19,6 +19,7 @@ import {
 } from "shared";
 import { PluginPreview, pluginApi } from "@/features/plugin-host";
 import { useSession } from "@/features/account/session";
+import { clearQueuedTour, setTourContextPending } from "@/features/site-tour";
 import { takeTemplateDraft } from "@/features/plugin-templates";
 import { PLUGIN_TEMPLATES } from "../_examples";
 import {
@@ -109,6 +110,22 @@ export default function PluginEditorPage() {
   const sessionLoaded = session !== null;
   const loggedIn = session?.authenticated === true;
   const anonymous = sessionLoaded && !loggedIn;
+  // セッション（と ?id= の読み込み）が終わるまでは、ツアー開始を保留する。
+  const tourReady = sessionLoaded && !loading;
+  useEffect(() => {
+    if (!tourReady) {
+      setTourContextPending(true);
+      return;
+    }
+    setTourContextPending(false);
+  }, [tourReady]);
+  useEffect(
+    () => () => {
+      clearQueuedTour();
+      setTourContextPending(false);
+    },
+    [],
+  );
   const renderRules = useMemo<{ rules: PluginPostRenderRule[]; error: string | null }>(() => {
     try {
       const parsed: unknown = JSON.parse(renderText || "[]");
@@ -373,16 +390,19 @@ export default function PluginEditorPage() {
       {loading ? <p className="oc-muted oc-small">読み込み中…</p> : null}
       {/* 報告 40: 匿名でも保存できる前提の案内（保存ボタンの近くに常に表示） */}
       {!loggedIn ? (
-        <Notice tone="warn">
-          ログインせずに保存したプラグインは、このブラウザでだけ編集できます。Cookie
-          を消すと編集できなくなります。公開申請や板への導入にはアカウントが必要です（
-          <a href="/account/login">ログイン</a>
-          すると引き継げます）。
-        </Notice>
+        <div data-tour="plugin-editor-anon-note">
+          <Notice tone="warn">
+            ログインせずに保存したプラグインは、このブラウザでだけ編集できます。Cookie
+            を消すと編集できなくなります。公開申請や板への導入にはアカウントが必要です（
+            <a href="/account/login">ログイン</a>
+            すると引き継げます）。
+          </Notice>
+        </div>
       ) : null}
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
         <div style={{ flex: "1 1 460px", minWidth: 320 }}>
+          <div data-tour="plugin-editor-manifest">
           <Card title="manifest">
             <div style={{ display: "flex", gap: 8 }}>
               <div style={{ flex: 1 }}>
@@ -525,7 +545,9 @@ export default function PluginEditorPage() {
             {renderRules.error ? <Notice tone="danger">{renderRules.error}</Notice> : null}
             {manifestResult.error ? <Notice tone="danger">{manifestResult.error}</Notice> : null}
           </Card>
+          </div>
 
+          <div data-tour="plugin-editor-code">
           <Card
             title="コード（plugin.js）"
             actions={<span className="oc-muted oc-small">{new TextEncoder().encode(code).byteLength} bytes</span>}
@@ -538,7 +560,9 @@ export default function PluginEditorPage() {
               basicSetup={{ lineNumbers: true, foldGutter: false, highlightActiveLine: true }}
             />
           </Card>
+          </div>
 
+          <div data-tour="plugin-editor-actions">
           <Card>
             <div className="oc-row">
               <button type="button" className="oc-btn oc-btn-primary" onClick={() => void save()} disabled={saving}>
@@ -574,6 +598,7 @@ export default function PluginEditorPage() {
               </p>
             ) : null}
           </Card>
+          </div>
 
           {checkResult ? (
             <Card title="静的検査の結果">
@@ -605,6 +630,7 @@ export default function PluginEditorPage() {
         </div>
 
         <div style={{ flex: "1 1 380px", minWidth: 300 }}>
+          <div data-tour="plugin-editor-preview">
           <Card
             title="プレビュー（sandbox）"
             actions={
@@ -658,6 +684,7 @@ export default function PluginEditorPage() {
               </ul>
             </div>
           </Card>
+          </div>
 
           <Card title="ヒント">
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#444" }}>

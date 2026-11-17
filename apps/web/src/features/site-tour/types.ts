@@ -10,7 +10,14 @@ export type TourPageKey =
   | "admin"
   | "manage"
   | "help"
-  | "help-admin";
+  | "help-admin"
+  | "plugins"
+  | "plugin-new"
+  | "plugin-templates"
+  | "plugin-view"
+  | "plugins-board"
+  | "plugins-review"
+  | "plugin-tokens";
 
 export interface TourStep {
   /** 手順の識別子（テスト・計測用）。 */
@@ -33,7 +40,7 @@ export interface TourStep {
    * この手順を案内してよい権限（レビュー 52 / T04・T09）。
    * 画面側が `setTourContext` で知らせた実際の権限で判定する。
    */
-  requires?: "boardStaff" | "boardAdmin" | "siteAdmin" | "siteOwner";
+  requires?: "boardStaff" | "boardAdmin" | "siteAdmin" | "siteOwner" | "pluginAuthor";
 }
 
 /**

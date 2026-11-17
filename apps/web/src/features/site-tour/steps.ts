@@ -3,6 +3,7 @@
 // できる操作）に限定する。存在しない機能・未実装の操作は書かない。
 
 import type { TourDefinition, TourPageKey, TourStep } from "./types";
+import { PLUGIN_TOUR_DEFINITIONS } from "./steps-plugins";
 
 /** 一般向けヘルプの節（`/help/`。アンカーは設計 50 で固定）。 */
 const HELP = "/help/";
@@ -434,6 +435,7 @@ export const TOUR_DEFINITIONS: Record<TourPageKey, TourDefinition> = {
   manage: MANAGE,
   help: HELP_PAGE,
   "help-admin": HELP_ADMIN_PAGE,
+  ...PLUGIN_TOUR_DEFINITIONS,
 };
 
 /** その画面のツアー定義（未対応の画面は null）。 */
@@ -449,7 +451,13 @@ export function tourDefinitionOf(key: TourPageKey): TourDefinition {
 export function resolveSteps(
   definition: TourDefinition,
   isVisible: (selector: string) => boolean,
-  context: { boardStaff?: boolean; canManageBoard?: boolean; siteOwner?: boolean; siteSpecialAdmin?: boolean } = {},
+  context: {
+    boardStaff?: boolean;
+    canManageBoard?: boolean;
+    siteOwner?: boolean;
+    siteSpecialAdmin?: boolean;
+    pluginAuthor?: boolean;
+  } = {},
 ): TourStep[] {
   const allowed = (step: TourStep): boolean => {
     switch (step.requires) {
@@ -461,6 +469,8 @@ export function resolveSteps(
         return Boolean(context.siteOwner || context.siteSpecialAdmin);
       case "siteOwner":
         return Boolean(context.siteOwner);
+      case "pluginAuthor":
+        return Boolean(context.pluginAuthor);
       default:
         return true;
     }
