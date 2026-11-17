@@ -5,7 +5,6 @@
 import { z } from "zod";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "../constants";
 import { recoveryCodeSchema } from "./auth";
-import { accountSchema } from "./account";
 
 /** 「パスワードを忘れた」画面: メール＋復旧コード＋新しいパスワード。 */
 export const passwordResetRequestSchema = z.object({
@@ -36,7 +35,8 @@ export type OperatorPasswordResetRequest = z.infer<typeof operatorPasswordResetR
 
 export const operatorPasswordResetResultSchema = z.object({
   reset: z.literal(true),
-  account: accountSchema,
+  /** 画面で表示する最小限（表示名のみ。メール・ID・ロールなどは返さない） */
+  accountName: z.string()
 });
 export type OperatorPasswordResetResult = z.infer<typeof operatorPasswordResetResultSchema>;
 

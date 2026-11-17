@@ -214,6 +214,39 @@ describe("復旧コードでパスワードを再設定（①）", () => {
     expect(withTotp.status).toBe(200);
   });
 
+  it("メールの大文字・小文字を変えても対象単位の試行制限を迂回できない（照合と同じ正規化）", async () => {
+    const email = "reset-case@example.com";
+    const mixed = "Reset-Case@Example.COM";
+    await registerWithCodes(email, "case-password-1234", "10.47.0.1");
+
+    // 大文字違いでも同じアカウントを引ける（既存のログインを壊さない）
+    const login = await loginUser(mixed, "case-password-1234", undefined, "10.47.0.2");
+    expect(login.status).toBe(200);
+
+    // 誤ったコードを大文字違いのメールで 10 回。IP は毎回変えてログイン枠を避け、
+    // 対象単位の枠だけが共有されることを確かめる。
+    const variants = [email, mixed, "RESET-CASE@example.com"];
+    for (let i = 0; i < 10; i += 1) {
+      const attempt = await call("POST", "/v1/auth/password-reset", {
+        body: {
+          email: variants[i % variants.length]!,
+          code: `AAAAAA-BBBBBB-CCCCCC-DDDDD${i}`,
+          newPassword: "case-new-password-1234",
+        },
+        headers: TURNSTILE,
+        ip: `10.47.1.${i + 1}`,
+      });
+      expect(attempt.status).toBe(400);
+      expect(attempt.errorCode).toBe("RESET_INVALID");
+    }
+    const blocked = await call("POST", "/v1/auth/password-reset", {
+      body: { email, code: "AAAAAA-BBBBBB-CCCCCC-DDDDDD", newPassword: "case-new-password-1234" },
+      headers: TURNSTILE,
+      ip: "10.47.2.1",
+    });
+    expect(blocked.status).toBe(429);
+  });
+
   it("復旧コードの作成・作り直しは再認証が必要（TOTP 未設定なら現在のパスワード）", async () => {
     const email = "reset-regen@example.com";
     const password = "regen-password-1234";
@@ -468,6 +501,31 @@ describe("運営による再設定 URL（②）", () => {
       ip: "10.55.0.3",
     });
     expect(refused.status).toBe(403);
+  });
+
+  it("URL での再設定の成功応答にメール・ID などの個人情報を含めない", async () => {
+    const email = "operator-pii@example.com";
+    const user = await registerWithCodes(email, "pii-password-1234", "10.56.0.1");
+    await stepUp(owner.cookie, owner.secret);
+    const issued = await call<{ token: string }>("POST", "/v1/admin/password-resets", {
+      cookie: owner.cookie,
+      body: { accountId: user.accountId },
+      headers: TURNSTILE,
+      ip: "10.56.0.2",
+    });
+    expect(issued.status).toBe(201);
+    const consumed = await call<{ reset: boolean; accountName: string }>("POST", "/v1/auth/password-reset/operator", {
+      body: { token: issued.data!.token, newPassword: "pii-new-password-1234" },
+      headers: TURNSTILE,
+      ip: "10.56.0.3",
+    });
+    expect(consumed.status).toBe(200);
+    // 画面が必要とする表示名だけ（メール・ID・ロール・アカウント DTO は返さない）
+    expect(consumed.data).toEqual({ reset: true, accountName: "復旧テスト" });
+    const text = JSON.stringify(consumed.body);
+    expect(text).not.toContain(email);
+    expect(text).not.toContain(user.accountId);
+    expect(text).not.toContain('"account"');
   });
 
   it("公開サイト情報に運営の連絡先を出す（未設定なら null）", async () => {

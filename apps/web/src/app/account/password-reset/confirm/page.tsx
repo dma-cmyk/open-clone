@@ -59,7 +59,7 @@ export default function PasswordResetConfirmPage() {
     return (
       <div className="oc-stack" style={{ maxWidth: 460 }}>
         <div className="oc-ok">
-          {result.account.name} のパスワードを再設定しました。新しいパスワードでログインしてください。
+          {result.accountName} のパスワードを再設定しました。新しいパスワードでログインしてください。
         </div>
         <div className="oc-card oc-small">
           <p style={{ margin: 0 }}>

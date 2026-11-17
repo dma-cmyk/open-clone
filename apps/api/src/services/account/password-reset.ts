@@ -3,10 +3,11 @@
 // 生のメールは保存せず、auth_attempts と同じく HMAC(ID_SALT, ...) を使う。
 
 import { hmacSha256Hex, randomToken, sha256Hex, ulid } from "shared";
+import { normalizeEmail } from "../../lib/email";
 
-/** 対象の識別子（存在するアカウントは account id、存在しないメールは正規化したメール）。 */
-export function passwordResetTargetKey(identifier: string): string {
-  return `pwreset:${identifier.trim().toLowerCase()}`;
+/** 対象の識別子（存在しないメールは正規化したメール。ログインの照合と同じ正規化を使う）。 */
+function passwordResetTargetKey(identifier: string): string {
+  return `pwreset:${normalizeEmail(identifier)}`;
 }
 
 export async function passwordResetAttemptKey(idSalt: string, identifier: string): Promise<string> {

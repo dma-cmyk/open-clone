@@ -161,22 +161,22 @@
 | GET | `/webhooks/:id/deliveries` | `requireAuth` | `ai.ts` | 1086 |
 | GET | `/metrics` | `requireAuth` | `ai.ts` | 1094 |
 | GET | `/actions` | `requireAuth` | `ai.ts` | 1100 |
-| POST | `/register` | `requireTurnstile` | `auth.ts` | 101 |
-| POST | `/login` | `requireTurnstile` | `auth.ts` | 174 |
-| POST | `/logout` | — | `auth.ts` | 257 |
-| GET | `/session` | `requireAuth` | `auth.ts` | 264 |
-| GET | `/totp/status` | `requireAuth` | `auth.ts` | 273 |
-| POST | `/totp/setup` | `requireAuth` | `auth.ts` | 279 |
-| POST | `/totp/enable` | `requireAuth` | `auth.ts` | 286 |
-| POST | `/totp/disable` | `requireAuth` | `auth.ts` | 300 |
-| POST | `/recovery-codes/regenerate` | `requireAuth` | `auth.ts` | 314 |
-| POST | `/recovery` | `requireTurnstile` | `auth.ts` | 353 |
-| POST | `/password-reset` | `requireTurnstile` | `auth.ts` | 409 |
-| POST | `/password-reset/operator` | `requireTurnstile` | `auth.ts` | 473 |
-| GET | `/github/status` | — | `auth.ts` | 526 |
-| GET | `/github/start` | — | `auth.ts` | 530 |
-| POST | `/github/callback` | — | `auth.ts` | 536 |
-| POST | `/step-up` | `requireAuth` | `auth.ts` | 571 |
+| POST | `/register` | `requireTurnstile` | `auth.ts` | 107 |
+| POST | `/login` | `requireTurnstile` | `auth.ts` | 185 |
+| POST | `/logout` | — | `auth.ts` | 268 |
+| GET | `/session` | `requireAuth` | `auth.ts` | 275 |
+| GET | `/totp/status` | `requireAuth` | `auth.ts` | 284 |
+| POST | `/totp/setup` | `requireAuth` | `auth.ts` | 290 |
+| POST | `/totp/enable` | `requireAuth` | `auth.ts` | 297 |
+| POST | `/totp/disable` | `requireAuth` | `auth.ts` | 311 |
+| POST | `/recovery-codes/regenerate` | `requireAuth` | `auth.ts` | 325 |
+| POST | `/recovery` | `requireTurnstile` | `auth.ts` | 364 |
+| POST | `/password-reset` | `requireTurnstile` | `auth.ts` | 420 |
+| POST | `/password-reset/operator` | `requireTurnstile` | `auth.ts` | 485 |
+| GET | `/github/status` | — | `auth.ts` | 539 |
+| GET | `/github/start` | — | `auth.ts` | 543 |
+| POST | `/github/callback` | — | `auth.ts` | 549 |
+| POST | `/step-up` | `requireAuth` | `auth.ts` | 584 |
 | GET | `/` | — | `boards.ts` | 44 |
 | POST | `/` | `requireAuth` | `boards.ts` | 100 |
 | GET | `/:slug` | — | `boards.ts` | 171 |
@@ -6334,65 +6334,13 @@
       "type": "boolean",
       "const": true
     },
-    "account": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 26,
-          "maxLength": 26
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "email": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "email",
-              "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "role": {
-          "type": "string",
-          "enum": [
-            "owner",
-            "special_admin",
-            "user"
-          ]
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "active",
-            "suspended"
-          ]
-        },
-        "createdAt": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "email",
-        "role",
-        "status",
-        "createdAt"
-      ]
+    "accountName": {
+      "type": "string"
     }
   },
   "required": [
     "reset",
-    "account"
+    "accountName"
   ]
 }
 ```

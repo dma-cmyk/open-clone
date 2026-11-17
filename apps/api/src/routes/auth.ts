@@ -27,6 +27,7 @@ import {
 import type { AppEnv } from "../lib/env";
 import { getReqCtx } from "../lib/context";
 import { writeAudit } from "../lib/audit";
+import { normalizeEmail } from "../lib/email";
 import { requireAuth } from "../lib/middleware/auth";
 import { requireTurnstile } from "../lib/middleware/turnstile";
 import { requestOrigin } from "../lib/middleware/origin";
@@ -88,11 +89,16 @@ function requireTurnstileToken(c: { req: { header(name: string): string | undefi
 }
 
 async function loadAccountByEmail(db: D1Database, email: string): Promise<AccountRow | null> {
+  // 大文字・小文字の違いで同じアカウントを引けるようにする（試行制限の鍵と同じ正規化）。
+  // 既存データに大文字違いの重複があっても、入力と完全一致する行を優先する（既存のログインを壊さない）。
   return db
     .prepare(
-      "SELECT id, name, email, password_hash, role, status, created_at FROM accounts WHERE email = ?",
+      `SELECT id, name, email, password_hash, role, status, created_at FROM accounts
+       WHERE lower(email) = ?
+       ORDER BY (email = ?) DESC, created_at ASC
+       LIMIT 1`,
     )
-    .bind(email)
+    .bind(normalizeEmail(email), email.trim())
     .first<AccountRow>();
 }
 
@@ -123,7 +129,12 @@ app.post("/register", requireTurnstile({ required: false }), async (c) => {
     throw ApiError.rateLimited("新規登録の上限に達しました。しばらく待ってから再試行してください");
   }
 
-  const existing = await db.prepare("SELECT id FROM accounts WHERE email = ?").bind(body.email).first<{ id: string }>();
+  // 照合の正規化（小文字化）に合わせ、大文字・小文字だけ違う二重登録を防ぐ
+  // （二重に存在すると、どちらにログインするか不定になる）。
+  const existing = await db
+    .prepare("SELECT id FROM accounts WHERE lower(email) = ?")
+    .bind(normalizeEmail(body.email))
+    .first<{ id: string }>();
   if (existing) throw ApiError.conflict("このメールアドレスは既に登録されています");
 
   const accountId = ulid();
@@ -418,8 +429,9 @@ app.post("/password-reset", requireTurnstile({ required: true }), async (c) => {
   }
 
   const account = await loadAccountByEmail(db, body.email);
-  // 存在しないメールは入力そのものを鍵にする（存在するアカウントと同じく、IP を変えた連打も数える）。
-  const targetKey = await passwordResetAttemptKey(c.env.ID_SALT, account?.id ?? body.email);
+  // 対象単位の試行制限は「正規化したメール」で数える（アカウント id とメールで鍵が分裂しない）。
+  // 大文字・小文字を変えた連打も同じ枠に入り、同じアカウントへの総当たりで枠を迂回できない。
+  const targetKey = await passwordResetAttemptKey(c.env.ID_SALT, body.email);
   const resetFailures = await countPasswordResetFailures(db, targetKey, now - PASSWORD_RESET_FAILURE_WINDOW_SECONDS);
   if (resetFailures >= PASSWORD_RESET_MAX_FAILURES) {
     throw ApiError.rateLimited("試行回数が多すぎます。しばらく待ってから再試行してください");
@@ -517,7 +529,8 @@ app.post("/password-reset/operator", requireTurnstile({ required: true }), async
     detail: { tokenId: token.id, issuedBy: token.issued_by, revokedSessions: revoked },
   });
   c.executionCtx.waitUntil(cleanupPasswordResetFailures(db, now));
-  return c.json(ok({ reset: true as const, account: accountDto(account) }));
+  // トークン保持者に個人情報を渡さない（画面が必要とする表示名だけ）。
+  return c.json(ok({ reset: true as const, accountName: account.name }));
 });
 
 // --- GitHub OAuth ログイン（未認証） --------------------------------------
