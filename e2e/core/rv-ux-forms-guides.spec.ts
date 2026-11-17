@@ -6,6 +6,7 @@ import path from "node:path";
 import { expect, test, type APIRequestContext, type BrowserContext, type TestInfo } from "@playwright/test";
 import { API_BASE, ALLOWED_ORIGIN } from "../helpers/api";
 import { unique } from "../helpers/ids";
+import { skipRecoveryCodeStep } from "../helpers/register";
 
 const OWNER_SESSION = "e2e-owner-session-token";
 
@@ -252,6 +253,8 @@ test.describe("rv-ux C5〜C8（フォームと案内）", () => {
       await page.getByLabel("パスワード（8文字以上）").fill("Rvux-pass-123");
       await page.getByLabel("パスワード（確認）").fill("Rvux-pass-123");
       await page.getByRole("button", { name: "登録する" }).click();
+      // 登録成功後は復旧コードの任意ステップを挟む（設計 50 ①）。ここでは「あとで」で next へ進む。
+      await skipRecoveryCodeStep(page);
       await expect(page).toHaveURL(item.expectUrl, { timeout: 15_000 });
       expect(external, `next=${item.next} で外部遷移を試みない`).toBe(0);
       await page.unroute("http://outside.invalid/**");

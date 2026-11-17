@@ -81,6 +81,23 @@ export default function SiteSettingsPage() {
             onChange={(e) => update("site.description", e.target.value)}
           />
         </div>
+        <div className="oc-field" style={{ maxWidth: 420 }}>
+          <label className="oc-label" htmlFor="setting-operator-contact">
+            運営の連絡先メールアドレス
+          </label>
+          <input
+            id="setting-operator-contact"
+            className="oc-input"
+            type="email"
+            placeholder="（未設定なら案内文だけを表示）"
+            disabled={!isOwner}
+            value={settings["site.operator_contact"]}
+            onChange={(e) => update("site.operator_contact", e.target.value)}
+          />
+          <p className="oc-small">
+            パスワードを忘れた人の案内に表示します。自動送信はせず、運営がこのアドレスから登録メールへ連絡する運用です。
+          </p>
+        </div>
         <label className="oc-check">
           <input
             type="checkbox"

@@ -12,6 +12,8 @@ import {
   OWNER_SETUP_MAX_FAILURES,
   ownerBootstrapRequestSchema,
   pluginReportListQuerySchema,
+  passwordResetIssueRequestSchema,
+  PASSWORD_RESET_TTL_HOURS,
   siteSettingsUpdateSchema,
   specialAdminStopRequestSchema,
   suspensionCreateRequestSchema,
@@ -37,6 +39,14 @@ import {
   issueInvite,
 } from "../services/account/invite";
 import { getSiteSettings, updateSiteSettings } from "../services/account/site-config";
+import { requestOrigin } from "../lib/middleware/origin";
+import {
+  buildPasswordResetMailto,
+  buildPasswordResetUrl,
+  issuePasswordResetToken,
+  listOutstandingPasswordResetTokens,
+  revokePasswordResetToken,
+} from "../services/account/password-reset";
 import { resetTotp } from "../services/account/totp";
 import { countRemainingRecoveryCodes } from "../services/account/recovery";
 import {
@@ -223,6 +233,96 @@ app.get("/users/:id", requireAdminActive, async (c) => {
       specialAdmin: specialState,
     }),
   );
+});
+
+// --- パスワード再設定 URL（所有者のみ・設計 50 ②） ----------------------
+// 1 回限り・24 時間有効の URL を発行し、所有者が自分のメールソフトから登録メールへ送る。
+// 所有者自身・特別管理人には発行しない（権限昇格・乗っ取りの踏み台にしない）。
+// 生トークンは発行レスポンスでのみ返し、DB にはハッシュだけを残す（invites と同じ）。
+
+app.post("/password-resets", requireOwnerActive, requireStepUp(), async (c) => {
+  const ctx = getReqCtx(c);
+  if (!ctx.session) throw ApiError.unauthorized();
+  const body = passwordResetIssueRequestSchema.parse(await c.req.json());
+  const db = c.env.DB;
+  const target = await db
+    .prepare("SELECT id, name, email, role FROM accounts WHERE id = ?")
+    .bind(body.accountId)
+    .first<{ id: string; name: string; email: string | null; role: string }>();
+  if (!target) throw ApiError.notFound("アカウントが見つかりません");
+  if (target.role !== "user") {
+    throw ApiError.forbidden("所有者・特別管理人のアカウントには再設定 URL を発行できません");
+  }
+  if (!target.email) {
+    throw ApiError.validation("登録メールアドレスの無いアカウントには発行できません");
+  }
+  const origin = requestOrigin(c);
+  if (!origin) throw ApiError.validation("Web オリジンを特定できません");
+
+  const now = Math.floor(Date.now() / 1000);
+  const issued = await issuePasswordResetToken(
+    db,
+    target.id,
+    ctx.session.account.id,
+    now,
+    PASSWORD_RESET_TTL_HOURS * 3600,
+  );
+  const url = buildPasswordResetUrl(origin, issued.token);
+  await writeAudit(db, {
+    actorType: "owner",
+    actorId: ctx.session.account.id,
+    action: "admin.password_reset_issued",
+    target: target.id,
+    detail: { tokenId: issued.id, expiresAt: issued.expiresAt },
+  });
+  return c.json(
+    ok({
+      id: issued.id,
+      accountId: target.id,
+      email: target.email,
+      token: issued.token,
+      url,
+      mailtoUrl: buildPasswordResetMailto(target.email, url, issued.expiresAt),
+      expiresAt: issued.expiresAt,
+    }),
+    201,
+  );
+});
+
+app.get("/password-resets", requireOwnerActive, async (c) => {
+  const accountId = c.req.query("accountId");
+  if (!accountId) throw ApiError.validation("accountId が必要です");
+  const now = Math.floor(Date.now() / 1000);
+  const rows = await listOutstandingPasswordResetTokens(c.env.DB, accountId, now);
+  return c.json(
+    ok({
+      items: rows.map((row) => ({
+        id: row.id,
+        accountId: row.account_id,
+        createdAt: row.created_at,
+        expiresAt: row.expires_at,
+      })),
+      now,
+    }),
+  );
+});
+
+app.post("/password-resets/:id/revoke", requireOwnerActive, async (c) => {
+  const ctx = getReqCtx(c);
+  if (!ctx.session) throw ApiError.unauthorized();
+  const id = c.req.param("id");
+  const now = Math.floor(Date.now() / 1000);
+  const revoked = await revokePasswordResetToken(c.env.DB, id, now);
+  if (!revoked) {
+    throw ApiError.notFound("失効できる URL がありません（使用済み・失効済み・期限切れ）");
+  }
+  await writeAudit(c.env.DB, {
+    actorType: "owner",
+    actorId: ctx.session.account.id,
+    action: "admin.password_reset_revoked",
+    target: id,
+  });
+  return c.json(ok({ revoked: true }));
 });
 
 // --- 規制（suspensions） ------------------------------------------------

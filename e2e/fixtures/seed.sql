@@ -11,7 +11,11 @@ VALUES
   -- サイトツアーの権限別検証用（新規登録の 5 回/日/IP 上限を他 spec と取り合わないよう固定で用意）
   ('01ARZ3NDEKTSV4RRFFQ69G5FB0', 'trev-deputy', NULL, NULL, 'user', 'active', 1760000000),
   ('01ARZ3NDEKTSV4RRFFQ69G5FB1', 'trev-moderator', NULL, NULL, 'user', 'active', 1760000000),
-  ('01ARZ3NDEKTSV4RRFFQ69G5FB2', '長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長', NULL, NULL, 'user', 'active', 1760000000);
+  ('01ARZ3NDEKTSV4RRFFQ69G5FB2', '長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長', NULL, NULL, 'user', 'active', 1760000000),
+  -- パスワード再設定 URL の E2E 用（pc/mobile でアカウントを分ける。登録上限 5 回/日/IP を消費しない）。
+  -- パスワードは NULL から再設定で付く（この DB は使い捨て）。
+  ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'pwreset-operator-pc', 'pwreset-op-pc@example.com', NULL, 'user', 'active', 1760000000),
+  ('01ARZ3NDEKTSV4RRFFQ69G5FC1', 'pwreset-operator-mobile', 'pwreset-op-mobile@example.com', NULL, 'user', 'active', 1760000000);
 
 -- サイト設定の初期値
 INSERT OR IGNORE INTO site_config (key, value) VALUES

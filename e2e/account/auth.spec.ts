@@ -5,6 +5,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ALLOWED_ORIGIN, API_BASE } from "../helpers/api";
 import { fakeIp, unique } from "../helpers/ids";
+import { skipRecoveryCodeStep } from "../helpers/register";
 import { isBase32Secret, stableTotpCode } from "./totp";
 
 const PASSWORD = "e2e-pass-1234";
@@ -50,15 +51,24 @@ test.describe("アカウント登録と TOTP", () => {
 
     // ローカル再実行では IP 単位の登録上限（5回/24h）に達することがある。
     // Next dev の proxy は x-real-ip を転送しないため、429 のときは API 直叩き（別 IP）で同じアカウントを作る。
+    // 成功時は設計 50 ① の復旧コード作成段階（任意）を挟むので、「あとで」で /account へ進む。
     const uiRegistered = await Promise.race([
-      page.waitForURL(/\/account$/, { timeout: 15_000 }).then(() => true).catch(() => false),
+      page
+        .getByRole("button", { name: "あとで" })
+        .waitFor({ state: "visible", timeout: 15_000 })
+        .then(() => true)
+        .catch(() => false),
       page
         .getByText("新規登録の上限に達しました")
         .waitFor({ state: "visible", timeout: 15_000 })
         .then(() => false)
         .catch(() => false),
     ]);
-    if (!uiRegistered) {
+    if (uiRegistered) {
+      // 復旧コード段階が出ていることをここで 1 回確かめてから、任意ステップを飛ばす。
+      await skipRecoveryCodeStep(page);
+      await page.waitForURL(/\/account$/, { timeout: 15_000 });
+    } else {
       const fallback = await request.post(`${API_BASE}/v1/auth/register`, {
         headers: {
           origin: ALLOWED_ORIGIN,

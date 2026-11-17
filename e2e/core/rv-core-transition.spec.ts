@@ -4,6 +4,7 @@
 // ChatGPT F-01 の 2 経路（設定遷移で検索画面が残る／プラグイン→掲示板トップで誤404）、F-12（タイトル）。
 import { expect, test, type Page } from "@playwright/test";
 
+import { skipRecoveryCodeStep } from "../helpers/register";
 import { createBoard, createThread } from "./rv-core-helpers";
 
 async function openThread(page: Page, slug: string, threadId: number): Promise<void> {
@@ -62,7 +63,9 @@ test.describe("rv-core A2/A9: シェルと Next ページの境界遷移", () =>
   test("管理ページ → ロゴ（トップ）: 前の画面が残らず板一覧が出る（museAI #2-3）", async ({ page }) => {
     // 非管理者で /admin を開くと権限拒否画面になり、そのままロゴを押す経路を再現する。
     await page.goto("/admin");
-    await expect(page.locator("body")).toContainText(/管理者専用|ログイン画面|管理画面を読み込み/, {
+    // 未認証の /admin は「ログイン画面へ移動しています…」を挟んで /account/login へ遷移する。
+    // 遷移が速いとログイン画面だけを観測するため、どちらでも「管理画面が開けていない」ことを受ける。
+    await expect(page.locator("body")).toContainText(/管理者専用|ログイン|管理画面を読み込み/, {
       timeout: 20_000,
     });
     // 管理画面はシェルのヘッダを持たないため、ブラウザの戻るで直前の画面へ戻れることを確認する。
@@ -228,6 +231,8 @@ test.describe("rv-core A2 追加: 認証画面からシェル行きのパスへ�
     await page.getByLabel("パスワード（確認）").fill("e2e-Password-1");
     await markDocument(page);
     await page.getByRole("button", { name: "登録する" }).click();
+    // 登録成功後は復旧コードの任意ステップを挟む（設計 50 ①）。ここでは「あとで」で next へ進む。
+    await skipRecoveryCodeStep(page);
     await expect(page).toHaveURL(/\/boards\/new$/, { timeout: 20_000 });
     await expect(page.getByLabel(/板スラッグ/)).toBeVisible({ timeout: 20_000 });
     expect(await documentWasReplaced(page)).toBe(true);

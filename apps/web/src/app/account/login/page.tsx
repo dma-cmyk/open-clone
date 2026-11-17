@@ -139,6 +139,7 @@ export default function LoginPage() {
         </div>
       ) : null}
       <div className="oc-small oc-muted">
+        <Link href="/account/password-reset">パスワードを忘れた場合</Link>。
         アカウントをお持ちでない場合は <Link href="/account/register">新規登録</Link>。
         TOTP 端末を紛失した場合は <Link href="/account/recovery">リカバリーコードで復旧</Link>。
       </div>

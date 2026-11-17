@@ -105,3 +105,24 @@ export const corsHeaders = createMiddleware<AppEnv>(async (c, next) => {
 
   await next();
 });
+
+/**
+ * Web のオリジン（発行したパスワード再設定 URL の組み立てに使う）。
+ * Origin → Referer → ALLOWED_ORIGINS の先頭の順で決める。
+ */
+export function requestOrigin(c: {
+  req: { header(name: string): string | undefined };
+  env: AppEnv["Bindings"];
+}): string {
+  const origin = c.req.header("origin");
+  if (origin) return origin;
+  const referer = c.req.header("referer");
+  if (referer) {
+    try {
+      return new URL(referer).origin;
+    } catch {
+      // fall through
+    }
+  }
+  return (c.env.ALLOWED_ORIGINS ?? "").split(",")[0]?.trim() ?? "";
+}

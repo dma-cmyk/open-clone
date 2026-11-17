@@ -3,7 +3,7 @@
 // 全ユーザー一覧とサイト停止（規制）。
 
 import { useCallback, useEffect, useState } from "react";
-import type { AdminUser } from "shared";
+import type { AdminUser, PasswordResetIssueResult, PasswordResetTokenSummary } from "shared";
 import { api, errorMessage } from "../../../features/account/api";
 import { useSession } from "../../../features/account/session";
 import { useStepUp } from "../../../features/account/step-up";
@@ -32,7 +32,14 @@ export default function UsersPage() {
   const [durationHours, setDurationHours] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // パスワード再設定 URL（所有者のみ。設計 50 ②）
+  const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
+  const [issued, setIssued] = useState<PasswordResetIssueResult | null>(null);
+  const [pendingResets, setPendingResets] = useState<PasswordResetTokenSummary[]>([]);
+  const [copied, setCopied] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
   const stepUp = useStepUp(setError);
+  const isOwner = state?.authenticated === true && state.account.role === "owner";
 
   const load = useCallback(async () => {
     const params = new URLSearchParams({ page: String(page), limit: "50" });
@@ -66,6 +73,65 @@ export default function UsersPage() {
       setDurationHours("");
       await load();
     });
+  };
+
+  const loadPendingResets = async (accountId: string) => {
+    const data = await api<{ items: PasswordResetTokenSummary[] }>(
+      "GET",
+      `/admin/password-resets?accountId=${encodeURIComponent(accountId)}`,
+    );
+    setPendingResets(data.items);
+  };
+
+  const openResetPanel = async (user: AdminUser) => {
+    setResetTarget(user);
+    setIssued(null);
+    setCopied(false);
+    setError(null);
+    try {
+      await loadPendingResets(user.id);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  const issueResetUrl = async () => {
+    if (!resetTarget) return;
+    setError(null);
+    setMessage(null);
+    setResetBusy(true);
+    await stepUp.run(async () => {
+      const data = await api<PasswordResetIssueResult>("POST", "/admin/password-resets", {
+        accountId: resetTarget.id,
+      });
+      setIssued(data);
+      setCopied(false);
+      await loadPendingResets(resetTarget.id);
+    });
+    setResetBusy(false);
+  };
+
+  const revokeResetUrl = async (id: string) => {
+    if (!resetTarget) return;
+    setError(null);
+    try {
+      await api("POST", `/admin/password-resets/${encodeURIComponent(id)}/revoke`);
+      if (issued?.id === id) setIssued(null);
+      await loadPendingResets(resetTarget.id);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  const copyResetUrl = async () => {
+    if (!issued) return;
+    try {
+      await navigator.clipboard.writeText(issued.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
   };
 
   return (
@@ -131,6 +197,76 @@ export default function UsersPage() {
         </section>
       ) : null}
 
+      {isOwner && resetTarget ? (
+        <section className="oc-card oc-stack">
+          <div className="oc-row-between">
+            <h2 style={{ fontSize: 15, margin: 0 }}>
+              {resetTarget.name}（{resetTarget.email ?? "メール未登録"}）のパスワード再設定 URL
+            </h2>
+            <button
+              type="button"
+              className="oc-btn oc-btn-sm"
+              onClick={() => {
+                setResetTarget(null);
+                setIssued(null);
+                setPendingResets([]);
+              }}
+            >
+              閉じる
+            </button>
+          </div>
+          <p className="oc-small" style={{ margin: 0 }}>
+            1 回だけ使える URL（24 時間有効）を発行します。発行後、この画面から
+            <b>メールを作成</b>（メールソフトが開きます）して登録メールアドレスへ送ってください。
+            サイトからは自動送信しません。メールが届く＝そのアドレスの持ち主、という本人確認になります。
+          </p>
+          {issued ? (
+            <div className="oc-stack">
+              <div className="oc-warn-box">
+                URL は<strong>この画面でのみ表示</strong>されます。発行済みで未使用の古い URL は失効しました。
+                有効期限: {new Date(issued.expiresAt * 1000).toLocaleString("ja-JP")}
+              </div>
+              <input className="oc-input" readOnly value={issued.url} onFocus={(event) => event.target.select()} />
+              <div className="oc-row">
+                <button type="button" className="oc-btn" onClick={copyResetUrl}>
+                  {copied ? "コピーしました" : "URL をコピー"}
+                </button>
+                <a className="oc-btn" href={issued.mailtoUrl}>
+                  メールを作成（{issued.email}）
+                </a>
+              </div>
+            </div>
+          ) : (
+            <div className="oc-row">
+              <button
+                type="button"
+                className="oc-btn oc-btn-primary"
+                onClick={issueResetUrl}
+                disabled={resetBusy || !resetTarget.email}
+              >
+                {resetBusy ? "発行中…" : "再設定 URL を発行する（要 TOTP 再認証）"}
+              </button>
+              {!resetTarget.email ? <span className="oc-note">登録メールアドレスが無いため発行できません。</span> : null}
+            </div>
+          )}
+          <div className="oc-small">
+            <b>未使用の URL:</b>{" "}
+            {pendingResets.length === 0 ? "なし" : `${pendingResets.length} 件`}
+            {pendingResets.map((token) => (
+              <div key={token.id} className="oc-row" style={{ gap: 8 }}>
+                <span className="oc-muted">
+                  発行 {new Date(token.createdAt * 1000).toLocaleString("ja-JP")} / 期限{" "}
+                  {new Date(token.expiresAt * 1000).toLocaleString("ja-JP")}
+                </span>
+                <button type="button" className="oc-btn oc-btn-sm" onClick={() => revokeResetUrl(token.id)}>
+                  失効
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
@@ -164,6 +300,17 @@ export default function UsersPage() {
                   {new Date(user.createdAt * 1000).toLocaleDateString("ja-JP")}
                 </td>
                 <td style={{ padding: 4, borderBottom: "1px solid var(--oc-border)", textAlign: "right" }}>
+                  {isOwner && user.role === "user" ? (
+                    <button
+                      type="button"
+                      className="oc-btn oc-btn-sm"
+                      onClick={() => {
+                        void openResetPanel(user);
+                      }}
+                    >
+                      再設定 URL
+                    </button>
+                  ) : null}{" "}
                   {user.role === "owner" || user.status === "suspended" ? null : (
                     <button
                       type="button"

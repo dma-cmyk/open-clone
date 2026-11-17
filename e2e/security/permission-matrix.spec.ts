@@ -53,6 +53,12 @@ test.describe("権限マトリクス: owner 専用", () => {
     if (await skipIfUnimplemented(user)) return;
     expect(user.status()).toBe(403);
   });
+
+  test("POST /v1/admin/password-resets: user は 403（所有者専用）", async ({ request }) => {
+    const user = await fetchAs(request, "user", "POST", "/v1/admin/password-resets");
+    if (await skipIfUnimplemented(user)) return;
+    expect(user.status()).toBe(403);
+  });
 });
 
 test.describe("権限マトリクス: プラグイン通報", () => {

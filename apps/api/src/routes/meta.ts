@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { ok } from "shared";
 import type { AppEnv } from "../lib/env";
 import { requireAdminActive } from "../services/account/guards";
+import { getSiteSettings } from "../services/account/site-config";
 
 const app = new Hono<AppEnv>();
 
@@ -15,6 +16,20 @@ app.get("/health", (c) => {
       version: "0.0.0",
       time: new Date().toISOString(),
       environment: c.env.ENVIRONMENT,
+    }),
+  );
+});
+
+// 公開サイト情報（未認証）。サイト名・説明・運営の連絡先だけを返す。
+// 秘密情報・アカウント数などは含めない。パスワード再設定の案内で使う。
+app.get("/site", async (c) => {
+  const settings = await getSiteSettings(c.env.DB);
+  const contact = settings["site.operator_contact"];
+  return c.json(
+    ok({
+      name: settings["site.name"],
+      description: settings["site.description"],
+      operatorContact: contact === "" ? null : contact,
     }),
   );
 });

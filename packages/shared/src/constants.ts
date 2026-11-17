@@ -102,6 +102,15 @@ export const TOTP_LOCK_MINUTES = 15;
 export const RECOVERY_CODE_COUNT = 10;
 /** 特別管理人就任キーの既定有効時間 */
 export const INVITE_TTL_HOURS = 72;
+/** 運営が発行するパスワード再設定 URL の有効時間（24 時間）。 */
+export const PASSWORD_RESET_TTL_HOURS = 24;
+/**
+ * パスワード再設定（復旧コード・運営 URL 共通）の失敗許容・窓。
+ * ログインと同じ窓・同じ回数（`RATE_LIMITS.login`）に揃えるが、鍵は「対象アカウント」単位にして
+ * IP を変えた連打を抑える（auth_password_reset_attempts）。
+ */
+export const PASSWORD_RESET_FAILURE_WINDOW_SECONDS = 5 * 60;
+export const PASSWORD_RESET_MAX_FAILURES = 10;
 /**
  * 就任キー accept の TOTP 失敗許容（キー単位・IP 単位）。DESIGN §5.5 のログイン TOTP と同水準。
  * キー単位で上限に達したらキーを失効させる（総当たりを現実的に不可能にする）。
