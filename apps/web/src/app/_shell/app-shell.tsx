@@ -2,9 +2,10 @@
 
 // アプリシェル。静的エクスポート + クライアントルーティングのディスパッチャ。
 // 本番は Vercel の rewrite で全パスが index.html（このシェル）に落ち、pathname から画面を決める。
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 // WP3 のプラグインホスト（sandbox ランナー）をスロットへ登録する。
 import "@/features/plugin-host/register";
+import { PluginPageScopeProvider, type PluginPageScope } from "@/components/plugin-scope";
 import { SiteHeader } from "./site-header";
 import { SiteFooter } from "./site-footer";
 import { BoardSidebar } from "./board-sidebar";
@@ -97,16 +98,33 @@ export function AppShell() {
       content = <NotFoundView pathname={effectiveRoute.pathname} />;
   }
 
+  // プラグインスロット（ヘッダー・サイドバー・スレ）が共有するページ文脈。
+  // スレ画面はスレ ID まで、板画面は板 slug までを配る。
+  const pluginScope = useMemo((): PluginPageScope | null => {
+    if (!mounted) return null;
+    switch (effectiveRoute.name) {
+      case "thread":
+        return { boardSlug: effectiveRoute.slug, threadId: effectiveRoute.threadId };
+      case "board":
+      case "manage":
+        return { boardSlug: effectiveRoute.slug };
+      default:
+        return {};
+    }
+  }, [mounted, effectiveRoute]);
+
   return (
-    <div className="oc-app" id="top">
-      {/* 画面より先に評価して、遷移直後に前のページのタイトルが残らないようにする */}
-      <RouteTitle route={effectiveRoute} />
-      <SiteHeader />
-      <div className="oc-layout">
-        <BoardSidebar />
-        <main className="oc-main">{content}</main>
+    <PluginPageScopeProvider value={pluginScope}>
+      <div className="oc-app" id="top">
+        {/* 画面より先に評価して、遷移直後に前のページのタイトルが残らないようにする */}
+        <RouteTitle route={effectiveRoute} />
+        <SiteHeader />
+        <div className="oc-layout">
+          <BoardSidebar />
+          <main className="oc-main">{content}</main>
+        </div>
+        <SiteFooter />
       </div>
-      <SiteFooter />
-    </div>
+    </PluginPageScopeProvider>
   );
 }

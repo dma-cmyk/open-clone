@@ -41,6 +41,8 @@ export function installPluginHostRenderers(): () => void {
       boardSlug={context.boardSlug}
       threadId={context.threadId}
       postId={context.postId}
+      // レスごとのスロットは 1000 件並ぶ。画面に近づくまで iframe を作らない。
+      lazy={context.slot === "post-actions"}
       data={{
         threadId: context.threadId ?? null,
         postId: context.postId ?? null,

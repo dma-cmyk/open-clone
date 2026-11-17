@@ -58,3 +58,8 @@ export {
 } from "./api";
 export { SAMPLE_BOARD, SAMPLE_POSTS, SAMPLE_THREAD } from "./sample";
 export { usePluginPostRenderRules, type PluginRulesParams } from "./hooks";
+export {
+  useActiveInstalls,
+  resetActiveInstallsStore,
+  type ActiveInstallsParams,
+} from "./active-installs";

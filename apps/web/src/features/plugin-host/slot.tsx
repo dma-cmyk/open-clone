@@ -4,13 +4,15 @@
 // WP2 のレイアウト/スレ画面はこのコンポーネントを import するだけで良い。
 // プラグイン未導入・API 未実装・停止済みでもスレ表示を壊さない（失敗時は何も描画しない）。
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PluginActiveInstall, PluginSlotName } from "shared";
-import { loadActiveInstalls, pluginApi, PluginApiError } from "./api";
+import { pluginApi, PluginApiError } from "./api";
+import { useActiveInstalls } from "./active-installs";
 import { type PluginBridge, createPluginBridge } from "./bridge";
 import { buildSandboxCsp, PLUGIN_IFRAME_SANDBOX } from "./csp";
 import { buildPluginSrcdoc } from "./bootstrap";
 import { subscribePluginEvents } from "./events";
+import { observeNearViewport } from "./lazy";
 import { resolveDeclaredSlot } from "./slots";
 import { PluginUploadDialog, type PluginUploadResult } from "./upload-dialog";
 
@@ -25,8 +27,11 @@ export interface PluginSlotProps {
   /** スロット固有データ（レス単体なら { post } など） */
   data?: unknown;
   className?: string;
-  /** 停止（キル）反映のための再取得間隔。0 で無効 */
-  refreshIntervalMs?: number;
+  /**
+   * 画面に近づくまで sandbox iframe を作らない（レスごとのスロット用）。
+   * レス数ぶん iframe を作らないための遅延起動。
+   */
+  lazy?: boolean;
   onNotify?: (message: string, level: string) => void;
 }
 
@@ -37,58 +42,56 @@ interface ResolvedInstall {
 }
 
 export function PluginSlot(props: PluginSlotProps) {
-  const [installs, setInstalls] = useState<ResolvedInstall[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async (): Promise<void> => {
-      try {
-        const response = await loadActiveInstalls({
-          boardId: props.boardId,
-          boardSlug: props.boardSlug,
-          threadId: props.threadId,
-        });
-        if (cancelled) return;
-        const resolved: ResolvedInstall[] = [];
-        for (const install of response.items) {
-          const pluginSlot = resolveDeclaredSlot(install.manifest.slots, props.name);
-          if (pluginSlot) resolved.push({ install, pluginSlot });
-        }
-        setInstalls(resolved);
-      } catch {
-        // 未ログイン・API 未実装・ネットワーク失敗時はスロットを空にする
-        if (!cancelled) setInstalls([]);
-      }
-    };
-    void load();
-    if (props.refreshIntervalMs === 0) {
-      return () => {
-        cancelled = true;
-      };
+  // 取得はページ（板・スレ）単位で共有する。レスごとに API を呼ばない。
+  const installs = useActiveInstalls({
+    boardId: props.boardId,
+    boardSlug: props.boardSlug,
+    threadId: props.threadId,
+  });
+  const resolved = useMemo(() => {
+    const list: ResolvedInstall[] = [];
+    for (const install of installs) {
+      const pluginSlot = resolveDeclaredSlot(install.manifest.slots, props.name);
+      if (pluginSlot) list.push({ install, pluginSlot });
     }
-    const timer = window.setInterval(load, props.refreshIntervalMs ?? 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [props.boardId, props.boardSlug, props.threadId, props.name, props.refreshIntervalMs]);
+    return list;
+  }, [installs, props.name]);
 
-  if (installs.length === 0) return null;
+  // 遅延起動: 画面（+400px）に近づくまで子を作らない。空の div はその監視点。
+  const [nearView, setNearView] = useState(!props.lazy);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!props.lazy || nearView) return;
+    const element = rootRef.current;
+    if (!element) return;
+    return observeNearViewport(element, () => setNearView(true));
+  }, [props.lazy, nearView]);
+
+  // そのスロットを宣言したプラグインが 1 つも無ければ DOM を増やさない。
+  if (resolved.length === 0) return null;
 
   return (
-    <div className={`oc-plugin-slot oc-plugin-slot-${props.name} ${props.className ?? ""}`} data-plugin-slot={props.name}>
-      {installs.map(({ install, pluginSlot }) => (
-        <PluginFrame
-          key={`${install.installId}:${install.version}:${pluginSlot}`}
-          install={install}
-          slot={pluginSlot}
-          boardId={props.boardId}
-          threadId={props.threadId}
-          postId={props.postId}
-          data={props.data}
-          onNotify={props.onNotify}
-        />
-      ))}
+    <div
+      ref={rootRef}
+      className={`oc-plugin-slot oc-plugin-slot-${props.name} ${props.className ?? ""}`}
+      data-plugin-slot={props.name}
+      data-plugin-post-id={props.postId}
+      data-plugin-near={nearView ? "1" : "0"}
+    >
+      {nearView
+        ? resolved.map(({ install, pluginSlot }) => (
+            <PluginFrame
+              key={`${install.installId}:${install.version}:${pluginSlot}`}
+              install={install}
+              slot={pluginSlot}
+              boardId={props.boardId}
+              threadId={props.threadId}
+              postId={props.postId}
+              data={props.data}
+              onNotify={props.onNotify}
+            />
+          ))
+        : null}
     </div>
   );
 }
