@@ -30,12 +30,21 @@ import {
   loadReactionStats,
   loadSubHashes,
   mapPost,
+  assertBoardActive,
   assertThreadActive,
   boardSettingsOf,
   getBoardRow,
   type PostRow,
 } from "../services/board/store";
-import { actorFrom, assertBoardStaff, canHardDeletePost, hasBoardStaff, isSiteAdmin } from "../services/board/access";
+import {
+  actorFrom,
+  assertBoardStaff,
+  canHardDeletePost,
+  canReadBoardContent,
+  hasBoardStaff,
+  isSiteAdmin,
+  type AccessActor,
+} from "../services/board/access";
 import { deletePost, hidePost, unhidePost } from "../services/board";
 
 const app = new Hono<AppEnv>();
@@ -52,11 +61,28 @@ async function loadPostRow(db: D1Database, postId: number): Promise<PostRow> {
   return row;
 }
 
+/**
+ * レスの内容を読み取ってよいか（K2）。削除板のレスは板スタッフ（moderator 以上）と
+ * サイト管理者だけが見られる（`/v1/posts/:id/history` の扱いに揃える）。
+ */
+async function assertPostReadable(db: D1Database, row: PostRow, actor: AccessActor): Promise<void> {
+  const board = await getBoardRow(db, row.board_id);
+  if (!board || !(await canReadBoardContent(db, actor, board))) {
+    throw ApiError.notFound("レスが見つかりません");
+  }
+}
+
+/** 削除板では内容の書き込み（評価・投票・削除・編集）を受け付けない（K2・投稿と同じ 409）。 */
+async function assertPostBoardWritable(db: D1Database, row: PostRow): Promise<void> {
+  await assertBoardActive(await getBoardRow(db, row.board_id));
+}
+
 /** 単体レス取得（スレッド・板情報つき）。 */
 app.get("/:id", async (c) => {
   const db = c.env.DB;
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
   const reqCtx = getReqCtx(c);
+  await assertPostReadable(db, row, actorFrom(reqCtx.session?.account));
   const [subHashes, reactions, backlinks, thread] = await Promise.all([
     loadSubHashes(db, row.thread_id),
     loadReactionStats(db, [row.id], reqCtx.device.deviceHash),
@@ -145,6 +171,7 @@ app.post("/tsubuyaki", async (c) => {
 app.post("/:id/like", async (c) => {
   const db = c.env.DB;
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
+  await assertPostBoardWritable(db, row);
   const reqCtx = getReqCtx(c);
   const identityHash = reqCtx.device.deviceHash;
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -178,7 +205,9 @@ app.post("/:id/like", async (c) => {
 app.get("/:id/like", async (c) => {
   const db = c.env.DB;
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
-  const identityHash = getReqCtx(c).device.deviceHash;
+  const reqCtx = getReqCtx(c);
+  await assertPostReadable(db, row, actorFrom(reqCtx.session?.account));
+  const identityHash = reqCtx.device.deviceHash;
   const result = await db
     .prepare("SELECT kind, COUNT(*) AS n, MAX(CASE WHEN identity_hash = ? THEN 1 ELSE 0 END) AS mine FROM post_reactions WHERE post_id = ? GROUP BY kind")
     .bind(identityHash, row.id)
@@ -196,6 +225,7 @@ app.post("/:id/hide", requireAuth, async (c) => {
   const db = c.env.DB;
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
   await assertBoardStaff(db, actorFrom(getReqCtx(c).session!.account), row.board_id, "moderator");
+  await assertPostBoardWritable(db, row);
   await hidePost(row.id, { env: c.env, ctx: c.executionCtx });
   return c.json(ok({ postId: row.id, hidden: true }));
 });
@@ -205,6 +235,7 @@ app.post("/:id/restore", requireAuth, async (c) => {
   const db = c.env.DB;
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
   await assertBoardStaff(db, actorFrom(getReqCtx(c).session!.account), row.board_id, "moderator");
+  await assertPostBoardWritable(db, row);
   await unhidePost(row.id, { env: c.env, ctx: c.executionCtx });
   return c.json(ok({ postId: row.id, hidden: false }));
 });
@@ -216,6 +247,7 @@ app.post("/:id/restore", requireAuth, async (c) => {
 app.delete("/:id", async (c) => {
   const db = c.env.DB;
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
+  await assertPostBoardWritable(db, row);
   const reqCtx = getReqCtx(c);
   const identity: Identity = {
     deviceHash: reqCtx.device.deviceHash,
@@ -265,6 +297,7 @@ app.delete("/:id", async (c) => {
 app.patch("/:id", async (c) => {
   const db = c.env.DB;
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
+  await assertPostBoardWritable(db, row);
   const reqCtx = getReqCtx(c);
   const identity: Identity = {
     deviceHash: reqCtx.device.deviceHash,
@@ -343,6 +376,7 @@ app.get("/:id/history", async (c) => {
 app.get("/:id/poll", async (c) => {
   const db = c.env.DB;
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
+  await assertPostReadable(db, row, actorFrom(getReqCtx(c).session?.account));
   const identityHash = getReqCtx(c).device.ipHash;
   const poll = await db
     .prepare("SELECT id, post_id, thread_id, options, ends_at, created_at FROM polls WHERE post_id = ?")
@@ -382,6 +416,7 @@ app.get("/:id/poll", async (c) => {
 app.post("/:id/poll/vote", async (c) => {
   const db = c.env.DB;
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
+  await assertPostBoardWritable(db, row);
   const identityHash = getReqCtx(c).device.ipHash;
   const body = votePollRequestSchema.parse(await c.req.json());
 
@@ -409,6 +444,7 @@ app.post("/:id/poll/vote", async (c) => {
 app.get("/:id/backlinks", async (c) => {
   const db = c.env.DB;
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
+  await assertPostReadable(db, row, actorFrom(getReqCtx(c).session?.account));
   const result = await db
     .prepare(
       `SELECT p.id, p.num, p.name, p.body FROM backlinks bl JOIN posts p ON p.id = bl.post_id

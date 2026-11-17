@@ -69,6 +69,18 @@ function wrapBody(body: unknown, postId: number): string {
   return wrapUntrustedContent(typeof body === "string" ? body : "", { type: "post", id: postId });
 }
 
+/**
+ * 削除板のうち、指定アカウントが板スタッフ（moderator 以上）でない板を除外する SQL 条件（T13-01）。
+ * bind は account_id の 1 個だけで、削除板の件数に比例しない。
+ */
+function deletedBoardExclusion(column: string): string {
+  return `${column} NOT IN (
+    SELECT b.id FROM boards b
+    WHERE b.status != 'active'
+      AND NOT EXISTS (SELECT 1 FROM board_staff s WHERE s.board_id = b.id AND s.account_id = ?)
+  )`;
+}
+
 // ─────────────────────────── 板 ───────────────────────────
 
 interface BoardRow {
@@ -113,7 +125,7 @@ function mapBoard(row: BoardRow): BoardView {
 
 export async function listBoards(
   env: Env,
-  input: { category?: string; limit?: number; cursor?: string },
+  input: { category?: string; limit?: number; cursor?: string; deletedBoardScopeAccountId?: string | null },
 ): Promise<{ items: BoardView[]; nextCursor: string | null }> {
   const limit = clampLimit(input.limit);
   const cursor = decodeCursor(input.cursor);
@@ -122,6 +134,11 @@ export async function listBoards(
   if (input.category) {
     where += " AND category = ?";
     bindings.push(input.category);
+  }
+  // 削除板のうち、この AI の委譲元に実権限が無い板は一覧に出さない（T11-02 / T13-01）。
+  if (input.deletedBoardScopeAccountId !== undefined) {
+    where += ` AND ${deletedBoardExclusion("id")}`;
+    bindings.push(input.deletedBoardScopeAccountId);
   }
   if (cursor.id !== undefined) {
     where += " AND id > ?";
@@ -311,7 +328,14 @@ export async function getPost(env: Env, postId: number): Promise<PostView> {
 
 export async function searchPosts(
   env: Env,
-  input: { q: string; boardId?: number; threadId?: number; limit?: number; cursor?: string },
+  input: {
+    q: string;
+    boardId?: number;
+    threadId?: number;
+    limit?: number;
+    cursor?: string;
+    deletedBoardScopeAccountId?: string | null;
+  },
 ): Promise<{ items: PostView[]; nextCursor: string | null }> {
   const limit = clampLimit(input.limit);
   const cursor = decodeCursor(input.cursor);
@@ -324,6 +348,10 @@ export async function searchPosts(
   if (input.threadId !== undefined) {
     where += " AND thread_id = ?";
     bindings.push(input.threadId);
+  }
+  if (input.deletedBoardScopeAccountId !== undefined) {
+    where += ` AND ${deletedBoardExclusion("board_id")}`;
+    bindings.push(input.deletedBoardScopeAccountId);
   }
   if (cursor.id !== undefined) {
     where += " AND id < ?";
@@ -347,7 +375,7 @@ export async function searchPosts(
 
 export async function monitorFeed(
   env: Env,
-  input: { boardId?: number; limit?: number; cursor?: string },
+  input: { boardId?: number; limit?: number; cursor?: string; deletedBoardScopeAccountId?: string | null },
 ): Promise<{ items: (PostView & { event: string })[]; nextCursor: string | null }> {
   const limit = clampLimit(input.limit);
   const cursor = decodeCursor(input.cursor);
@@ -356,6 +384,10 @@ export async function monitorFeed(
   if (input.boardId !== undefined) {
     where += " AND board_id = ?";
     bindings.push(input.boardId);
+  }
+  if (input.deletedBoardScopeAccountId !== undefined) {
+    where += ` AND ${deletedBoardExclusion("board_id")}`;
+    bindings.push(input.deletedBoardScopeAccountId);
   }
   if (cursor.id !== undefined) {
     where += " AND id > ?";
@@ -416,7 +448,13 @@ function mapReport(
 
 export async function listReports(
   env: Env,
-  input: { boardId?: number; status?: string; limit?: number; cursor?: string },
+  input: {
+    boardId?: number;
+    status?: string;
+    limit?: number;
+    cursor?: string;
+    deletedBoardScopeAccountId?: string | null;
+  },
 ): Promise<{ items: ReportView[]; nextCursor: string | null }> {
   const limit = clampLimit(input.limit);
   const cursor = decodeCursor(input.cursor);
@@ -425,6 +463,11 @@ export async function listReports(
   if (input.boardId !== undefined) {
     where += " AND r.board_id = ?";
     bindings.push(input.boardId);
+  }
+  if (input.deletedBoardScopeAccountId !== undefined) {
+    // サイト全体（board_id IS NULL）の通報は板に属さないので残す。
+    where += ` AND (r.board_id IS NULL OR ${deletedBoardExclusion("r.board_id")})`;
+    bindings.push(input.deletedBoardScopeAccountId);
   }
   if (input.status) {
     where += " AND r.status = ?";
@@ -478,9 +521,19 @@ export async function getReport(env: Env, reportId: string): Promise<ReportView>
 export async function boardStats(
   env: Env,
   boardId?: number,
+  deletedBoardScopeAccountId?: string | null,
 ): Promise<{ boardId: number | null; posts: number; threads: number }> {
-  const scope = boardId === undefined ? "" : "WHERE board_id = ?";
-  const bindings = boardId === undefined ? [] : [boardId];
+  const conditions: string[] = [];
+  const bindings: unknown[] = [];
+  if (boardId !== undefined) {
+    conditions.push("board_id = ?");
+    bindings.push(boardId);
+  }
+  if (deletedBoardScopeAccountId !== undefined) {
+    conditions.push(deletedBoardExclusion("board_id"));
+    bindings.push(deletedBoardScopeAccountId);
+  }
+  const scope = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const posts = await query<{ count: number }>(
     env,
     `SELECT COUNT(*) AS count FROM posts ${scope}`,

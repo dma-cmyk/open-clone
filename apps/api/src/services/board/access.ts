@@ -44,12 +44,27 @@ export async function assertBoardStaff(
   }
 }
 
+/**
+ * 板の内容（スレ・レス・板の設定など）を読み取ってよいか。
+ * 削除板（`boards.status !== 'active'`）は一般の閲覧者には「無い板」として扱い、
+ * 板スタッフ（moderator 以上）とサイト管理者だけが見られる（管理・確認のため）。
+ * `/v1/posts/:id/history` の既存の扱い（板削除後は 404、板スタッフには見える）に揃える。
+ */
+export async function canReadBoardContent(
+  db: D1Database,
+  actor: AccessActor,
+  board: BoardRow,
+): Promise<boolean> {
+  if (board.status === "active") return true;
+  return hasBoardStaff(db, actor, board.id, "moderator");
+}
+
 /** 板管理（設定・スタッフ任免）権限。board_admin 以上。 */
 export async function assertBoardAdmin(db: D1Database, actor: AccessActor, boardId: number): Promise<void> {
   await assertBoardStaff(db, actor, boardId, "admin");
 }
 
-/** 板を ID/スラッグから解決し、権限込みで返す。 */
+/** 板を ID/スラッグから解決し、権限込みで返す（閲覧にも使う。書き込み可否は呼び出し側で判定）。 */
 export async function resolveManageableBoard(
   db: D1Database,
   actor: AccessActor,

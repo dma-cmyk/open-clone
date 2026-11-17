@@ -14,7 +14,7 @@ import { ManageBoardSettings } from "./manage-settings";
 import { ManageStaff } from "./manage-staff";
 import { ManageReports } from "./manage-reports";
 import type { BoardDetail, StaffEntry } from "@/features/board-ui/types";
-import { setTourContext, startTour } from "@/features/site-tour";
+import { clearQueuedTour, setTourContext, setTourContextPending, startTour } from "@/features/site-tour";
 
 const TABS = [
   { value: "basic", label: "基本設定" },
@@ -39,6 +39,7 @@ export function ManageView({ slug, tab }: { slug: string; tab: string }) {
   const active = TABS.some((item) => item.value === tab) ? tab : "basic";
   // 板の管理画面の権限をツアーへ知らせる（ヘッダー／フッターから開始されても同じ手順にする）。
   const [accountId, setAccountId] = useState<string | null>(null);
+  const [sessionSettled, setSessionSettled] = useState(false);
   useEffect(() => {
     let alive = true;
     api
@@ -46,7 +47,10 @@ export function ManageView({ slug, tab }: { slug: string; tab: string }) {
       .then((session) => {
         if (alive) setAccountId(session?.id ?? null);
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (alive) setSessionSettled(true);
+      });
     return () => {
       alive = false;
     };
@@ -55,9 +59,27 @@ export function ManageView({ slug, tab }: { slug: string; tab: string }) {
     ? currentStaff.find((entry) => entry.accountId === accountId)?.level
     : undefined;
   const isStaff = canManage || myLevel === "deputy" || myLevel === "moderator";
+  // 権限（板情報・セッション）が揃うまでは、ツアー開始要求を保留する。
+  // 以前は読み込み中の開始が権限不足と同じ false になり、ヘッダーの「使い方」が
+  // ヘルプへ飛んでいた（K3）。
+  const tourContextReady = sessionSettled && !info.loading;
   useEffect(() => {
+    if (!tourContextReady) {
+      setTourContextPending(true);
+      return;
+    }
     setTourContext({ boardStaff: isStaff, canManageBoard: canManage });
-  }, [isStaff, canManage]);
+    setTourContextPending(false);
+  }, [tourContextReady, isStaff, canManage]);
+  // 画面を離れたら、保留中の開始要求と権限を持ち越さない。
+  useEffect(
+    () => () => {
+      clearQueuedTour();
+      setTourContextPending(false);
+      setTourContext({ boardStaff: false, canManageBoard: false });
+    },
+    [],
+  );
 
   if (info.loading && !info.data) {
     return <Spinner label="板情報を読み込み中…" />;

@@ -11,10 +11,12 @@
 export { TourHost } from "./tour-host";
 export {
   canStartTour,
+  clearQueuedTour,
   dismissIntro,
   resetTourContext,
   restoreTourUi,
   setTourContext,
+  setTourContextPending,
   setTourRestore,
   stopTourIfRouteChanged,
   tourContext,

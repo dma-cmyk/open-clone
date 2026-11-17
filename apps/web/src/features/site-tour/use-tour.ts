@@ -13,10 +13,12 @@ export function useTourState(): TourState {
 
 export {
   canStartTour,
+  clearQueuedTour,
   dismissIntro,
   resetTourContext,
   restoreTourUi,
   setTourContext,
+  setTourContextPending,
   setTourRestore,
   stopTourIfRouteChanged,
   tourContext,
