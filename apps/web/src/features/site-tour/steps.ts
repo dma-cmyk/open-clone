@@ -6,6 +6,7 @@ import type { TourDefinition, TourListContext, TourPageKey, TourStep } from "./t
 // 一覧の「開く先」（板・スレの自動選択）で使う既存の公開 API。相対 import は単体テスト
 // （vitest）が `@/` エイリアスを解決しないため。
 import { api } from "../board-ui/api";
+import { PLUGIN_TOUR_DEFINITIONS } from "./steps-plugins";
 
 /** 一般向けヘルプの節（`/help/`。アンカーは設計 50 で固定）。 */
 const HELP = "/help/";
@@ -497,6 +498,7 @@ export const TOUR_DEFINITIONS: Record<TourPageKey, TourDefinition> = {
   manage: MANAGE,
   help: HELP_PAGE,
   "help-admin": HELP_ADMIN_PAGE,
+  ...PLUGIN_TOUR_DEFINITIONS,
 };
 
 /**
@@ -547,7 +549,13 @@ export function tourDefinitionOf(key: TourPageKey): TourDefinition {
 export function resolveSteps(
   definition: TourDefinition,
   isVisible: (selector: string) => boolean,
-  context: { boardStaff?: boolean; canManageBoard?: boolean; siteOwner?: boolean; siteSpecialAdmin?: boolean } = {},
+  context: {
+    boardStaff?: boolean;
+    canManageBoard?: boolean;
+    siteOwner?: boolean;
+    siteSpecialAdmin?: boolean;
+    pluginAuthor?: boolean;
+  } = {},
 ): TourStep[] {
   const allowed = (step: TourStep): boolean => {
     switch (step.requires) {
@@ -559,6 +567,8 @@ export function resolveSteps(
         return Boolean(context.siteOwner || context.siteSpecialAdmin);
       case "siteOwner":
         return Boolean(context.siteOwner);
+      case "pluginAuthor":
+        return Boolean(context.pluginAuthor);
       default:
         return true;
     }

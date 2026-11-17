@@ -24,6 +24,10 @@ export interface TourContext {
   siteOwner: boolean;
   /** 管理画面: 特別管理人か。 */
   siteSpecialAdmin: boolean;
+  /** ログインしているか（プラグイン作成トークン画面のツアー）。 */
+  loggedIn: boolean;
+  /** プラグイン詳細: そのプラグインの作者か（作者向けの手順）。 */
+  pluginAuthor: boolean;
 }
 
 const DEFAULT_CONTEXT: TourContext = {
@@ -31,6 +35,8 @@ const DEFAULT_CONTEXT: TourContext = {
   boardStaff: false,
   siteOwner: false,
   siteSpecialAdmin: false,
+  loggedIn: false,
+  pluginAuthor: false,
 };
 
 let context: TourContext = { ...DEFAULT_CONTEXT };
@@ -164,6 +170,9 @@ function isVisible(selector: string): boolean {
 export function canStartTour(page: TourPageKey): boolean {
   if (page === "manage") return context.boardStaff;
   if (page === "admin") return context.siteOwner || context.siteSpecialAdmin;
+  if (page === "plugins-board") return context.canManageBoard;
+  if (page === "plugins-review") return context.siteOwner || context.siteSpecialAdmin;
+  if (page === "plugin-tokens") return context.loggedIn;
   return true;
 }
 
@@ -275,6 +284,13 @@ export function tourPageKeyForPath(pathname: string): TourPageKey | null {
   if (path === "/settings") return "settings";
   if (path === "/help/admin") return "help-admin";
   if (path === "/help") return "help";
+  if (path === "/plugins") return "plugins";
+  if (path === "/plugins/new") return "plugin-new";
+  if (path === "/plugins/templates") return "plugin-templates";
+  if (path === "/plugins/view") return "plugin-view";
+  if (path === "/plugins/board") return "plugins-board";
+  if (path === "/plugins/review") return "plugins-review";
+  if (path === "/account/plugin-tokens") return "plugin-tokens";
   if (path === "/admin" || path.startsWith("/admin/")) return "admin";
   const manage = path.match(/^\/b\/[^/]+\/manage(?:\/|$)/);
   if (manage) return "manage";

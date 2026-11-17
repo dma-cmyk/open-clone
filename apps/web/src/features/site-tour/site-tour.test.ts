@@ -62,11 +62,19 @@ describe("tourPageKeyForPath", () => {
     expect(tourPageKeyForPath("/help/")).toBe("help");
     expect(tourPageKeyForPath("/help/admin")).toBe("help-admin");
     expect(tourPageKeyForPath("/help/admin/")).toBe("help-admin");
+    expect(tourPageKeyForPath("/plugins")).toBe("plugins");
+    expect(tourPageKeyForPath("/plugins/")).toBe("plugins");
+    expect(tourPageKeyForPath("/plugins/new/")).toBe("plugin-new");
+    expect(tourPageKeyForPath("/plugins/templates/")).toBe("plugin-templates");
+    expect(tourPageKeyForPath("/plugins/view/")).toBe("plugin-view");
+    expect(tourPageKeyForPath("/plugins/board/")).toBe("plugins-board");
+    expect(tourPageKeyForPath("/plugins/review/")).toBe("plugins-review");
+    expect(tourPageKeyForPath("/account/plugin-tokens/")).toBe("plugin-tokens");
   });
 
   it("ツアーの無い画面は null（勝手に始めない）", () => {
     expect(tourPageKeyForPath("/search")).toBeNull();
-    expect(tourPageKeyForPath("/plugins")).toBeNull();
+    expect(tourPageKeyForPath("/plugins/demo")).toBeNull();
     expect(tourPageKeyForPath("/account/login")).toBeNull();
     expect(tourPageKeyForPath("/ranking")).toBeNull();
   });

@@ -6,6 +6,8 @@
 
 import Link from "next/link";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { SiteFooter } from "@/app/_shell/site-footer";
+import { SiteHeader } from "@/app/_shell/site-header";
 
 /** レイアウト補助のみ。色・書体・角丸は globals.css の変数に従う。 */
 export const ui: Record<string, CSSProperties> = {
@@ -51,6 +53,7 @@ export function PluginShell(props: {
 }) {
   return (
     <div className="oc-app">
+      <SiteHeader />
       <main className="oc-main">
         <nav
           className="oc-row"
@@ -90,6 +93,7 @@ export function PluginShell(props: {
         ) : null}
         {props.children}
       </main>
+      <SiteFooter />
     </div>
   );
 }
