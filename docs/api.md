@@ -51,6 +51,7 @@
 | `STEP_UP_REQUIRED` | 高リスク操作に TOTP step-up（再認証）が必要 |
 | `INVITE_INVALID` | 招待キーが無効・期限切れ・使用済み |
 | `OWNER_SETUP_CLOSED` | owner 初期設定は完了済み（再実行不可） |
+| `RESET_INVALID` | パスワード再設定の復旧コード/URL が無効（存在しないメール・誤り・期限切れ・使用済み・失効を区別しない） |
 
 ### 1.3 認証
 
@@ -97,21 +98,25 @@
 | GET | `/me/sessions` | `requireAuth` | `accounts.ts` | 129 |
 | DELETE | `/me/sessions/:id` | `requireAuth` | `accounts.ts` | 147 |
 | POST | `/me/sessions/revoke-others` | `requireAuth` | `accounts.ts` | 168 |
-| POST | `/owner/setup` | — | `admin.ts` | 57 |
-| GET | `/overview` | `requireAdminActive` | `admin.ts` | 109 |
-| GET | `/users` | `requireAdminActive` | `admin.ts` | 137 |
-| GET | `/users/:id` | `requireAdminActive` | `admin.ts` | 200 |
-| GET | `/suspensions` | `requireAdminActive` | `admin.ts` | 228 |
-| POST | `/suspensions` | `requireAdminActive` | `admin.ts` | 238 |
-| POST | `/suspensions/:id/lift` | `requireAdminActive` | `admin.ts` | 253 |
-| DELETE | `/suspensions/:id` | `requireAdminActive` | `admin.ts` | 268 |
-| GET | `/audit` | `requireAdminActive` | `admin.ts` | 285 |
-| GET | `/site-config` | `requireAdminActive`, `requireOwnerActive` | `admin.ts` | 352 |
-| PUT | `/site-config` | `requireOwnerActive` | `admin.ts` | 356 |
-| GET | `/special-admins` | `requireOwnerActive` | `admin.ts` | 373 |
-| POST | `/special-admins/:id/stop` | `requireOwnerActive` | `admin.ts` | 387 |
-| POST | `/special-admins/:id/restore` | `requireOwnerActive` | `admin.ts` | 406 |
-| POST | `/special-admins/:id/totp-reset` | `requireOwnerActive` | `admin.ts` | 423 |
+| POST | `/owner/setup` | — | `admin.ts` | 69 |
+| GET | `/overview` | `requireAdminActive` | `admin.ts` | 121 |
+| GET | `/users` | `requireAdminActive` | `admin.ts` | 149 |
+| GET | `/users/:id` | `requireAdminActive` | `admin.ts` | 212 |
+| POST | `/password-resets` | `requireOwnerActive` | `admin.ts` | 243 |
+| GET | `/password-resets` | `requireOwnerActive` | `admin.ts` | 292 |
+| POST | `/password-resets/:id/revoke` | `requireOwnerActive` | `admin.ts` | 310 |
+| GET | `/suspensions` | `requireAdminActive` | `admin.ts` | 330 |
+| POST | `/suspensions` | `requireAdminActive` | `admin.ts` | 340 |
+| POST | `/suspensions/:id/lift` | `requireAdminActive` | `admin.ts` | 355 |
+| DELETE | `/suspensions/:id` | `requireAdminActive` | `admin.ts` | 370 |
+| GET | `/audit` | `requireAdminActive` | `admin.ts` | 387 |
+| GET | `/plugin-reports` | `requireAdminActive`, `requireOwnerActive` | `admin.ts` | 455 |
+| GET | `/site-config` | `requireAdminActive`, `requireOwnerActive` | `admin.ts` | 463 |
+| PUT | `/site-config` | `requireOwnerActive` | `admin.ts` | 467 |
+| GET | `/special-admins` | `requireOwnerActive` | `admin.ts` | 484 |
+| POST | `/special-admins/:id/stop` | `requireOwnerActive` | `admin.ts` | 498 |
+| POST | `/special-admins/:id/restore` | `requireOwnerActive` | `admin.ts` | 517 |
+| POST | `/special-admins/:id/totp-reset` | `requireOwnerActive` | `admin.ts` | 534 |
 | POST | `/complete` | — | `ai.ts` | 195 |
 | GET | `/me` | — | `ai.ts` | 209 |
 | POST | `/act` | — | `ai.ts` | 220 |
@@ -158,34 +163,36 @@
 | GET | `/webhooks/:id/deliveries` | `requireAuth` | `ai.ts` | 1086 |
 | GET | `/metrics` | `requireAuth` | `ai.ts` | 1094 |
 | GET | `/actions` | `requireAuth` | `ai.ts` | 1100 |
-| POST | `/register` | `requireTurnstile` | `auth.ts` | 82 |
-| POST | `/login` | `requireTurnstile` | `auth.ts` | 155 |
-| POST | `/logout` | — | `auth.ts` | 238 |
-| GET | `/session` | `requireAuth` | `auth.ts` | 245 |
-| GET | `/totp/status` | `requireAuth` | `auth.ts` | 254 |
-| POST | `/totp/setup` | `requireAuth` | `auth.ts` | 260 |
-| POST | `/totp/enable` | `requireAuth` | `auth.ts` | 267 |
-| POST | `/totp/disable` | `requireAuth` | `auth.ts` | 281 |
-| POST | `/recovery-codes/regenerate` | `requireAuth` | `auth.ts` | 295 |
-| POST | `/recovery` | `requireTurnstile` | `auth.ts` | 310 |
-| GET | `/github/status` | — | `auth.ts` | 377 |
-| GET | `/github/start` | — | `auth.ts` | 381 |
-| POST | `/github/callback` | — | `auth.ts` | 387 |
-| POST | `/step-up` | `requireAuth` | `auth.ts` | 422 |
+| POST | `/register` | `requireTurnstile` | `auth.ts` | 107 |
+| POST | `/login` | `requireTurnstile` | `auth.ts` | 185 |
+| POST | `/logout` | — | `auth.ts` | 268 |
+| GET | `/session` | `requireAuth` | `auth.ts` | 275 |
+| GET | `/totp/status` | `requireAuth` | `auth.ts` | 284 |
+| POST | `/totp/setup` | `requireAuth` | `auth.ts` | 290 |
+| POST | `/totp/enable` | `requireAuth` | `auth.ts` | 297 |
+| POST | `/totp/disable` | `requireAuth` | `auth.ts` | 311 |
+| POST | `/recovery-codes/regenerate` | `requireAuth` | `auth.ts` | 325 |
+| POST | `/recovery` | `requireTurnstile` | `auth.ts` | 364 |
+| POST | `/password-reset` | `requireTurnstile` | `auth.ts` | 420 |
+| POST | `/password-reset/operator` | `requireTurnstile` | `auth.ts` | 485 |
+| GET | `/github/status` | — | `auth.ts` | 539 |
+| GET | `/github/start` | — | `auth.ts` | 543 |
+| POST | `/github/callback` | — | `auth.ts` | 549 |
+| POST | `/step-up` | `requireAuth` | `auth.ts` | 584 |
 | GET | `/` | — | `boards.ts` | 44 |
 | POST | `/` | `requireAuth` | `boards.ts` | 100 |
 | GET | `/:slug` | — | `boards.ts` | 171 |
 | GET | `/:slug/turnstile` | — | `boards.ts` | 228 |
 | PATCH | `/:slug` | `requireAuth` | `boards.ts` | 257 |
-| DELETE | `/:slug` | `requireAuth` | `boards.ts` | 296 |
-| GET | `/:slug/threads` | — | `boards.ts` | 319 |
-| POST | `/:slug/threads` | — | `boards.ts` | 346 |
-| GET | `/:slug/staff` | — | `boards.ts` | 392 |
-| POST | `/:slug/staff` | `requireAuth` | `boards.ts` | 418 |
-| DELETE | `/:slug/staff/:accountId` | `requireAuth` | `boards.ts` | 451 |
-| GET | `/:slug/bans` | `requireAuth` | `boards.ts` | 480 |
-| POST | `/:slug/bans` | `requireAuth` | `boards.ts` | 517 |
-| DELETE | `/:slug/bans/:id` | `requireAuth` | `boards.ts` | 554 |
+| DELETE | `/:slug` | `requireAuth` | `boards.ts` | 298 |
+| GET | `/:slug/threads` | — | `boards.ts` | 321 |
+| POST | `/:slug/threads` | — | `boards.ts` | 348 |
+| GET | `/:slug/staff` | — | `boards.ts` | 394 |
+| POST | `/:slug/staff` | `requireAuth` | `boards.ts` | 420 |
+| DELETE | `/:slug/staff/:accountId` | `requireAuth` | `boards.ts` | 454 |
+| GET | `/:slug/bans` | `requireAuth` | `boards.ts` | 484 |
+| POST | `/:slug/bans` | `requireAuth` | `boards.ts` | 521 |
+| DELETE | `/:slug/bans/:id` | `requireAuth` | `boards.ts` | 559 |
 | GET | `/:slug/subject.txt` | — | `compat.ts` | 70 |
 | GET | `/:slug/dat/:file` | — | `compat.ts` | 119 |
 | GET | `/bbsmenu.html` | — | `compat.ts` | 160 |
@@ -218,44 +225,46 @@
 | ALL | `/legacy` | — | `mcp-plugin.ts` | 200 |
 | ALL | `/` | — | `mcp.ts` | 112 |
 | ALL | `/legacy` | — | `mcp.ts` | 113 |
-| GET | `/health` | — | `meta.ts` | 10 |
-| GET | `/usage` | `requireAdminActive` | `meta.ts` | 24 |
+| GET | `/health` | — | `meta.ts` | 11 |
+| GET | `/site` | — | `meta.ts` | 25 |
+| GET | `/usage` | `requireAdminActive` | `meta.ts` | 39 |
 | POST | `/fetch` | — | `plugin-net.ts` | 30 |
 | GET | `/log` | `requireRole` | `plugin-net.ts` | 116 |
 | POST | `/revoke-all` | `requireAuth` | `plugin-tokens.ts` | 83 |
 | DELETE | `/:id` | `requireAuth` | `plugin-tokens.ts` | 97 |
-| GET | `/mine` | — | `plugins.ts` | 157 |
-| GET | `/active` | — | `plugins.ts` | 172 |
-| GET | `/installed` | — | `plugins.ts` | 205 |
-| GET | `/reviews` | `requireRole` | `plugins.ts` | 271 |
-| POST | `/preview-check` | `requireAuth` | `plugins.ts` | 285 |
-| POST | `/import/gist` | `requireAuth` | `plugins.ts` | 292 |
-| POST | `/import/repo` | `requireAuth` | `plugins.ts` | 316 |
-| POST | `/hooks/github` | — | `plugins.ts` | 348 |
-| GET | `/:id` | — | `plugins.ts` | 527 |
-| GET | `/:id/versions` | — | `plugins.ts` | 538 |
-| GET | `/:id/code` | — | `plugins.ts` | 562 |
-| POST | `/:id/versions` | — | `plugins.ts` | 620 |
-| POST | `/:id/publish` | `requireAuth` | `plugins.ts` | 694 |
-| POST | `/:id/install` | — | `plugins.ts` | 744 |
-| POST | `/:id/update` | — | `plugins.ts` | 824 |
-| POST | `/:id/uninstall` | — | `plugins.ts` | 856 |
-| POST | `/:id/report` | — | `plugins.ts` | 878 |
-| GET | `/:id/reports` | — | `plugins.ts` | 902 |
-| POST | `/:id/disable` | — | `plugins.ts` | 914 |
-| POST | `/:id/enable` | — | `plugins.ts` | 951 |
-| DELETE | `/:id` | — | `plugins.ts` | 973 |
-| POST | `/:id/disable-install` | — | `plugins.ts` | 1013 |
-| POST | `/:id/enable-install` | — | `plugins.ts` | 1037 |
-| POST | `/:id/fork` | `requireAuth` | `plugins.ts` | 1060 |
-| GET | `/:id/state` | — | `plugins.ts` | 1104 |
-| POST | `/:id/state` | — | `plugins.ts` | 1128 |
-| DELETE | `/:id/state` | — | `plugins.ts` | 1164 |
-| POST | `/:id/review` | `requireRole` | `plugins.ts` | 1193 |
-| GET | `/:id/review` | `requireRole` | `plugins.ts` | 1225 |
-| POST | `/:id/export/gist` | `requireAuth` | `plugins.ts` | 1241 |
-| POST | `/:id/export/repo` | `requireAuth` | `plugins.ts` | 1268 |
-| POST | `/:id/sync` | `requireAuth` | `plugins.ts` | 1308 |
+| GET | `/mine` | — | `plugins.ts` | 159 |
+| GET | `/active` | — | `plugins.ts` | 174 |
+| GET | `/installed` | — | `plugins.ts` | 207 |
+| GET | `/reviews` | `requireRole` | `plugins.ts` | 273 |
+| POST | `/preview-check` | `requireAuth` | `plugins.ts` | 287 |
+| POST | `/import/gist` | `requireAuth` | `plugins.ts` | 294 |
+| POST | `/import/repo` | `requireAuth` | `plugins.ts` | 318 |
+| POST | `/hooks/github` | — | `plugins.ts` | 350 |
+| GET | `/:id` | — | `plugins.ts` | 529 |
+| GET | `/:id/versions` | — | `plugins.ts` | 540 |
+| GET | `/:id/code` | — | `plugins.ts` | 564 |
+| POST | `/:id/versions` | — | `plugins.ts` | 622 |
+| POST | `/:id/publish` | `requireAuth` | `plugins.ts` | 696 |
+| POST | `/:id/install` | — | `plugins.ts` | 746 |
+| POST | `/:id/update` | — | `plugins.ts` | 826 |
+| POST | `/:id/uninstall` | — | `plugins.ts` | 858 |
+| POST | `/:id/report` | — | `plugins.ts` | 880 |
+| GET | `/:id/reports` | — | `plugins.ts` | 904 |
+| POST | `/reports/:id/handle` | `requireAuth` | `plugins.ts` | 926 |
+| POST | `/:id/disable` | — | `plugins.ts` | 948 |
+| POST | `/:id/enable` | — | `plugins.ts` | 985 |
+| DELETE | `/:id` | — | `plugins.ts` | 1007 |
+| POST | `/:id/disable-install` | — | `plugins.ts` | 1047 |
+| POST | `/:id/enable-install` | — | `plugins.ts` | 1071 |
+| POST | `/:id/fork` | `requireAuth` | `plugins.ts` | 1094 |
+| GET | `/:id/state` | — | `plugins.ts` | 1138 |
+| POST | `/:id/state` | — | `plugins.ts` | 1162 |
+| DELETE | `/:id/state` | — | `plugins.ts` | 1198 |
+| POST | `/:id/review` | `requireRole` | `plugins.ts` | 1227 |
+| GET | `/:id/review` | `requireRole` | `plugins.ts` | 1259 |
+| POST | `/:id/export/gist` | `requireAuth` | `plugins.ts` | 1275 |
+| POST | `/:id/export/repo` | `requireAuth` | `plugins.ts` | 1302 |
+| POST | `/:id/sync` | `requireAuth` | `plugins.ts` | 1342 |
 | GET | `/:id` | — | `posts.ts` | 81 |
 | POST | `/` | — | `posts.ts` | 108 |
 | POST | `/tsubuyaki` | — | `posts.ts` | 141 |
@@ -269,18 +278,18 @@
 | GET | `/:id/poll` | — | `posts.ts` | 376 |
 | POST | `/:id/poll/vote` | — | `posts.ts` | 416 |
 | GET | `/:id/backlinks` | — | `posts.ts` | 444 |
-| GET | `/` | — | `ranking.ts` | 210 |
+| GET | `/` | — | `ranking.ts` | 223 |
 | POST | `/` | — | `reports.ts` | 125 |
 | GET | `/` | `requireAuth` | `reports.ts` | 178 |
 | GET | `/:id` | `requireAuth` | `reports.ts` | 236 |
 | POST | `/:id/handle` | `requireAuth` | `reports.ts` | 260 |
-| POST | `/ticket` | — | `rt.ts` | 27 |
-| GET | `/` | — | `rt.ts` | 37 |
-| GET | `/stats` | — | `rt.ts` | 67 |
-| GET | `/recent` | — | `rt.ts` | 77 |
-| GET | `/` | — | `search.ts` | 98 |
-| GET | `/suggest` | — | `search.ts` | 337 |
-| GET | `/stats` | — | `search.ts` | 350 |
+| POST | `/ticket` | — | `rt.ts` | 61 |
+| GET | `/` | — | `rt.ts` | 75 |
+| GET | `/stats` | — | `rt.ts` | 107 |
+| GET | `/recent` | — | `rt.ts` | 118 |
+| GET | `/` | — | `search.ts` | 99 |
+| GET | `/suggest` | — | `search.ts` | 344 |
+| GET | `/stats` | — | `search.ts` | 357 |
 | GET | `/` | — | `threads.ts` | 61 |
 | GET | `/:id` | — | `threads.ts` | 84 |
 | GET | `/:id/card` | — | `threads.ts` | 122 |
@@ -1348,6 +1357,40 @@
 }
 ```
 
+#### `publicSiteInfoSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "operatorContact": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "email",
+          "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "name",
+    "description",
+    "operatorContact"
+  ]
+}
+```
+
 #### `siteSettingsSchema`
 
 ```json
@@ -1400,6 +1443,20 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 100
+    },
+    "site.operator_contact": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": ""
+        },
+        {
+          "type": "string",
+          "maxLength": 254,
+          "format": "email",
+          "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+        }
+      ]
     }
   },
   "required": [
@@ -1410,7 +1467,8 @@
     "security.special_admin_totp_required",
     "security.login_max_failures",
     "plugin.ai.baseUrl",
-    "plugin.ai.model"
+    "plugin.ai.model",
+    "site.operator_contact"
   ]
 }
 ```
@@ -1467,6 +1525,20 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 100
+    },
+    "site.operator_contact": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": ""
+        },
+        {
+          "type": "string",
+          "maxLength": 254,
+          "format": "email",
+          "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+        }
+      ]
     }
   }
 }
@@ -6227,6 +6299,257 @@
 }
 ```
 
+### `packages/shared/src/schemas/password-reset.ts`
+
+#### `operatorPasswordResetRequestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "token": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 256
+    },
+    "newPassword": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256
+    }
+  },
+  "required": [
+    "token",
+    "newPassword"
+  ]
+}
+```
+
+#### `operatorPasswordResetResultSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "reset": {
+      "type": "boolean",
+      "const": true
+    },
+    "accountName": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "reset",
+    "accountName"
+  ]
+}
+```
+
+#### `passwordResetIssueRequestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "accountId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    }
+  },
+  "required": [
+    "accountId"
+  ]
+}
+```
+
+#### `passwordResetIssueResultSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "accountId": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+    },
+    "token": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    },
+    "mailtoUrl": {
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "id",
+    "accountId",
+    "email",
+    "token",
+    "url",
+    "mailtoUrl",
+    "expiresAt"
+  ]
+}
+```
+
+#### `passwordResetRequestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string",
+      "format": "email",
+      "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+    },
+    "code": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 64
+    },
+    "newPassword": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256
+    }
+  },
+  "required": [
+    "email",
+    "code",
+    "newPassword"
+  ]
+}
+```
+
+#### `passwordResetResultSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "reset": {
+      "type": "boolean",
+      "const": true
+    },
+    "recoveryRemaining": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "reset",
+    "recoveryRemaining"
+  ]
+}
+```
+
+#### `passwordResetTokenListSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "expiresAt": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "createdAt",
+          "expiresAt"
+        ]
+      }
+    },
+    "now": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "items",
+    "now"
+  ]
+}
+```
+
+#### `passwordResetTokenSummarySchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "accountId": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "expiresAt": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "id",
+    "accountId",
+    "createdAt",
+    "expiresAt"
+  ]
+}
+```
+
 ### `packages/shared/src/schemas/plugin-authoring.ts`
 
 #### `authoringAddVersionOutputSchema`
@@ -10563,6 +10886,51 @@
   "required": [
     "repo"
   ]
+}
+```
+
+#### `pluginReportHandleSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "resolve",
+        "dismiss"
+      ]
+    },
+    "note": {
+      "default": "",
+      "type": "string",
+      "maxLength": 1000
+    }
+  },
+  "required": [
+    "action"
+  ]
+}
+```
+
+#### `pluginReportListQuerySchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "includeResolved": {
+      "default": "0",
+      "type": "string",
+      "enum": [
+        "0",
+        "1"
+      ]
+    }
+  }
 }
 ```
 
