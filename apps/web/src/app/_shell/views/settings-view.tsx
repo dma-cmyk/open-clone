@@ -1,21 +1,25 @@
 "use client";
 
 // 個人設定（NG 3段階・表示・新着・つぶやき・履歴）。localStorage 永続。
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   addNgEntry,
+  clearIgnoredThreads,
+  clearNgEntries,
+  ngEntryAddedAt,
   removeNgEntry,
   settingsStore,
-  type NgConfig,
+  unignoreThread,
+  type NgListKind,
   type NgMode,
 } from "@/features/board-ui/settings";
 import { clearHistory, historyStore } from "@/features/board-ui/history";
-import { formatRelative } from "@/features/board-ui/format";
+import { formatDate, formatRelative, threadPath } from "@/features/board-ui/format";
 import { Button, Notice, Tabs, useToast } from "@/components/ui";
-import { Link } from "../router";
+import { Link, navigate, useLocation } from "../router";
 import { usePageTitle } from "@/lib/title";
 
-const NG_LISTS: { key: keyof Omit<NgConfig, "mode">; label: string; placeholder: string }[] = [
+const NG_LISTS: { key: NgListKind; label: string; placeholder: string }[] = [
   { key: "words", label: "NG ワード（本文・部分一致）", placeholder: "例: 荒らし / :image / :url" },
   { key: "ids", label: "NG ID（完全一致）", placeholder: "例: MOoI" },
   { key: "names", label: "NG 名前（部分一致）", placeholder: "例: 特定のコテハン" },
@@ -23,9 +27,22 @@ const NG_LISTS: { key: keyof Omit<NgConfig, "mode">; label: string; placeholder:
   { key: "threads", label: "NG スレタイ（部分一致）", placeholder: "例: 宣伝スレ" },
 ];
 
+/** 追加日時（旧データは記録が無いので「追加日不明」）。 */
+function addedAtLabel(at: number | null): string {
+  return at === null ? "追加日不明" : `追加 ${formatDate(at / 1000).slice(0, 17)}`;
+}
+
 function NgSection() {
   const settings = settingsStore.use();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const toast = useToast();
+  const ignored = settings.ng.ignoredThreads;
+
+  const clearList = (key: NgListKind, label: string, count: number) => {
+    if (!window.confirm(`${label} をすべて解除します（${count} 件）。よろしいですか？`)) return;
+    clearNgEntries(key);
+    toast.show(`${label} をすべて解除しました`);
+  };
 
   return (
     <section className="oc-settings-section" data-tour="settings-ng">
@@ -52,53 +69,119 @@ function NgSection() {
           ))}
         </div>
         <p className="oc-note">
-          NG はこの端末にのみ保存されます。サーバーには送信されません（open2ch と同じ方式）。特殊 NG: :url / :image / :tsubuyaki / :ai
+          NG はこの端末にのみ保存されます。サーバーには送信されません（open2ch と同じ方式）。特殊 NG: :url / :image
+          / :tsubuyaki / :ai
+        </p>
+        <p className="oc-note">
+          追加した直後のトーストの「元に戻す」、板・スレの NG の帯の「NG を解除」からも戻せます。追加日時はこれから追加した項目に記録され、それ以前の項目は「追加日不明」になります。
         </p>
 
-        {NG_LISTS.map((list) => (
-          <div key={list.key} className="oc-mt">
-            <div className="oc-label">{list.label}</div>
-            <div className="oc-row">
-              <input
-                className="oc-input oc-input-sm"
-                style={{ maxWidth: 320 }}
-                value={drafts[list.key] ?? ""}
-                placeholder={list.placeholder}
-                onChange={(event) => setDrafts({ ...drafts, [list.key]: event.target.value })}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
+        {NG_LISTS.map((list) => {
+          const values = settings.ng[list.key];
+          return (
+            <div key={list.key} className="oc-mt">
+              <div className="oc-label">
+                {list.label}（{values.length} 件）
+              </div>
+              <div className="oc-row">
+                <input
+                  className="oc-input oc-input-sm"
+                  style={{ maxWidth: 320 }}
+                  value={drafts[list.key] ?? ""}
+                  placeholder={list.placeholder}
+                  onChange={(event) => setDrafts({ ...drafts, [list.key]: event.target.value })}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      addNgEntry(list.key, drafts[list.key] ?? "");
+                      setDrafts({ ...drafts, [list.key]: "" });
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  onClick={() => {
                     addNgEntry(list.key, drafts[list.key] ?? "");
                     setDrafts({ ...drafts, [list.key]: "" });
-                  }
-                }}
-              />
+                  }}
+                >
+                  追加
+                </Button>
+                {values.length > 0 ? (
+                  <Button size="sm" onClick={() => clearList(list.key, list.label, values.length)}>
+                    すべて解除（{values.length} 件）
+                  </Button>
+                ) : null}
+              </div>
+              <div className="oc-ng-list">
+                {values.length === 0 ? <span className="oc-muted oc-small">なし</span> : null}
+                {values.map((value) => (
+                  <span key={value} className="oc-ng-item">
+                    <span>{value}</span>
+                    <span className="oc-muted oc-small">{addedAtLabel(ngEntryAddedAt(settings.ng, list.key, value))}</span>
+                    <button type="button" onClick={() => removeNgEntry(list.key, value)} aria-label={`${value} を削除`}>
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
+        <div className="oc-mt">
+          <div className="oc-label">無視したスレ（{ignored.length} 件）</div>
+          <p className="oc-note">
+            「無視」はスレ ID 単位になりました。無視したスレだけが隠れ、タイトルが似た別スレは隠れません。以前の「NG
+            スレタイ」は部分一致のまま残っています。
+          </p>
+          {ignored.length === 0 ? <span className="oc-muted oc-small">なし</span> : null}
+          {ignored.map((item) => (
+            <div key={item.id} className="oc-history-item">
+              <span className="oc-history-time">{addedAtLabel(item.at)}</span>
+              <Link href={threadPath(item.board, item.id)}>{item.title || `スレ ${item.id}`}</Link>
+              <span className="oc-muted oc-small">{item.board} 板</span>
+              <span className="oc-spacer" />
               <Button
                 size="sm"
                 onClick={() => {
-                  addNgEntry(list.key, drafts[list.key] ?? "");
-                  setDrafts({ ...drafts, [list.key]: "" });
+                  unignoreThread(item.id);
+                  toast.show("スレの無視をやめました");
                 }}
               >
-                追加
+                解除
               </Button>
             </div>
-            <div className="oc-ng-list">
-              {settings.ng[list.key].length === 0 ? <span className="oc-muted oc-small">なし</span> : null}
-              {settings.ng[list.key].map((value) => (
-                <span key={value} className="oc-ng-item">
-                  {value}
-                  <button type="button" onClick={() => removeNgEntry(list.key, value)} aria-label={`${value} を削除`}>
-                    ✕
-                  </button>
-                </span>
-              ))}
+          ))}
+          {ignored.length > 0 ? (
+            <div className="oc-row oc-mt">
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  if (!window.confirm(`無視したスレをすべて解除します（${ignored.length} 件）。よろしいですか？`)) return;
+                  clearIgnoredThreads();
+                  toast.show("無視したスレをすべて解除しました");
+                }}
+              >
+                すべて解除（{ignored.length} 件）
+              </Button>
             </div>
-          </div>
-        ))}
+          ) : null}
+        </div>
       </div>
     </section>
   );
+}
+
+const TAB_VALUES = ["ng", "display", "behavior", "history"] as const;
+type SettingsTab = (typeof TAB_VALUES)[number];
+
+/** `?tab=ng` などの直リンクから初期タブを決める。 */
+function tabFromLocation(location: string): SettingsTab | null {
+  const search = location.includes("?") ? location.slice(location.indexOf("?")) : "";
+  const value = new URLSearchParams(search).get("tab");
+  return TAB_VALUES.includes(value as SettingsTab) ? (value as SettingsTab) : null;
 }
 
 export function SettingsView() {
@@ -106,7 +189,19 @@ export function SettingsView() {
   const settings = settingsStore.use();
   const history = historyStore.use();
   const toast = useToast();
-  const [tab, setTab] = useState<"ng" | "display" | "behavior" | "history">("ng");
+  const location = useLocation();
+  const [tab, setTab] = useState<SettingsTab>("ng");
+
+  // 直リンク（/settings?tab=ng）や戻る/進むに追従する。SSR とハイドレーション初回は既定タブ。
+  useEffect(() => {
+    const next = tabFromLocation(location);
+    if (next) setTab(next);
+  }, [location]);
+
+  const changeTab = (next: SettingsTab) => {
+    setTab(next);
+    navigate(`/settings?tab=${next}`, { replace: true, keepScroll: true });
+  };
 
   return (
     <div>
@@ -124,7 +219,7 @@ export function SettingsView() {
               { value: "history", label: "履歴・ブクマ" },
             ]}
             active={tab}
-            onChange={setTab}
+            onChange={changeTab}
           />
 
           {tab === "ng" ? <NgSection /> : null}

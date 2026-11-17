@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, matchNg, matchNgThread, migrateLegacySettings, type NgConfig } from "./settings";
+import {
+  DEFAULT_SETTINGS,
+  matchNg,
+  matchNgThread,
+  matchThreadNg,
+  mergeSettings,
+  migrateLegacySettings,
+  ngEntryAddedAt,
+  withIgnoredThread,
+  withNgEntry,
+  withoutIgnoredThread,
+  withoutNgEntry,
+  type NgConfig,
+} from "./settings";
 import type { Post } from "./types";
 
 const basePost: Post = {
@@ -99,5 +112,88 @@ describe("migrateLegacySettings", () => {
     expect(DEFAULT_SETTINGS.behavior.tsubuyaki).toBe(false);
     expect(DEFAULT_SETTINGS.tsubuyaki.size).toBe(22);
     expect("kome" in DEFAULT_SETTINGS).toBe(false);
+  });
+});
+
+describe("mergeSettings（保存済みデータの読み込み）", () => {
+  it("ng.threads だけを持つ旧データでも壊れず、NG スレタイとして残す", () => {
+    const merged = mergeSettings({ ng: { mode: "hide", threads: ["宣伝"] } }, DEFAULT_SETTINGS);
+    expect(merged.ng.mode).toBe("hide");
+    expect(merged.ng.threads).toEqual(["宣伝"]);
+    expect(merged.ng.ignoredThreads).toEqual([]);
+    expect(merged.ng.words).toEqual([]);
+  });
+
+  it("壊れた値・重複 ID を捨てて既定値へ寄せる", () => {
+    const merged = mergeSettings(
+      {
+        ng: {
+          mode: "unknown",
+          words: ["a", 1, null],
+          ignoredThreads: [
+            { id: 12, board: "b", title: "t", at: 1 },
+            { id: 12, board: "dup", title: "dup", at: 2 },
+            { id: "x" },
+            null,
+          ],
+          addedAt: { "words:a": 100, "words:b": "bad" },
+        },
+      },
+      DEFAULT_SETTINGS,
+    );
+    expect(merged.ng.mode).toBe("confirm");
+    expect(merged.ng.words).toEqual(["a"]);
+    expect(merged.ng.ignoredThreads).toEqual([{ id: 12, board: "b", title: "t", at: 1 }]);
+    expect(merged.ng.addedAt).toEqual({ "words:a": 100 });
+  });
+});
+
+describe("NG 項目の追加日時", () => {
+  it("追加で日時を記録し、解除で一緒に消す", () => {
+    const added = withNgEntry(ng({}), "words", " spam ", 1_700_000_000_000);
+    expect(added.words).toEqual(["spam"]);
+    expect(ngEntryAddedAt(added, "words", "spam")).toBe(1_700_000_000_000);
+    const removed = withoutNgEntry(added, "words", "spam");
+    expect(removed.words).toEqual([]);
+    expect(ngEntryAddedAt(removed, "words", "spam")).toBeNull();
+  });
+
+  it("日時の無い旧データは不明（null）として扱う", () => {
+    expect(ngEntryAddedAt(ng({ words: ["old"] }), "words", "old")).toBeNull();
+  });
+});
+
+describe("スレ ID の無視", () => {
+  it("ID で追加したスレだけを隠し、似たタイトルの別スレは隠さない", () => {
+    const settings = withIgnoredThread(ng({}), { id: 10, board: "news", title: "雑談スレ part1" }, 1);
+    expect(matchThreadNg({ id: 10, title: "雑談スレ part1" }, settings)).toMatchObject({ hit: true, kind: "thread" });
+    expect(matchThreadNg({ id: 11, title: "雑談スレ part1" }, settings).hit).toBe(false);
+    expect(matchThreadNg({ id: 12, title: "雑談スレ part10" }, settings).hit).toBe(false);
+  });
+
+  it("同じ ID は二重に追加せず、解除で元に戻る", () => {
+    const once = withIgnoredThread(ng({}), { id: 10, board: "news", title: "t" }, 1);
+    const twice = withIgnoredThread(once, { id: 10, board: "news", title: "t" }, 2);
+    expect(twice.ignoredThreads).toHaveLength(1);
+    expect(twice.ignoredThreads[0]?.at).toBe(1);
+    expect(withoutIgnoredThread(once, 10).ignoredThreads).toEqual([]);
+  });
+
+  it("旧 NG スレタイは従来どおり部分一致で判定する", () => {
+    const verdict = matchThreadNg({ id: 10, title: "【宣伝】稼げる副業" }, ng({ threads: ["宣伝"] }));
+    expect(verdict).toMatchObject({ hit: true, kind: "title", reason: "宣伝" });
+  });
+});
+
+describe("matchNg の解除対象", () => {
+  it("一致した項目（種類と保存値）を返す", () => {
+    expect(matchNg({ ...basePost, idHash: "AbCd" }, ng({ ids: [" abcd "] })).entry).toEqual({
+      kind: "ids",
+      value: " abcd ",
+    });
+    expect(matchNg({ ...basePost, body: "spam" }, ng({ words: [" spam "] })).entry).toEqual({
+      kind: "words",
+      value: " spam ",
+    });
   });
 });

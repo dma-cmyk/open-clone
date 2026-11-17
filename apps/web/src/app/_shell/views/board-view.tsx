@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/features/board-ui/api";
 import { boardBanner, boardDesignStyle } from "@/features/board-ui/board-design";
 import { boardPath, formatRelative, threadPath } from "@/features/board-ui/format";
-import { matchNgThread, settingsStore } from "@/features/board-ui/settings";
+import { ignoreThread, matchThreadNg, removeNgEntry, settingsStore, unignoreThread, type NgThreadVerdict } from "@/features/board-ui/settings";
 import { useApiData, errorMessage } from "@/features/board-ui/use-api-data";
 import { PostForm } from "@/features/board-ui/post-form";
 import { PluginSlot } from "@/components/plugin-slot";
@@ -77,6 +77,31 @@ export function BoardView({ slug }: { slug: string }) {
   const designStyle = boardDesignStyle(board?.design);
   const banner = boardBanner(board?.design);
   const canManage = Boolean(boardInfo.data?.canManage);
+
+  // NG の帯・バッジから「その 1 件だけ」を解除する（NG スレタイ / スレ ID の無視）。
+  const undoThreadNg = (thread: { id: number; title: string }, verdict: NgThreadVerdict) => {
+    if (verdict.kind === "thread") {
+      unignoreThread(thread.id);
+      toast.show("スレの無視をやめました");
+      return;
+    }
+    if (verdict.reason) {
+      removeNgEntry("threads", verdict.reason);
+      toast.show("スレタイ NG を解除しました");
+    }
+  };
+  const ignoreThreadById = (thread: { id: number; title: string }) => {
+    ignoreThread({ id: thread.id, board: slug, title: thread.title });
+    toast.show("スレを無視しました（このスレだけ）", {
+      action: { label: "元に戻す", onClick: () => unignoreThread(thread.id) },
+      duration: 6000,
+    });
+  };
+  // 「完全に無視」ではスレ自体が出ないため、末尾に件数と設定への導線を出す。
+  const ngHiddenCount =
+    settings.ng.mode === "ignore"
+      ? (threads.data?.items ?? []).filter((thread) => matchThreadNg(thread, settings.ng).hit).length
+      : 0;
 
   if (boardInfo.loading && !boardInfo.data) {
     return <Spinner label="板を読み込み中…" />;
@@ -228,19 +253,23 @@ export function BoardView({ slug }: { slug: string }) {
           )
         ) : null}
         {threads.data?.items.map((thread, index) => {
-          const ngReason = matchNgThread(thread.title, settings.ng);
-          if (ngReason && settings.ng.mode === "ignore") {
+          const ngVerdict = matchThreadNg(thread, settings.ng);
+          if (ngVerdict.hit && settings.ng.mode === "ignore") {
             return null;
           }
-          if (ngReason && settings.ng.mode !== "confirm" && !revealed.has(thread.id)) {
+          if (ngVerdict.hit && settings.ng.mode !== "confirm" && !revealed.has(thread.id)) {
             return (
               <div className="oc-ng-block" key={thread.id}>
                 <span className="oc-ng-badge">NG</span>
                 <span>
-                  スレ「{thread.title}」は NG（{ngReason}）です
+                  スレ「{thread.title}」は
+                  {ngVerdict.kind === "thread" ? "無視したスレです" : ` NG（${ngVerdict.reason}）です`}
                 </span>
                 <button type="button" className="oc-btn oc-btn-sm" onClick={() => setRevealed((prev) => new Set(prev).add(thread.id))}>
                   表示
+                </button>
+                <button type="button" className="oc-btn oc-btn-sm" onClick={() => undoThreadNg(thread, ngVerdict)}>
+                  {ngVerdict.kind === "thread" ? "無視をやめる" : "NG を解除"}
                 </button>
               </div>
             );
@@ -262,11 +291,7 @@ export function BoardView({ slug }: { slug: string }) {
                 const dy = point.clientY - start.y;
                 if (dx < -70 && Math.abs(dx) > Math.abs(dy) * 1.4) {
                   event.preventDefault();
-                  settingsStore.set((prev) => ({
-                    ...prev,
-                    ng: { ...prev.ng, threads: [...new Set([...prev.ng.threads, thread.title])] },
-                  }));
-                  toast.show("スレを NG（無視）に追加しました");
+                  ignoreThreadById(thread);
                 }
               }}
             >
@@ -274,7 +299,19 @@ export function BoardView({ slug }: { slug: string }) {
                 <span className="oc-thread-rank">【{index + 1}:{thread.postCount}】</span>
                 <Link href={`${threadPath(slug, thread.id)}?r=l50`}>{thread.title}</Link>
                 <span className="oc-thread-count">({thread.postCount})</span>
-                {ngReason ? <span className="oc-badge oc-badge-red">NG</span> : null}
+                {ngVerdict.hit ? (
+                  <>
+                    <span className="oc-badge oc-badge-red">NG</span>
+                    <button
+                      type="button"
+                      className="oc-post-num"
+                      style={{ fontSize: 11 }}
+                      onClick={() => undoThreadNg(thread, ngVerdict)}
+                    >
+                      {ngVerdict.kind === "thread" ? "無視をやめる" : "NG を解除"}
+                    </button>
+                  </>
+                ) : null}
                 {thread.pinned ? <span className="oc-badge oc-badge-yellow">固定</span> : null}
                 {thread.live ? <span className="oc-badge oc-badge-green">実況</span> : null}
               </div>
@@ -311,13 +348,7 @@ export function BoardView({ slug }: { slug: string }) {
                   type="button"
                   className="oc-post-num"
                   style={{ fontSize: 11 }}
-                  onClick={() => {
-                    settingsStore.set((prev) => ({
-                      ...prev,
-                      ng: { ...prev.ng, threads: [...new Set([...prev.ng.threads, thread.title])] },
-                    }));
-                    toast.show("スレを NG（無視）に追加しました");
-                  }}
+                  onClick={() => ignoreThreadById(thread)}
                 >
                   無視
                 </button>
@@ -346,6 +377,12 @@ export function BoardView({ slug }: { slug: string }) {
             </div>
           );
         })}
+        {ngHiddenCount > 0 ? (
+          <div className="oc-ng-note">
+            NG で隠れている: {ngHiddenCount} 件（
+            <Link href="/settings?tab=ng">設定で確認</Link>）
+          </div>
+        ) : null}
       </div>
 
       <div className="oc-mt" data-tour="board-new-thread">

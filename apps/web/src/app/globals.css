@@ -1331,6 +1331,26 @@ hr {
   font-size: 12.5px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
 }
+.oc-toast-action {
+  margin-left: 8px;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 3px;
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.oc-toast-action:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+/* NG で隠れた件数の案内（板・スレの末尾） */
+.oc-ng-note {
+  padding: 6px 10px;
+  border-bottom: 1px solid #ddd;
+  color: #666;
+  font-size: 12px;
+}
 
 /* utility */
 .oc-nowrap {
