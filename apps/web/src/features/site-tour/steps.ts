@@ -315,7 +315,7 @@ const ADMIN: TourDefinition = {
       id: "admin-reports",
       selector: '[data-tour="admin-nav-reports"]',
       title: "通報の処理",
-      body: "利用者から届いた通報を確認し、レスを非表示・削除します。アクセス禁止（規制）は「規制」の画面で行います。",
+      body: "利用者から届いた通報を確認します。「レス」のタブでレスを非表示・削除し、「プラグイン」のタブで通報のあったプラグインを確認して対応済み・却下にします。アクセス禁止（規制）は「規制」の画面で行います。",
       helpAnchor: "#board-staff",
     },
     {
