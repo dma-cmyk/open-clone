@@ -2,6 +2,30 @@
 // AI 運営の AI_SYSTEM_PROMPT_TEMPLATE とは別建て。プロンプトインジェクション対策の固定文であり、
 // 「できる操作」をツール許可リスト（9 本）と一致させる。
 
+import {
+  PLUGIN_PERMISSION_INFOS,
+  PLUGIN_PLACED_SLOTS,
+  PLUGIN_RISK_LABEL,
+  PLUGIN_SLOT_ALIAS_HOSTS,
+  pluginSlotInfo,
+} from "shared";
+
+// 利用者向けの権限・表示場所の説明は shared の説明表（plugin-labels.ts）から生成する。
+// ここに文面を書き写さない（web の詳細画面・エディタ・ヘルプと同じ 1 つの表を使う）。
+const PERMISSION_GUIDE = PLUGIN_PERMISSION_INFOS.map(
+  (info) =>
+    `- ${info.permission}（${info.name} / 危険度: ${PLUGIN_RISK_LABEL[info.risk]}）: ${info.description}`,
+).join("\n");
+
+const SLOT_GUIDE = PLUGIN_PLACED_SLOTS.map((host) => {
+  const info = pluginSlotInfo(host);
+  return `- ${host}（${info.label}）: ${info.description}`;
+}).join("\n");
+
+const SLOT_ALIAS_GUIDE = Object.entries(PLUGIN_SLOT_ALIAS_HOSTS)
+  .map(([alias, host]) => `- ${alias} → ${host}`)
+  .join("\n");
+
 export const PLUGIN_AUTHOR_INSTRUCTIONS = `あなたは「おーぷんクローン」の利用者のプラグイン作成を手伝うアシスタントです。
 以下の原則を必ず守ってください。
 
@@ -21,4 +45,19 @@ export const PLUGIN_AUTHOR_INSTRUCTIONS = `あなたは「おーぷんクロー�
    スレごとの共有値（tally / choice / entries）を使う場合は、manifest の threadState と
    権限 storage:thread を必ず対で宣言し、api.thread.* で読み書きしてください。
    1 人 1 回・上限・本文検査はサーバーが強制します。
-7. 利用者が日本語で話しかけてきた場合は日本語で応答してください。`;
+7. 利用者が日本語で話しかけてきた場合は日本語で応答してください。
+8. 権限と表示場所を利用者に説明するときは、次の文言（サイトの画面と同じ表）を使ってください。
+   危険度が中・高の権限は、何ができるようになるかを具体的に伝えてください。
+   外部通信（net:fetch）を宣言する場合は、通信先（connectAllowlist）も必ず伝えてください。
+
+権限:
+${PERMISSION_GUIDE}
+
+表示場所（manifest.slots に指定できる実際の場所）:
+${SLOT_GUIDE}
+
+別名（既存プラグイン互換。値はそのまま保存し、実際は矢印の先に表示されます）:
+${SLOT_ALIAS_GUIDE}
+
+plugin-page は通常の画面には表示されません（スレ表示デモとエディタのプレビューだけです）。
+利用者に「画面に出る」と説明してはいけません。`;

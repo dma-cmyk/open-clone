@@ -5,7 +5,9 @@
 // `/plugins/board/?slug=<板スラッグ>` で板を指定する（板ページからリンクする）。
 
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import type { PluginDetail } from "shared";
 import { pluginApi } from "@/features/plugin-host";
+import { PluginPermissionList, PluginSlotList } from "@/features/plugin-host/labels";
 import { clearQueuedTour, setTourContext, setTourContextPending } from "@/features/site-tour";
 import {
   Badge,
@@ -55,6 +57,9 @@ export default function BoardPluginsPage() {
   const [manualBoardId, setManualBoardId] = useState("");
   const [installs, setInstalls] = useState<BoardInstall[]>([]);
   const [pluginRef, setPluginRef] = useState("");
+  // 導入前に権限と表示場所を見せるための照会結果（入力の debounce）。
+  const [preview, setPreview] = useState<PluginDetail | null>(null);
+  const [previewState, setPreviewState] = useState<"idle" | "loading" | "error">("idle");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -135,6 +140,37 @@ export default function BoardPluginsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 導入するプラグインの権限・表示場所を、入力が落ち着いてから照会する。
+  // 見つからない間は何も出さず、入力欄の下でだけ「見つかりません」と案内する。
+  useEffect(() => {
+    const ref = pluginRef.trim();
+    if (!ref) {
+      setPreview(null);
+      setPreviewState("idle");
+      return;
+    }
+    let cancelled = false;
+    setPreviewState("loading");
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const detail = await pluginApi.detail(ref);
+          if (cancelled) return;
+          setPreview(detail);
+          setPreviewState("idle");
+        } catch {
+          if (cancelled) return;
+          setPreview(null);
+          setPreviewState("error");
+        }
+      })();
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pluginRef]);
 
   // 権限が分かるまでは開始要求を保留する（読み込み中に押してもヘルプへ飛ばさない）。
   useIsomorphicLayoutEffect(() => {
@@ -249,6 +285,35 @@ export default function BoardPluginsPage() {
                 導入
               </button>
             </div>
+            {pluginRef.trim() ? (
+              <div style={{ marginTop: 6 }} data-testid="board-install-permissions">
+                {previewState === "error" ? (
+                  <p className="oc-muted oc-small" style={{ margin: 0 }}>
+                    「{pluginRef.trim()}」に一致するプラグインが見つかりません（ID または名前を確認してください）。
+                  </p>
+                ) : preview ? (
+                  <>
+                    <div style={{ ...ui.row, marginBottom: 4 }}>
+                      <strong>{preview.name}</strong>
+                      <Badge>v{preview.latestVersion ?? "-"}</Badge>
+                      <span className="oc-muted oc-small">導入前に、できることと表示場所を確認してください。</span>
+                    </div>
+                    <PluginPermissionList
+                      permissions={preview.permissions}
+                      connectAllowlist={preview.manifest.connectAllowlist}
+                      compact
+                    />
+                    <div style={{ marginTop: 4 }}>
+                      <PluginSlotList slots={preview.slots} compact />
+                    </div>
+                  </>
+                ) : (
+                  <p className="oc-muted oc-small" style={{ margin: 0 }}>
+                    権限と表示場所を確認しています…
+                  </p>
+                )}
+              </div>
+            ) : null}
             <p className="oc-muted oc-small">
               板用の導入には板管理人（admin）権限が必要です。導入操作は承認として記録されます。
             </p>

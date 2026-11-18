@@ -5,6 +5,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PluginActiveInstall, PluginScope, PluginSummary } from "shared";
 import { PluginApiError, pluginApi } from "@/features/plugin-host";
+import {
+  PluginPermissionList,
+  pluginSlotNames,
+} from "@/features/plugin-host/labels";
 import { clearQueuedTour, setTourContextPending } from "@/features/site-tour";
 import {
   createLatestOnly,
@@ -346,6 +350,17 @@ export default function PluginsPage() {
                     </div>
                   </div>
                   <div style={{ margin: "2px 0" }}>{plugin.summary}</div>
+                  <div style={{ margin: "2px 0 4px" }}>
+                    <PluginPermissionList
+                      permissions={plugin.permissions}
+                      connectAllowlist={plugin.connectAllowlist}
+                      compact
+                      emptyLabel="権限なし"
+                    />
+                  </div>
+                  <div className="oc-muted oc-small" style={{ marginBottom: 2 }}>
+                    表示場所: {pluginSlotNames(plugin.slots)}
+                  </div>
                   <div className="oc-muted oc-small">
                     v{plugin.latestVersion ?? "-"} / 導入 {plugin.installCount} / 更新 {formatTime(plugin.updatedAt)}
                     {plugin.scopes.length > 0 ? ` / ${plugin.scopes.join(", ")}` : ""}

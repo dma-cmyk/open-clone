@@ -166,6 +166,7 @@ function rowToSummary(row: PluginRow): PluginSummary {
     scopes: manifest.scope,
     permissions: manifest.permissions,
     slots: manifest.slots,
+    connectAllowlist: manifest.connectAllowlist,
     hasRenderRules: (manifest.render?.post?.length ?? 0) > 0,
     installCount: row.install_count,
     reportCount: row.report_count,

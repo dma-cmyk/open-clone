@@ -128,8 +128,8 @@ test.describe("匿名でのプラグイン作成（テンプレートから削�
     await expect(boardCheckbox).toBeDisabled();
     const siteCheckbox = anonPage.getByRole("checkbox", { name: "サイト全体", exact: true });
     await expect(siteCheckbox).toBeDisabled();
-    // net:fetch 等の禁止権限も押せない
-    const netCheckbox = anonPage.getByRole("checkbox", { name: "net:fetch", exact: true });
+    // net:fetch 等の禁止権限も押せない（画面には日本語名で出る）
+    const netCheckbox = anonPage.getByRole("checkbox", { name: /外部との通信/ });
     await expect(netCheckbox).toBeDisabled();
 
     // 新しい版を保存

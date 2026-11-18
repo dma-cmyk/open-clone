@@ -8,7 +8,7 @@ import {
   type PluginManifest,
   type PluginPermission,
 } from "shared";
-import { authorizeRpc, createRpcDispatcher, sanitizeDraftPatch } from "./bridge";
+import { authorizeRpc, createRpcDispatcher, sanitizeDraftPatch, type GithubConsentRequest } from "./bridge";
 import { pluginApi, PluginApiError } from "./api";
 import { buildSandboxCsp, PLUGIN_IFRAME_SANDBOX } from "./csp";
 import { buildPluginSrcdoc, escapeHtmlText } from "./bootstrap";
@@ -119,6 +119,19 @@ describe("RPC ディスパッチャ", () => {
     expect(calls).toContain("log:a");
   });
 
+  it("notify は 10 秒に 5 件まで（超えた分は捨てて RATE_LIMITED）", async () => {
+    const { dispatch, calls } = dispatcher(["notify"]);
+    for (let index = 0; index < 5; index += 1) {
+      const response = await dispatch({ v: 1, id: 50 + index, method: "notify", params: { message: `m${index}` } });
+      expect(response.ok).toBe(true);
+    }
+    const blocked = await dispatch({ v: 1, id: 56, method: "notify", params: { message: "over" } });
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.error.code).toBe("RATE_LIMITED");
+    expect(calls.filter((call) => call.startsWith("notify:"))).toHaveLength(5);
+    expect(calls).not.toContain("notify:info:over");
+  });
+
   it("upload.start はホストのアップローダ結果を返す", async () => {
     let opened = 0;
     const dispatch = createRpcDispatcher({
@@ -185,6 +198,165 @@ describe("RPC ディスパッチャ", () => {
         prompt: "hi",
         consent: true,
       });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("github.gist は同意が無ければ書き込まず、拒否は CANCELED、同意後のみ表示した値で送る", async () => {
+    const requests: Array<{ url: string; method: string; body: unknown }> = [];
+    vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push({
+        url: String(input),
+        method: String(init?.method ?? "GET"),
+        body: JSON.parse(String(init?.body ?? "null")),
+      });
+      return new Response(JSON.stringify({ ok: true, data: { id: "g1", htmlUrl: "https://gist.example/g1" } }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    try {
+      const base = {
+        pluginId: "plugin-1",
+        version: "1.0.0",
+        manifest: manifest(["github:gist"]),
+        permissions: ["github:gist"] as PluginPermission[],
+        scope: "personal" as const,
+        preview: false,
+      };
+      const noHandler = createRpcDispatcher({ ...base, handlers: {} });
+      const missing = await noHandler({
+        v: 1,
+        id: 40,
+        method: "github.gist",
+        params: { filename: "a.txt", content: "hello", public: false },
+      });
+      expect(missing.ok).toBe(false);
+      if (!missing.ok) expect(missing.error.code).toBe("CONSENT_REQUIRED");
+      expect(requests).toHaveLength(0);
+
+      const seen: GithubConsentRequest[] = [];
+      let allow = false;
+      const withHandler = createRpcDispatcher({
+        ...base,
+        handlers: {
+          onGithubConsent: async (request) => {
+            seen.push(request);
+            return allow;
+          },
+        },
+      });
+      const refused = await withHandler({
+        v: 1,
+        id: 41,
+        method: "github.gist",
+        params: { filename: "a.txt", content: "hello", public: false },
+      });
+      expect(refused.ok).toBe(false);
+      if (!refused.ok) expect(refused.error.code).toBe("CANCELED");
+      expect(requests).toHaveLength(0);
+      expect(seen[0]).toMatchObject({
+        pluginName: "test-plugin",
+        kind: "gist",
+        payload: { filename: "a.txt", content: "hello", public: false },
+      });
+      // 窓に出した内容は、送信前に差し替えられない
+      expect(Object.isFrozen(seen[0]!.payload)).toBe(true);
+
+      allow = true;
+      const gist = await withHandler({
+        v: 1,
+        id: 42,
+        method: "github.gist",
+        params: { filename: "a.txt", content: "hello", public: false },
+      });
+      expect(gist).toMatchObject({ ok: true, result: { id: "g1" } });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.url).toContain("/github/files/gists");
+      expect(requests[0]!.method).toBe("POST");
+      // 表示した filename / content / public がそのまま送られる
+      expect(requests[0]!.body).toMatchObject({
+        public: false,
+        files: { "a.txt": { content: "hello" } },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("github.repo も同意が無ければ書き込まず、同意後のみ表示した値で送る", async () => {
+    const requests: Array<{ url: string; method: string; body: unknown }> = [];
+    vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push({
+        url: String(input),
+        method: String(init?.method ?? "GET"),
+        body: JSON.parse(String(init?.body ?? "null")),
+      });
+      return new Response(JSON.stringify({ ok: true, data: { htmlUrl: "https://github.com/o/r/blob/main/p.js" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    try {
+      const base = {
+        pluginId: "plugin-1",
+        version: "1.0.0",
+        manifest: manifest(["github:repo"]),
+        permissions: ["github:repo"] as PluginPermission[],
+        scope: "personal" as const,
+        preview: false,
+      };
+      const noHandler = createRpcDispatcher({ ...base, handlers: {} });
+      const missing = await noHandler({
+        v: 1,
+        id: 43,
+        method: "github.repo",
+        params: { owner: "o", repo: "r", path: "p.js", content: "code" },
+      });
+      expect(missing.ok).toBe(false);
+      if (!missing.ok) expect(missing.error.code).toBe("CONSENT_REQUIRED");
+      expect(requests).toHaveLength(0);
+
+      const seen: GithubConsentRequest[] = [];
+      let allow = false;
+      const withHandler = createRpcDispatcher({
+        ...base,
+        handlers: {
+          onGithubConsent: async (request) => {
+            seen.push(request);
+            return allow;
+          },
+        },
+      });
+      const refused = await withHandler({
+        v: 1,
+        id: 44,
+        method: "github.repo",
+        params: { owner: "o", repo: "r", path: "p.js", content: "code" },
+      });
+      expect(refused.ok).toBe(false);
+      if (!refused.ok) expect(refused.error.code).toBe("CANCELED");
+      expect(requests).toHaveLength(0);
+      expect(seen[0]).toMatchObject({
+        pluginName: "test-plugin",
+        kind: "repo",
+        payload: { owner: "o", repo: "r", path: "p.js", content: "code" },
+      });
+      expect(Object.isFrozen(seen[0]!.payload)).toBe(true);
+
+      allow = true;
+      const pushed = await withHandler({
+        v: 1,
+        id: 45,
+        method: "github.repo",
+        params: { owner: "o", repo: "r", path: "p.js", content: "code", message: "更新" },
+      });
+      expect(pushed.ok).toBe(true);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.url).toContain("/github/files/repo/o/r/content");
+      expect(requests[0]!.method).toBe("PUT");
+      expect(requests[0]!.body).toMatchObject({ path: "p.js", content: "code", message: "更新" });
     } finally {
       vi.unstubAllGlobals();
     }

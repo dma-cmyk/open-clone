@@ -34,9 +34,36 @@ export interface BridgeHandlers {
    * 実装はモーダル/confirm を出し、同意した場合だけ true を返す。
    */
   onAiConsent?(): Promise<boolean>;
+  /**
+   * `github.gist` / `github.repo` の直前確認。未指定なら書き込まない（403）。
+   * ホストは「書き込み先・内容の大きさ・先頭の数行」を文字で見せ、同意した場合だけ true を返す。
+   * 表示に使う `payload` は frozen で、そのまま API へ送る（表示後に差し替えない）。
+   */
+  onGithubConsent?(request: GithubConsentRequest): Promise<boolean>;
   onLog?(args: string[]): void;
   onEventSubscribe?(topics: string[]): void;
 }
+
+/** Gist へ 1 ファイル書き込む内容（確認画面と送信で同じオブジェクトを使う）。 */
+export interface GithubGistPayload {
+  filename: string;
+  content: string;
+  description?: string;
+  public: boolean;
+}
+
+/** リポジトリへ 1 ファイル書き込む内容（確認画面と送信で同じオブジェクトを使う）。 */
+export interface GithubRepoPayload {
+  owner: string;
+  repo: string;
+  path: string;
+  content: string;
+  message?: string;
+}
+
+export type GithubConsentRequest =
+  | { pluginName: string; kind: "gist"; payload: Readonly<GithubGistPayload> }
+  | { pluginName: string; kind: "repo"; payload: Readonly<GithubRepoPayload> };
 
 /** プラグイン投稿の確認要求（プラグインの引数ではなく、ホストが組み立てる）。 */
 export interface PostConfirmRequest {
@@ -102,6 +129,19 @@ function errorResponse(id: string | number | null, code: string, message: string
   return { v: PLUGIN_RPC_VERSION, id, ok: false, error: { code, message } };
 }
 
+/**
+ * GitHub への書き込み前に、ホストの確認 UI を必ず通す。
+ * ハンドラの無いホストでは書き込まない（プラグインが黙って本人のリソースを変更しない）。
+ */
+async function requireGithubConsent(ctx: RpcHostContext, request: GithubConsentRequest): Promise<void> {
+  if (!ctx.handlers.onGithubConsent) {
+    throw new PluginApiError(403, "CONSENT_REQUIRED", "GitHub への書き込みには利用者の確認が必要です");
+  }
+  if (!(await ctx.handlers.onGithubConsent(request))) {
+    throw new PluginApiError(403, "CANCELED", "GitHub への書き込みがキャンセルされました");
+  }
+}
+
 function readString(params: unknown, key: string): string | undefined {
   if (!params || typeof params !== "object" || !(key in params)) return undefined;
   const value: unknown = Reflect.get(params, key);
@@ -150,6 +190,8 @@ export function createRpcDispatcher(
 ): (request: PluginRpcRequest) => Promise<PluginRpcResponse> {
   const previewStore = new Map<string, string>();
   const scope = { scope: ctx.scope, boardId: ctx.boardId };
+  // 通知の暴走防止（iframe ごと = ディスパッチャごと）。10 秒に 5 件まで。
+  let notifyTimestamps: number[] = [];
 
   async function handle(method: string, params: unknown): Promise<unknown> {
     const override = ctx.overrides?.[method];
@@ -354,23 +396,34 @@ export function createRpcDispatcher(
 
       case "github.gist": {
         if (ctx.preview) throw new PluginApiError(400, "PREVIEW", "プレビューでは GitHub 連携できません");
-        return pluginApi.githubGist({
+        // 確認画面と送信で同じ（差し替え不可の）オブジェクトを使う。
+        const payload: Readonly<GithubGistPayload> = Object.freeze({
           filename: requireString(params, "filename"),
           content: requireString(params, "content"),
           description: readString(params, "description"),
           public: params && typeof params === "object" ? Reflect.get(params, "public") === true : false,
         });
+        await requireGithubConsent(
+          ctx,
+          Object.freeze({ pluginName: ctx.manifest.name, kind: "gist" as const, payload }),
+        );
+        return pluginApi.githubGist(payload);
       }
 
       case "github.repo": {
         if (ctx.preview) throw new PluginApiError(400, "PREVIEW", "プレビューでは GitHub 連携できません");
-        return pluginApi.githubPush({
+        const payload: Readonly<GithubRepoPayload> = Object.freeze({
           owner: requireString(params, "owner"),
           repo: requireString(params, "repo"),
           path: requireString(params, "path"),
           content: requireString(params, "content"),
           message: readString(params, "message"),
         });
+        await requireGithubConsent(
+          ctx,
+          Object.freeze({ pluginName: ctx.manifest.name, kind: "repo" as const, payload }),
+        );
+        return pluginApi.githubPush(payload);
       }
 
       case "events.subscribe": {
@@ -380,6 +433,13 @@ export function createRpcDispatcher(
 
       case "notify": {
         const message = requireString(params, "message");
+        const now = Date.now();
+        notifyTimestamps = notifyTimestamps.filter((timestamp) => now - timestamp < 10_000);
+        if (notifyTimestamps.length >= 5) {
+          // 超えた分は表示せず、プラグインには失敗として返す（黙って捨てない）。
+          throw new PluginApiError(429, "RATE_LIMITED", "通知が多すぎます（10 秒に 5 件まで）");
+        }
+        notifyTimestamps.push(now);
         ctx.handlers.onNotify?.(message.slice(0, 500), readString(params, "level") ?? "info");
         return null;
       }

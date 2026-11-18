@@ -29,6 +29,7 @@ import {
   type RenderSample,
 } from "@/features/plugin-templates";
 import { PluginApiError, pluginApi } from "@/features/plugin-host";
+import { PluginPermissionList, PluginSlotList } from "@/features/plugin-host/labels";
 import { useSession } from "@/features/account/session";
 import { clearQueuedTour, setTourContextPending } from "@/features/site-tour";
 import {
@@ -477,6 +478,11 @@ export default function PluginTemplatesPage() {
                   保存すると、非公開のプラグインとして登録され、このブラウザに個人用として導入されます。
                   板・サイトへの公開申請は、保存後の詳細画面から行えます（サイト全体は管理者の審査後）。
                 </p>
+                <h3 style={{ fontSize: 13, margin: "6px 0 2px" }}>このプラグインの権限と表示場所</h3>
+                <PluginPermissionList permissions={template.baseManifest.permissions ?? []} compact />
+                <div style={{ marginTop: 4 }}>
+                  <PluginSlotList slots={template.baseManifest.slots ?? []} compact />
+                </div>
                 <button
                   type="button"
                   className="oc-btn oc-btn-primary oc-btn-block"

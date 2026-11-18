@@ -200,7 +200,7 @@ test.describe("プラグイン画面のツアー", () => {
     await expect(page.locator('[data-tour="plugin-detail-basic"]')).toBeVisible({ timeout: 20_000 });
     await startTour(page);
     const titles = await tourTitles(page);
-    expect(titles).toEqual(["基本情報", "インストール", "通報", "バージョン"]);
+    expect(titles).toEqual(["基本情報", "権限と表示場所", "インストール", "通報", "バージョン"]);
     expect(titles).not.toContain("作者向けの操作");
     expect(titles).not.toContain("GitHub / Gist（作者向け・任意）");
   });

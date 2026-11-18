@@ -5,34 +5,18 @@
 import {
   PLUGIN_TEMPLATES as SHARED_TEMPLATES,
   findPluginTemplate,
+  pluginPermissionInfo,
   type PluginTemplateDefinition,
 } from "shared";
 
 export { SHARED_TEMPLATES as PLUGIN_TEMPLATES, findPluginTemplate };
 export type { PluginTemplateDefinition };
 
-/** 権限の日本語表示（report27 §6.1: 利用者向け画面では技術用語を言い換える）。 */
-const PERMISSION_LABEL: Record<string, string> = {
-  "ui:slot": "画面に表示",
-  "storage:shared": "保存領域",
-  "storage:thread": "スレごとの共有値",
-  "data:read:thread": "スレの読み取り",
-  "data:read:board": "板の読み取り",
-  "data:write:post": "投稿",
-  notify: "通知",
-  "events:subscribe": "更新の購読",
-  "net:fetch": "外部通信",
-  "upload:start": "ファイル添付",
-  "ai:complete": "AI 連携",
-  "github:gist": "GitHub Gist",
-  "github:repo": "GitHub リポジトリ",
-};
-
 /** 一覧カードに出す権限バッジ（権限なしなら「権限なし」1 件）。 */
 export function templatePermissionLabels(template: PluginTemplateDefinition): string[] {
   const permissions = template.baseManifest.permissions ?? [];
   if (permissions.length === 0) return ["権限なし"];
-  return permissions.map((permission) => PERMISSION_LABEL[permission] ?? permission);
+  return permissions.map((permission) => pluginPermissionInfo(permission).name);
 }
 
 /** リスク表示（report27 §4.2: low=緑 / medium=黄）。 */

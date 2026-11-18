@@ -5,7 +5,29 @@
 import { usePageTitle } from "@/lib/title";
 import { TourList, reserveTourStart } from "@/features/site-tour";
 import { useEffect, type ReactNode } from "react";
+import {
+  PLUGIN_PERMISSION_INFOS,
+  PLUGIN_PLACED_SLOTS,
+  PLUGIN_RISK_LABEL,
+  PLUGIN_RISK_NOTE,
+  pluginSlotAliases,
+  pluginSlotInfo,
+  type PluginRisk,
+} from "shared";
 import { navigate } from "../router";
+
+/** 危険度の色だけでなく文字（危険度: 中 など）でも示す。 */
+const RISK_CLASS: Record<PluginRisk, string> = {
+  low: "oc-badge oc-badge-green",
+  medium: "oc-badge oc-badge-yellow",
+  high: "oc-badge oc-badge-red",
+};
+
+const RISK_BORDER: Record<PluginRisk, string> = {
+  low: "var(--oc-border)",
+  medium: "#d4a017",
+  high: "var(--oc-danger)",
+};
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -34,6 +56,7 @@ const TOC: Array<{ id: string; label: string }> = [
   { id: "account", label: "アカウント（無くてもできること・作るとできること）" },
   { id: "password", label: "パスワードを忘れたとき" },
   { id: "plugins", label: "プラグイン（使う・作る）" },
+  { id: "plugin-permissions", label: "プラグインの権限と表示場所" },
   { id: "report", label: "通報・削除依頼・ルール" },
   { id: "admin", label: "管理者の種類（サイト運営と板の管理人）" },
   { id: "faq", label: "よくある質問" },
@@ -277,6 +300,87 @@ export function HelpView() {
             docs/plugin-guide.md
           </a>
           にまとまっています（テンプレートから作る方法や静的検査の説明があります）。
+        </P>
+      </Section>
+
+      <Section id="plugin-permissions" title="プラグインの権限と表示場所">
+        <P>
+          プラグインを入れると、そのプラグインが<b>できること（権限）</b>と、<b>画面のどこに出るか（表示場所）</b>が決まります。
+          導入する前に、プラグイン詳細の「権限と表示場所」で確認できます。危険度が中・高のものは色と文字の両方で目立たせています。
+        </P>
+        <h3 style={{ fontSize: 13, margin: "8px 0 2px" }}>権限（できること）</h3>
+        <P>
+          <b>危険度</b>: 低 = {PLUGIN_RISK_NOTE.low}／中 = {PLUGIN_RISK_NOTE.medium}／高 = {PLUGIN_RISK_NOTE.high}。
+        </P>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {PLUGIN_PERMISSION_INFOS.map((info) => (
+            <div
+              key={info.permission}
+              style={{
+                borderLeft: `3px solid ${RISK_BORDER[info.risk]}`,
+                padding: "3px 6px",
+                background: info.risk === "high" ? "#fdecea" : info.risk === "medium" ? "#fff8e1" : "transparent",
+              }}
+            >
+              <div className="oc-row" style={{ gap: 6 }}>
+                <b style={{ fontSize: 12.5 }}>{info.name}</b>
+                <span className={RISK_CLASS[info.risk]}>危険度: {PLUGIN_RISK_LABEL[info.risk]}</span>
+                <code style={{ fontSize: 10.5, color: "var(--oc-muted)" }}>{info.permission}</code>
+              </div>
+              <div style={{ fontSize: 12.5 }}>{info.description}</div>
+            </div>
+          ))}
+        </div>
+        <P>
+          外部との通信（<code>net:fetch</code>）を使うプラグインは、通信先が詳細画面の「権限と表示場所」に表示されます。
+          通信先が空のプラグインは外部と通信できません。
+        </P>
+
+        <h3 style={{ fontSize: 13, margin: "8px 0 2px" }}>表示場所（スロット）</h3>
+        <P>実際に画面へ置かれる 10 か所です。プラグイン作者は manifest の <code>slots</code> で場所を指定します。</P>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {PLUGIN_PLACED_SLOTS.map((host) => {
+            const info = pluginSlotInfo(host);
+            const aliases = pluginSlotAliases(host);
+            return (
+              <div key={host} style={{ borderTop: "1px solid var(--oc-border)", padding: "4px 0" }}>
+                <div className="oc-row" style={{ gap: 6 }}>
+                  <b style={{ fontSize: 12.5 }}>{info.label}</b>
+                  <code style={{ fontSize: 10.5, color: "var(--oc-muted)" }}>{host}</code>
+                </div>
+                <div style={{ fontSize: 12.5 }}>{info.description}</div>
+                {aliases.length > 0 ? (
+                  <div className="oc-small" style={{ color: "var(--oc-muted)" }}>
+                    別名:{" "}
+                    {aliases.map((alias) => (
+                      <code key={alias} style={{ marginRight: 4 }}>
+                        {alias}
+                      </code>
+                    ))}
+                    （同じ場所に表示されます）
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          <div style={{ borderTop: "1px solid var(--oc-border)", padding: "4px 0" }}>
+            <div className="oc-row" style={{ gap: 6 }}>
+              <b style={{ fontSize: 12.5 }}>{pluginSlotInfo("plugin-page").label}</b>
+              <code style={{ fontSize: 10.5, color: "var(--oc-muted)" }}>plugin-page</code>
+            </div>
+            <div style={{ fontSize: 12.5 }}>{pluginSlotInfo("plugin-page").description}</div>
+          </div>
+        </div>
+        <P>
+          書き方の詳細は
+          <a
+            href="https://github.com/dma-cmyk/open-clone/blob/main/docs/plugin-guide.md"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            docs/plugin-guide.md
+          </a>
+          にまとまっています。
         </P>
       </Section>
 

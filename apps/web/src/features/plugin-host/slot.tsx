@@ -6,12 +6,20 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PluginActiveInstall, PluginSlotName } from "shared";
+import { useToast } from "@/components/ui";
 import { pluginApi, PluginApiError } from "./api";
 import { useActiveInstalls } from "./active-installs";
-import { type PluginBridge, createPluginBridge, type PostConfirmDecision, type PostConfirmRequest } from "./bridge";
+import {
+  type GithubConsentRequest,
+  type PluginBridge,
+  createPluginBridge,
+  type PostConfirmDecision,
+  type PostConfirmRequest,
+} from "./bridge";
 import { buildSandboxCsp, PLUGIN_IFRAME_SANDBOX } from "./csp";
 import { buildPluginSrcdoc } from "./bootstrap";
 import { subscribePluginEvents } from "./events";
+import { PluginGithubConsentDialog } from "./github-consent-dialog";
 import { observeNearViewport } from "./lazy";
 import { type PluginPostConfirmRequest, PluginPostConfirmDialog } from "./post-confirm-dialog";
 import { resolveDeclaredSlot } from "./slots";
@@ -43,6 +51,9 @@ interface ResolvedInstall {
 }
 
 export function PluginSlot(props: PluginSlotProps) {
+  // 通知の行き先が指定されていない画面（スレ・板など）では、既存のトーストへ出す。
+  const toast = useToast();
+  const onNotify = props.onNotify ?? ((message: string) => toast.show(message));
   // 取得はページ（板・スレ）単位で共有する。レスごとに API を呼ばない。
   const installs = useActiveInstalls({
     boardId: props.boardId,
@@ -90,7 +101,7 @@ export function PluginSlot(props: PluginSlotProps) {
               threadId={props.threadId}
               postId={props.postId}
               data={props.data}
-              onNotify={props.onNotify}
+              onNotify={onNotify}
             />
           ))
         : null}
@@ -135,6 +146,12 @@ function PluginFrame(props: PluginFrameProps) {
   } | null>(null);
   const [confirmSeq, setConfirmSeq] = useState(0);
   const postConfirmingRef = useRef(false);
+  // GitHub への書き込みの直前確認。表示した payload をそのまま送る（文言と送信値の一致）。
+  const [githubConsent, setGithubConsent] = useState<{
+    request: GithubConsentRequest;
+    resolve: (allowed: boolean) => void;
+  } | null>(null);
+  const githubConsentingRef = useRef(false);
 
   const { install, slot } = props;
   const dataRef = useRef(props.data);
@@ -206,6 +223,20 @@ function PluginFrame(props: PluginFrameProps) {
             resolve: (decision) => {
               postConfirmingRef.current = false;
               resolve(decision);
+            },
+          });
+          return promise;
+        },
+        onGithubConsent(request) {
+          // 同時に 2 件来てもモーダルは 1 つ。後続は同意なし（拒否）として返す。
+          if (githubConsentingRef.current) return Promise.resolve(false);
+          githubConsentingRef.current = true;
+          const { promise, resolve } = Promise.withResolvers<boolean>();
+          setGithubConsent({
+            request,
+            resolve: (allowed) => {
+              githubConsentingRef.current = false;
+              resolve(allowed);
             },
           });
           return promise;
@@ -326,6 +357,15 @@ function PluginFrame(props: PluginFrameProps) {
           onDone={(decision) => {
             postConfirm.resolve(decision);
             setPostConfirm(null);
+          }}
+        />
+      ) : null}
+      {githubConsent ? (
+        <PluginGithubConsentDialog
+          request={githubConsent.request}
+          onDone={(allowed) => {
+            githubConsent.resolve(allowed);
+            setGithubConsent(null);
           }}
         />
       ) : null}

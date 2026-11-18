@@ -247,6 +247,11 @@
 利用者が「やめる」を選ぶとホストは 403 `CANCELED` を返すので、プラグイン側は失敗として扱ってください。
 二重確認にしないため、プラグイン側で独自の確認 UI を出す必要はありません。
 
+`github.gist` / `github.repo` も、ホストが **必ず** 書き込み先（Gist のファイル名と公開/非公開、または
+`owner/repo` とパス）、内容の大きさ、先頭の数行を文字で見せ、「書き込む」「やめる」を選ばせます。
+同意を出さないホストでは 403 `CONSENT_REQUIRED`、「やめる」では 403 `CANCELED` を返し、GitHub へは送りません。
+確認画面に出た値（ファイル名・内容・公開範囲など）は、そのまま API へ送られます。
+
 ### スレごとの共有値（`storage:thread`）
 
 スレ単位の「参加人数・アンケート・一言リスト」は、manifest の `threadState` で宣言した key だけを使えます。
@@ -360,21 +365,38 @@ export default definePlugin({
 
 ### スロット（`PLUGIN_SLOTS`）
 
-WP3 の汎用名:
+実際に画面へ置かれている場所は次の 10 個です。一覧と日本語の説明は
+`packages/shared/src/plugin-labels.ts`（詳細画面・導入画面・エディタ・ヘルプと共通）にあります。
 
 | スロット | 位置 |
 |---|---|
-| `thread-head` | スレ画面上部 |
-| `thread-post-inline` | 各レス内 |
-| `thread-post-footer` | 各レス下部 |
-| `post-form-after` | 投稿フォーム直下 |
-| `board-head` | 板画面上部 |
-| `sidebar` | サイドバー |
-| `plugin-page` | プラグイン専用ページ |
+| `site-header` | サイト共通のヘッダー |
+| `site-top` | トップ（板一覧）の板一覧の上 |
+| `board-top` | 板ページの板名・説明の下、スレ一覧の上 |
+| `board-sidebar` | 板一覧の横のサイドバー（900px 以下では非表示） |
+| `thread-top` | スレのタイトル・本文の下、レス一覧の上 |
+| `thread-nav` | スレ内の範囲リンク（1-100・最新50 など）の下 |
+| `post-actions` | 各レスの引用・通報ボタンの並び |
+| `post-form-extra` | 書き込み欄（名前・本文・投稿ボタン）の下 |
+| `thread-bottom` | レス一覧の下、書き込み欄の上 |
+| `board-manage` | 板の管理タブの中 |
 
-WP2 の `components/plugin-slot.tsx` が提供する互換名（同じ集合に含まれる）:
-`site-header` / `site-top` / `board-top` / `board-sidebar` / `thread-top` / `thread-nav` /
-`post-form-extra` / `thread-bottom` / `board-manage` / `post-actions`。
+#### 別名（旧名）と実際の置き場所
+
+WP3 の汎用名は互換のために残しています。宣言しても値は書き換えず、次の場所に表示されます。
+
+| 別名 | 実際に表示される場所 |
+|---|---|
+| `thread-head` | `thread-top`（スレの上） |
+| `thread-post-inline` | `post-actions`（各レスの下） |
+| `thread-post-footer` | `post-actions`（各レスの下） |
+| `post-form-after` | `post-form-extra`（書き込み欄の下） |
+| `board-head` | `board-top`（板の上） |
+| `sidebar` | `board-sidebar`（板の横。900px 以下では非表示） |
+
+`plugin-page` は別名ではなく専用ページ用の名前です。**通常の画面に置き場所はありません**
+（選んでも板・スレの画面には表示されません）。`/plugins/demo/` と、manifest で `plugin-page` を
+宣言したときだけエディタのプレビューで動きます。
 
 実際に描画されるスロットは配置先ページの実装に依存します（`<PluginSlot name="..." />` が置かれた箇所のみ）。
 

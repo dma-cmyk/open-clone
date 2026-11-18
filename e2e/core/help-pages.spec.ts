@@ -12,6 +12,7 @@ const HELP_SECTIONS = [
   "tsubuyaki",
   "account",
   "plugins",
+  "plugin-permissions",
   "report",
   "admin",
   "faq",

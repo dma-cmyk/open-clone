@@ -173,8 +173,15 @@ const PLUGIN_VIEW: TourDefinition = {
       id: "plugin-detail-basic",
       selector: '[data-tour="plugin-detail-basic"]',
       title: "基本情報",
-      body: "公開状態・バージョン・公開範囲・導入数・通報数と、所有者・スコープ・権限・スロット・更新日時を確認できます。",
+      body: "公開状態・バージョン・公開範囲・導入数・通報数と、所有者・スコープ・更新日時を確認できます。",
       helpAnchor: "#plugins",
+    },
+    {
+      id: "plugin-detail-permissions",
+      selector: '[data-tour="plugin-detail-permissions"]',
+      title: "権限と表示場所",
+      body: "このプラグインができること（権限）と危険度、外部通信の通信先、画面のどこに出るか（表示場所）を確認できます。導入する前に目を通してください。",
+      helpAnchor: "#plugin-permissions",
     },
     {
       id: "plugin-detail-install",

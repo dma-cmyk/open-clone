@@ -6,6 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { PluginDetail, PluginInstallInfo, PluginReportInfo, PluginReviewInfo, PluginScope } from "shared";
 import { PLUGIN_REPORT_REASON_LABELS } from "shared";
 import { pluginApi } from "@/features/plugin-host";
+import { PluginLabelsHelpLink, PluginPermissionList, PluginSlotList } from "@/features/plugin-host/labels";
 import { parseTemplateOrigin } from "@/features/plugin-templates";
 import { clearQueuedTour, setTourContext, setTourContextPending } from "@/features/site-tour";
 import {
@@ -340,14 +341,6 @@ export default function PluginViewPage() {
                   <td>{plugin.scopes.join(", ")}</td>
                 </tr>
                 <tr>
-                  <td style={{ paddingRight: 12 }}>権限</td>
-                  <td>{plugin.permissions.length > 0 ? plugin.permissions.join(", ") : "なし"}</td>
-                </tr>
-                <tr>
-                  <td style={{ paddingRight: 12 }}>スロット</td>
-                  <td>{plugin.slots.length > 0 ? plugin.slots.join(", ") : "なし"}</td>
-                </tr>
-                <tr>
                   <td style={{ paddingRight: 12 }}>作成 / 更新</td>
                   <td>
                     {formatTime(plugin.createdAt)} / {formatTime(plugin.updatedAt)}
@@ -367,6 +360,26 @@ export default function PluginViewPage() {
                 ) : null}
               </tbody>
             </table>
+          </Card>
+          </div>
+
+          <div data-tour="plugin-detail-permissions">
+          <Card title="権限と表示場所">
+            <p className="oc-muted oc-small" style={{ marginTop: 0 }}>
+              このプラグインができること（権限）と、画面のどこに出るか（表示場所）です。導入する前に確認してください。
+            </p>
+            <h3 style={{ fontSize: 13, margin: "6px 0 2px" }}>できること（権限）</h3>
+            <PluginPermissionList
+              permissions={plugin.permissions}
+              connectAllowlist={plugin.manifest.connectAllowlist}
+              emptyLabel="特別な権限はありません（画面への表示だけを行う場合など）"
+            />
+            <h3 style={{ fontSize: 13, margin: "10px 0 2px" }}>表示場所</h3>
+            <PluginSlotList slots={plugin.slots} />
+            <p className="oc-muted oc-small" style={{ margin: "8px 0 0" }}>
+              <PluginLabelsHelpLink />
+              に、権限と表示場所の一覧と意味をまとめています。
+            </p>
           </Card>
           </div>
 

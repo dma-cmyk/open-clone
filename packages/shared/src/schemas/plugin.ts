@@ -807,6 +807,8 @@ export interface PluginSummary {
   scopes: PluginScope[];
   permissions: PluginPermission[];
   slots: PluginSlotName[];
+  /** net:fetch で通信できる外部サイト（詳細画面・導入画面で表示する）。 */
+  connectAllowlist: string[];
   hasRenderRules: boolean;
   installCount: number;
   reportCount: number;

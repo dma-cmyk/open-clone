@@ -27,6 +27,7 @@ export * from "./schemas/report";
 export * from "./schemas/realtime";
 export * from "./schemas/compat";
 export * from "./schemas/plugin";
+export * from "./plugin-labels";
 export * from "./schemas/plugin-authoring";
 export * from "./plugin-templates-data";
 export * from "./schemas/upload";

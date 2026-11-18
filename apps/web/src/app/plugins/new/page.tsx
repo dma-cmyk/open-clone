@@ -7,10 +7,11 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { javascript } from "@codemirror/lang-javascript";
 import {
-  PLUGIN_PERMISSIONS,
+  PLUGIN_PLACED_SLOTS,
   PLUGIN_SCOPES,
-  PLUGIN_SLOTS,
   normalizeManifest,
+  pluginSlotHost,
+  pluginSlotInfo,
   type PluginPermission,
   type PluginPostRenderRule,
   type PluginScope,
@@ -19,6 +20,7 @@ import {
   type PluginThreadStateDeclaration,
 } from "shared";
 import { PluginPreview, pluginApi } from "@/features/plugin-host";
+import { PluginSlotDiagram, PluginPermissionChecklist } from "@/features/plugin-host/labels";
 import { useSession } from "@/features/account/session";
 import { clearQueuedTour, setTourContextPending } from "@/features/site-tour";
 import { takeTemplateDraft } from "@/features/plugin-templates";
@@ -51,6 +53,15 @@ register({
 });`;
 
 const DEFAULT_RENDER = `[]`;
+
+/** 未ログインでは選べない権限（理由を画面に出す）。 */
+const ANON_BLOCKED_PERMISSIONS: readonly PluginPermission[] = [
+  "net:fetch",
+  "ai:complete",
+  "upload:start",
+  "github:gist",
+  "github:repo",
+];
 
 function nextPatch(version: string | null): string {
   if (!version) return "1.0.0";
@@ -104,6 +115,8 @@ export default function PluginEditorPage() {
   const [checkWarnings, setCheckWarnings] = useState<string[]>([]);
   const [previewRunId, setPreviewRunId] = useState(0);
   const [previewSlot, setPreviewSlot] = useState<PluginSlotName>("thread-post-inline");
+  // 略図に出すスロット（「?」を押した場所、または最後に選んだ場所）。null なら図を出さない。
+  const [diagramSlot, setDiagramSlot] = useState<PluginSlotName | null>(null);
   const [messages, setMessages] = useState<string[]>([]);
   const [visibility, setVisibility] = useState<"private" | "unlisted" | "public">("private");
   // 報告 40: 匿名（未ログイン）でも保存できる。匿名ではスコープ・権限・公開に制約を出す。
@@ -366,6 +379,27 @@ export default function PluginEditorPage() {
     return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
   }
 
+  // 場所（ホスト側スロット）単位で切り替える。別名で宣言済みの値も同じ場所として扱い、
+  // 外すときは宣言されている別名ごと外す（読み込んだだけでは値は変えない）。
+  function toggleSlotHost(host: PluginSlotName) {
+    setSlots((prev) => {
+      const declared = prev.filter((slot) => pluginSlotHost(slot) === host);
+      return declared.length > 0
+        ? prev.filter((slot) => pluginSlotHost(slot) !== host)
+        : [...prev, host];
+    });
+    setDiagramSlot(host);
+  }
+
+  // 別名（thread-head など）と plugin-page は 10 か所のチェックには現れないため、
+  // 宣言済みの値を消さずに一覧で見せ、必要なときだけ外せるようにする。
+  const extraDeclaredSlots = slots.filter((slot) => {
+    const info = pluginSlotInfo(slot);
+    return info.aliasOf !== null || info.host === null;
+  });
+  // プレビューのサンプルデータは、別名ではなく実際の置き場所で選ぶ。
+  const previewHost = pluginSlotHost(previewSlot);
+
   return (
     <PluginShell
       title={pluginId ? "プラグインの新バージョン" : "プラグインを作成"}
@@ -486,54 +520,144 @@ export default function PluginEditorPage() {
               </div>
             </Field>
 
-            <Field
-              label="権限（manifest.permissions）"
-              hint={loggedIn ? undefined : "外部通信・費用が発生する権限にはアカウントが必要です"}
-            >
-              <div style={{ ...ui.row, marginTop: 4 }}>
-                {PLUGIN_PERMISSIONS.map((permission) => {
-                  const anonBlocked =
-                    anonymous &&
-                    ["net:fetch", "ai:complete", "upload:start", "github:gist", "github:repo"].includes(permission);
+            <div className="oc-field">
+              <span className="oc-label">
+                権限（manifest.permissions）
+                <span className="oc-note">
+                  {loggedIn
+                    ? " — このプラグインができることです"
+                    : " — 外部通信・費用が発生する権限にはアカウントが必要です"}
+                </span>
+              </span>
+              <PluginPermissionChecklist
+                selected={permissions}
+                isDisabled={(permission) => anonymous && ANON_BLOCKED_PERMISSIONS.includes(permission)}
+                blockedReason="ログインすると選べます"
+                onChange={(permission) => setPermissions(toggle(permissions, permission))}
+              />
+              <p className="oc-muted oc-small" style={{ margin: "4px 0 0" }}>
+                <a href="/help/#plugin-permissions">ヘルプ: プラグインの権限と表示場所</a>
+                に、危険度の意味と権限ごとの説明があります。
+              </p>
+            </div>
+
+            <div className="oc-field">
+              <span className="oc-label">
+                UI スロット（manifest.slots）
+                <span className="oc-note"> — 実際に置かれる 10 か所から選びます</span>
+              </span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {PLUGIN_PLACED_SLOTS.map((host) => {
+                  const info = pluginSlotInfo(host);
+                  const declared = slots.filter((slot) => pluginSlotHost(slot) === host);
+                  const checked = declared.length > 0;
                   return (
-                    <label
-                      key={permission}
+                    <div
+                      key={host}
+                      data-slot-host={host}
                       style={{
                         display: "flex",
-                        gap: 4,
-                        alignItems: "center",
-                        fontSize: 12,
-                        opacity: anonBlocked ? 0.5 : 1,
+                        gap: 6,
+                        alignItems: "flex-start",
+                        padding: "4px 6px",
+                        borderTop: "1px solid var(--oc-border)",
+                        background: checked ? "var(--oc-panel-soft)" : "transparent",
                       }}
-                      title={anonBlocked ? "ログインすると選べます" : undefined}
                     >
-                      <input
-                        type="checkbox"
-                        checked={permissions.includes(permission)}
-                        disabled={anonBlocked}
-                        onChange={() => setPermissions(toggle(permissions, permission))}
-                      />
-                      {permission}
-                    </label>
+                      <label style={{ display: "flex", gap: 6, flex: 1, minWidth: 0, cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          style={{ marginTop: 3 }}
+                          checked={checked}
+                          onChange={() => toggleSlotHost(host)}
+                        />
+                        <span style={{ display: "block", minWidth: 0 }}>
+                          <span style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                            <strong style={{ fontSize: 12.5 }}>{info.label}</strong>
+                            <code
+                              style={{
+                                fontFamily: "var(--oc-mono)",
+                                fontSize: 10.5,
+                                color: "var(--oc-muted)",
+                              }}
+                            >
+                              {host}
+                            </code>
+                          </span>
+                          <span style={{ display: "block", fontSize: 11.5, color: "var(--oc-muted)" }}>
+                            {info.description}
+                          </span>
+                          {declared.some((slot) => slot !== host) ? (
+                            <span style={{ display: "block", fontSize: 11, color: "#8a5b00" }}>
+                              宣言中: {declared.filter((slot) => slot !== host).join(", ")}（値はそのまま保存します）
+                            </span>
+                          ) : null}
+                        </span>
+                      </label>
+                      <button
+                        type="button"
+                        className="oc-btn oc-btn-sm"
+                        aria-label={`「${info.label}」の位置を図で見る`}
+                        aria-expanded={diagramSlot === host}
+                        onClick={() => setDiagramSlot(diagramSlot === host ? null : host)}
+                      >
+                        ?
+                      </button>
+                    </div>
                   );
                 })}
               </div>
-            </Field>
-
-            <Field label="UI スロット（manifest.slots）">
-              <div style={{ ...ui.row, marginTop: 4 }}>
-                {PLUGIN_SLOTS.map((slot) => (
-                  <label key={slot} style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12 }}>
-                    <input
-                      type="checkbox"
-                      checked={slots.includes(slot)}
-                      onChange={() => setSlots(toggle(slots, slot))}
-                    />
-                    {slot}
-                  </label>
-                ))}
-              </div>
-            </Field>
+              {diagramSlot ? (
+                <PluginSlotDiagram slot={diagramSlot} />
+              ) : (
+                <p className="oc-muted oc-small" style={{ margin: "4px 0 0" }}>
+                  各場所の「?」を押すと、板画面・スレ画面のどこに出るかを図で確認できます。
+                </p>
+              )}
+              {extraDeclaredSlots.length > 0 ? (
+                <div style={{ marginTop: 6 }} data-testid="declared-extra-slots">
+                  <div className="oc-small" style={{ color: "var(--oc-muted)" }}>
+                    読み込んだ manifest の別名・表示場所なし（保存しても値は変わりません）
+                  </div>
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                    {extraDeclaredSlots.map((slot) => {
+                      const info = pluginSlotInfo(slot);
+                      return (
+                        <li
+                          key={slot}
+                          style={{
+                            display: "flex",
+                            gap: 6,
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                            borderTop: "1px solid var(--oc-border)",
+                            padding: "3px 0",
+                          }}
+                        >
+                          <span style={{ fontSize: 12 }}>
+                            {info.label}（<code style={{ fontSize: 10.5 }}>{slot}</code>）
+                          </span>
+                          <button
+                            type="button"
+                            className="oc-btn oc-btn-sm"
+                            onClick={() => {
+                              setSlots((prev) => prev.filter((value) => value !== slot));
+                              setDiagramSlot(info.host);
+                            }}
+                          >
+                            外す
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+              <p className="oc-muted oc-small" style={{ margin: "4px 0 0" }}>
+                <a href="/help/#plugin-permissions">ヘルプ: プラグインの権限と表示場所</a>
+                に、場所ごとの説明と別名の対応があります。
+              </p>
+            </div>
 
             <Field label="net:fetch 許可オリジン（1 行 1 件）" hint="net:fetch 権限が必要">
               <textarea
@@ -649,9 +773,9 @@ export default function PluginEditorPage() {
                 value={previewSlot}
                 onChange={(event) => setPreviewSlot(event.target.value as PluginSlotName)}
               >
-                {(slots.length > 0 ? slots : PLUGIN_SLOTS).map((slot) => (
+                {(slots.length > 0 ? slots : PLUGIN_PLACED_SLOTS).map((slot) => (
                   <option key={slot} value={slot}>
-                    {slot}
+                    {pluginSlotInfo(slot).label}（{slot}）
                   </option>
                 ))}
               </select>
@@ -667,11 +791,11 @@ export default function PluginEditorPage() {
                 runId={previewRunId}
                 slot={previewSlot}
                 data={
-                  previewSlot === "thread-head"
+                  previewHost === "thread-top"
                     ? { threadId: 1001, boardId: 1 }
-                    : previewSlot === "board-head"
+                    : previewHost === "board-top"
                       ? { boardId: 1, boardSlug: "news" }
-                      : previewSlot === "post-form-after"
+                      : previewHost === "post-form-extra"
                         ? { draft: { body: "" } }
                         : { post: { id: 2, num: 2, name: "名無しさん", body: ">>1 おめでとう\n[spoiler]ネタバレ[/spoiler]", createdAt: 1760000060 } }
                 }

@@ -485,17 +485,26 @@ export const pluginApi = {
     description?: string;
     public?: boolean;
   }): Promise<{ htmlUrl: string; id: string }> {
-    return request("POST", "/github/files/gists", input);
+    return request("POST", "/github/files/gists", {
+      description: input.description,
+      public: input.public === true,
+      files: { [input.filename]: { content: input.content } },
+    });
   },
 
-  githubPush(input: {
+  async githubPush(input: {
     owner: string;
     repo: string;
     path: string;
     content: string;
     message?: string;
   }): Promise<{ url?: string }> {
-    return request("POST", "/github/files/repo/file", input);
+    const result = await request<{ htmlUrl?: string | null }>(
+      "PUT",
+      `/github/files/repo/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/content`,
+      { path: input.path, content: input.content, message: input.message },
+    );
+    return { url: result.htmlUrl ?? undefined };
   },
 
   aiComplete(input: {
