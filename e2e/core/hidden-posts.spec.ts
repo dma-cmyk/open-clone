@@ -9,8 +9,12 @@ import { unique } from "../helpers/ids";
 import { collectPageErrors, hideNextDevOverlay } from "../tour/dev-overlay";
 
 const OWNER_COOKIE = "e2e-owner-session-token";
-/** seed の trev-deputy。この板では管理人（admin）として任せ、レス操作の UI を出す。 */
-const BOARD_ADMIN_COOKIE = "e2e-tour-deputy-session-token";
+/**
+ * seed の trev-moderator。この板では管理人（admin）として任せ、レス操作の UI を出す。
+ * trev-deputy はツアーの spec が「最初の担当板」を前提に使うので、ここでは使わない
+ * （admin の板が増えると `/v1/accounts/me/boards` の先頭が入れ替わる）。
+ */
+const BOARD_ADMIN_COOKIE = "e2e-tour-moderator-session-token";
 
 function authHeaders(cookie: string): Record<string, string> {
   return {
@@ -102,7 +106,7 @@ test("板スタッフが全員から非表示 → 管理画面の一覧 → 再�
   const slug = await createBoard(request);
   const threadId = await createThread(request, slug);
   const target = await reply(request, threadId, `全員から非表示にする本文 ${slug}`);
-  await setStaff(request, slug, "trev-deputy", "admin");
+  await setStaff(request, slug, "trev-moderator", "admin");
 
   // 一般の人（セッションなし）には見えている
   await page.goto(`/b/${slug}/t/${threadId}?r=all`);
@@ -137,7 +141,7 @@ test("板スタッフが全員から非表示 → 管理画面の一覧 → 再�
   const row = page.locator(".oc-surface").filter({ hasText: `全員から非表示にする本文 ${slug}` });
   await expect(row).toBeVisible({ timeout: 20_000 });
   await expect(row).toContainText(`レス ${target.num}`);
-  await expect(row).toContainText("非表示にした人: trev-deputy");
+  await expect(row).toContainText("非表示にした人: trev-moderator");
 
   // 再表示
   acceptNextDialog(page, dialogs);

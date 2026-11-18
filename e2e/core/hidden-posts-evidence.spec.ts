@@ -11,7 +11,8 @@ const OUT_DIR = process.env.E2E_EVIDENCE_DIR ?? "";
 test.skip(!process.env.E2E_EVIDENCE, "E2E_EVIDENCE=1 のときだけ実行する");
 
 const OWNER_COOKIE = "e2e-owner-session-token";
-const BOARD_ADMIN_COOKIE = "e2e-tour-deputy-session-token";
+/** trev-deputy はツアーの spec が「最初の担当板」を前提に使うので、trev-moderator を使う。 */
+const BOARD_ADMIN_COOKIE = "e2e-tour-moderator-session-token";
 
 function authHeaders(cookie: string): Record<string, string> {
   return {
@@ -57,7 +58,7 @@ async function createWorld(request: APIRequestContext): Promise<{ slug: string; 
 
   const staff = await request.post(apiUrl(`/v1/boards/${slug}/staff`), {
     headers: authHeaders(OWNER_COOKIE),
-    data: { accountName: "trev-deputy", level: "admin" },
+    data: { accountName: "trev-moderator", level: "admin" },
   });
   expect(staff.status(), await staff.text()).toBe(200);
 
