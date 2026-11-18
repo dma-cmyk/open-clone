@@ -9,6 +9,7 @@ import type {
   BoardListResponse,
   BoardSettings,
   BoardSummary,
+  HiddenPostItem,
   Post,
   PostEditHistoryItem,
   QuotedThreadCard,
@@ -479,6 +480,31 @@ export const api = {
 
   hidePost(postId: number): Promise<void> {
     return post<unknown>(`/posts/${postId}/hide`).then(() => undefined);
+  },
+
+  /** 全員から非表示にしたレスを再表示する（板スタッフ moderator 以上）。 */
+  restorePost(postId: number): Promise<void> {
+    return post<unknown>(`/posts/${postId}/restore`).then(() => undefined);
+  },
+
+  /**
+   * 非表示にしたレスの一覧。scope=board は板の管理画面（board はスラッグ）、
+   * scope=site はサイト管理画面（board は任意の絞り込みスラッグ）。
+   */
+  listHiddenPosts(params: {
+    scope: "board" | "site";
+    board?: string;
+    limit?: number;
+    cursor?: string;
+  }): Promise<{ items: HiddenPostItem[]; nextCursor: string | null }> {
+    const path =
+      params.scope === "board"
+        ? `/boards/${encodeURIComponent(params.board ?? "")}/hidden-posts${query({ limit: params.limit, cursor: params.cursor })}`
+        : `/admin/hidden-posts${query({ board: params.board, limit: params.limit, cursor: params.cursor })}`;
+    return get<{ items?: HiddenPostItem[]; nextCursor?: string | null }>(path).then((data) => ({
+      items: Array.isArray(data.items) ? data.items : [],
+      nextCursor: data.nextCursor ?? null,
+    }));
   },
 
   deletePost(postId: number): Promise<void> {

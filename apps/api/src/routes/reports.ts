@@ -21,7 +21,7 @@ import { checkRateLimit } from "../lib/do";
 import { assertTurnstile } from "../services/board/turnstile";
 import { writeAudit } from "../lib/audit";
 import { resolveBoardRow, getThreadRow } from "../services/board/store";
-import { actorFrom, canHardDeletePost, hasBoardStaff, isSiteAdmin } from "../services/board/access";
+import { actorFrom, auditActorType, canHardDeletePost, hasBoardStaff, isSiteAdmin } from "../services/board/access";
 import { deletePost, hidePost } from "../services/board";
 import { emitReportCreated } from "../services/ai/events";
 
@@ -275,8 +275,29 @@ app.post("/:id/handle", requireAuth, async (c) => {
 
   const postIds = JSON.parse(row.post_ids) as number[];
   const deps = { env: c.env, ctx: c.executionCtx };
+  const actorType = auditActorType(actor);
   for (const postId of postIds) {
-    if (input.action === "hide") await hidePost(postId, deps);
+    if (input.action === "hide") {
+      await hidePost(postId, deps);
+      // 非表示にした事実を監査ログにも残す（管理画面「非表示のレス」のした人・日時の出所。
+      // 通報からなら理由も残す）。post 単体のメニューからの操作と同じ action 名を使う。
+      await writeAudit(db, {
+        actorType,
+        actorId: actor.accountId,
+        action: "post.hide",
+        target: String(postId),
+        detail: {
+          postId,
+          boardId: row.board_id,
+          threadId: row.thread_id,
+          source: "report",
+          reportId: row.id,
+          reason: row.reason,
+          reasonLabel: REPORT_REASON_LABELS[(row.reason as ReportReason) ?? "other"],
+          note: input.note,
+        },
+      });
+    }
     if (input.action === "delete") await deletePost(postId, deps);
   }
 

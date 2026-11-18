@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import {
   ApiError,
   auditLogQuerySchema,
+  hiddenPostListQuerySchema,
   likeContains,
   likePrefix,
   ok,
@@ -58,6 +59,8 @@ import {
 } from "../services/account/special-admin";
 import type { AdminOverview, AdminUser, AuditLogEntry } from "shared";
 import { listReportedPlugins } from "../services/plugins/registry";
+import { listHiddenPosts } from "../services/board/hidden-posts";
+import { resolveBoardRow } from "../services/board/store";
 
 const app = new Hono<AppEnv>();
 
@@ -456,6 +459,26 @@ app.get("/plugin-reports", requireAdminActive, async (c) => {
   const query = pluginReportListQuerySchema.parse({ includeResolved: c.req.query("includeResolved") });
   const items = await listReportedPlugins(c.env.DB, { includeResolved: query.includeResolved === "1" });
   return c.json(ok({ items }));
+});
+
+// --- 非表示のレス（サイト管理画面） --------------------------------------
+// 全板の `hidden = 1 AND deleted = 0` を新しい順に返す。`board`（スラッグ）で絞り込める。
+// 削除済みの板のレスも含める（サイト管理者は内容を確認して再表示できる）。
+app.get("/hidden-posts", requireAdminActive, async (c) => {
+  const db = c.env.DB;
+  const query = hiddenPostListQuerySchema.parse({
+    board: c.req.query("board") || undefined,
+    limit: c.req.query("limit") ?? undefined,
+    cursor: c.req.query("cursor") ?? undefined,
+  });
+  let boardId: number | undefined;
+  if (query.board) {
+    const board = await resolveBoardRow(db, query.board);
+    if (!board) throw ApiError.notFound("板が見つかりません");
+    boardId = board.id;
+  }
+  const result = await listHiddenPosts(db, { boardId, limit: query.limit, cursor: query.cursor });
+  return c.json(ok(result));
 });
 
 // --- サイト設定 ---------------------------------------------------------

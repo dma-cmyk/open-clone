@@ -1,7 +1,14 @@
 // レス（posts / post_reactions / polls）の契約スキーマ。
 
 import { z } from "zod";
-import { TSUBUYAKI_MAX_CHARS, POLL_MAX_OPTIONS } from "../constants";
+import {
+  TSUBUYAKI_MAX_CHARS,
+  POLL_MAX_OPTIONS,
+  PAGE_LIMIT_DEFAULT,
+  PAGE_LIMIT_MAX,
+  HIDDEN_POST_EXCERPT_CHARS,
+} from "../constants";
+import { boardStatusSchema } from "./board";
 
 export const postKindSchema = z.enum(["post", "tsubuyaki"]);
 export type PostKind = z.infer<typeof postKindSchema>;
@@ -145,3 +152,33 @@ export function parsePollNotation(body: string): ParsedPoll | null {
   if (options.length < 2) return null;
   return { durationSeconds, options };
 }
+
+/**
+ * 管理画面「非表示のレス」の 1 行。全員から非表示（`posts.hidden = 1`）のレスを
+ * 板スタッフ・サイト管理者に返す。IP ハッシュ・端末ハッシュ・アカウント ID は含めない。
+ * `hiddenAt` / `hiddenByName` は監査ログ（post.hide）から引く。
+ * 監査ログ導入前の非表示は記録が無いため null（画面では「不明」）。
+ */
+export const hiddenPostItemSchema = z.object({
+  postId: z.number().int().positive(),
+  boardId: z.number().int().positive(),
+  boardSlug: z.string(),
+  boardName: z.string(),
+  boardStatus: boardStatusSchema,
+  threadId: z.number().int().positive(),
+  threadTitle: z.string(),
+  num: z.number().int().nonnegative(),
+  name: z.string(),
+  excerpt: z.string().max(HIDDEN_POST_EXCERPT_CHARS),
+  createdAt: z.number().int(),
+  hiddenAt: z.number().int().nullable(),
+  hiddenByName: z.string().nullable(),
+});
+export type HiddenPostItem = z.infer<typeof hiddenPostItemSchema>;
+
+/** 非表示レスの一覧クエリ。`board` はサイト管理画面の板絞り込み（スラッグ）。 */
+export const hiddenPostListQuerySchema = z.object({
+  board: z.string().max(32).optional(),
+  limit: z.coerce.number().int().min(1).max(PAGE_LIMIT_MAX).default(PAGE_LIMIT_DEFAULT),
+  cursor: z.string().max(64).optional(),
+});

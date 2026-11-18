@@ -193,7 +193,7 @@ const THREAD: TourDefinition = {
       id: "thread-post-actions",
       selector: '[data-tour="thread-post-actions"]',
       title: "通報と削除依頼",
-      body: "問題のあるレスは「通報」から理由を選んで送れます。板の管理人は、この画面から「非表示」「削除」も行えます。",
+      body: "問題のあるレスは「通報」から理由を選んで送れます。板の管理人は、この画面から「全員から非表示」「削除」も行えます。全員から非表示にしたレスは、板の管理画面の「非表示のレス」から再表示できます。",
       helpAnchor: "#report",
     },
     {
@@ -315,7 +315,14 @@ const ADMIN: TourDefinition = {
       id: "admin-reports",
       selector: '[data-tour="admin-nav-reports"]',
       title: "通報の処理",
-      body: "利用者から届いた通報を確認します。「レス」のタブでレスを非表示・削除し、「プラグイン」のタブで通報のあったプラグインを確認して対応済み・却下にします。アクセス禁止（規制）は「規制」の画面で行います。",
+      body: "利用者から届いた通報を確認します。「レス」のタブでレスを全員から非表示・削除し、「プラグイン」のタブで通報のあったプラグインを確認して対応済み・却下にします。非表示にしたレスは「非表示のレス」の画面から戻せます。アクセス禁止（規制）は「規制」の画面で行います。",
+      helpAnchor: "#board-staff",
+    },
+    {
+      id: "admin-hidden-posts",
+      selector: '[data-tour="admin-nav-hidden-posts"]',
+      title: "非表示のレス",
+      body: "全板の「全員から非表示」にしたレスを新しい順に確認し、その場で再表示できます。板のスラッグで絞り込めます。非表示・再表示は監査ログに残ります。",
       helpAnchor: "#board-staff",
     },
     {
@@ -418,7 +425,7 @@ const MANAGE: TourDefinition = {
       requires: "boardStaff",
       selector: '[data-tour="manage-tabs"]',
       title: "板の管理メニュー",
-      body: "板の設定・ルール・デザイン・スタッフ・プラグイン・AI・通報を切り替えます。設定の保存とスタッフの任命は板の管理人だけができます。",
+      body: "板の設定・ルール・デザイン・スタッフ・プラグイン・AI・通報・非表示のレスを切り替えます。設定の保存とスタッフの任命は板の管理人だけができます。",
       helpAnchor: "#board-staff",
     },
     {
@@ -442,7 +449,15 @@ const MANAGE: TourDefinition = {
       requires: "boardStaff",
       selector: '[data-tour="manage-tab-reports"]',
       title: "通報",
-      body: "この板に届いた通報を確認し、レスを非表示にできます。削除は副管理人以上です。アクセス禁止（規制）の操作はこの管理画面にはありません。",
+      body: "この板に届いた通報を確認し、レスを全員から非表示にできます。削除は副管理人以上です。非表示にしたレスは「非表示のレス」タブから再表示できます。アクセス禁止（規制）の操作はこの管理画面にはありません。",
+      helpAnchor: "#board-staff",
+    },
+    {
+      id: "manage-hidden-posts",
+      requires: "boardStaff",
+      selector: '[data-tour="manage-tab-hidden"]',
+      title: "非表示のレス",
+      body: "この板で全員から非表示にしたレスの一覧です。本文の抜粋・非表示にした人と日時を確認し、その場で再表示できます。通報の処理から非表示にしたレスもここに出ます。",
       helpAnchor: "#board-staff",
     },
     {

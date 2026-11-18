@@ -194,6 +194,8 @@ export const API_BASE_PATH = "/v1";
 /** 一覧系の既定/最大件数 */
 export const PAGE_LIMIT_DEFAULT = 50;
 export const PAGE_LIMIT_MAX = 100;
+/** 管理画面「非表示のレス」に出す本文の抜粋（文字数）。 */
+export const HIDDEN_POST_EXCERPT_CHARS = 200;
 
 /**
  * 板スラッグ予約語。静的ルート・互換 URL と衝突する名前は板名に使えない。

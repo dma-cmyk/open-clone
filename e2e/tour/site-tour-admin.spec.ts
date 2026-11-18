@@ -233,7 +233,7 @@ test.describe("板の管理画面のツアー（板の管理人）", () => {
     await page.locator('[data-tour="manage-help"]').click();
     const titles = await runTourToEnd(page);
 
-    expect(titles).toEqual(["板の管理メニュー", "設定の中身", "スタッフ", "通報", "管理者向けヘルプ"]);
+    expect(titles).toEqual(["板の管理メニュー", "設定の中身", "スタッフ", "通報", "非表示のレス", "管理者向けヘルプ"]);
     const help = page.locator(".oc-tour-tooltip").getByRole("link", { name: "ヘルプで詳しく" });
     await expect(help).toHaveAttribute("href", "/help/admin/#board-staff");
   });
