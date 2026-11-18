@@ -24,12 +24,42 @@ export interface BridgeHandlers {
   onNotify?(message: string, level: string): void;
   onUploadRequest?(): Promise<{ started: boolean; url?: string }>;
   /**
+   * `data.post.create` の直前確認。ホストはモーダルで「プラグイン『名前』が次の内容で
+   * 書き込みます」と名前欄・本文を見せ、板が Turnstile を必要とするならトークンを取る。
+   * 未指定なら投稿しない（プラグインが黙って書き込む経路を作らない）。
+   */
+  onPostConfirm?(request: PostConfirmRequest): Promise<PostConfirmDecision>;
+  /**
    * ai:complete を呼ぶ前の利用者同意。未指定なら拒否（権限だけでは外部送信しない）。
    * 実装はモーダル/confirm を出し、同意した場合だけ true を返す。
    */
   onAiConsent?(): Promise<boolean>;
   onLog?(args: string[]): void;
   onEventSubscribe?(topics: string[]): void;
+}
+
+/** プラグイン投稿の確認要求（プラグインの引数ではなく、ホストが組み立てる）。 */
+export interface PostConfirmRequest {
+  /** 書き込もうとしているプラグインの表示名（manifest.name） */
+  pluginName: string;
+  name: string;
+  body: string;
+  boardSlug?: string;
+  boardId?: number;
+  threadId: number | null;
+  /** 1 = 最初の確認、2 = Turnstile 失敗後の再確認 */
+  attempt: number;
+  /** 再確認のときだけ、直前の失敗理由を入れる */
+  errorMessage?: string;
+}
+
+export interface PostConfirmDecision {
+  confirmed: boolean;
+  /**
+   * 板が Turnstile を必要とするときだけ、ホストが得たトークンを返す。
+   * ホストコードが作る値であり、プラグインには渡さない。
+   */
+  turnstileToken?: string;
 }
 
 export interface RpcHostContext {
@@ -39,6 +69,8 @@ export interface RpcHostContext {
   permissions: readonly PluginPermission[];
   scope: PluginScope;
   boardId?: number;
+  /** 板の Turnstile 状態を引くときの slug（`GET /boards/:slug/turnstile`）。 */
+  boardSlug?: string;
   threadId?: number;
   handlers: BridgeHandlers;
   /** プレビュー用のメソッド上書き（data.* をサンプルデータにする等） */
@@ -185,13 +217,44 @@ export function createRpcDispatcher(
       case "data.post.create": {
         if (ctx.preview) throw new PluginApiError(400, "PREVIEW", "プレビューでは投稿できません");
         const body = requireString(params, "body");
-        return pluginApi.createPost({
+        const draft = {
           boardId: readNumber(params, "boardId") ?? ctx.boardId,
           threadId: readNumber(params, "threadId") ?? ctx.threadId ?? null,
           name: readString(params, "name"),
           mail: readString(params, "mail"),
           body,
-        });
+        };
+        // プラグインが黙って書き込める経路を作らない。ホストの確認（名前欄・本文の表示と、
+        // 必要なら Turnstile のトークン取得）が無いホストでは投稿しない。
+        const confirm = ctx.handlers.onPostConfirm;
+        if (!confirm) {
+          throw new PluginApiError(403, "CONFIRM_REQUIRED", "ホストの確認がないため書き込めません");
+        }
+        const request = {
+          pluginName: ctx.manifest.name,
+          name: draft.name ?? "",
+          body: draft.body,
+          boardSlug: ctx.boardSlug,
+          boardId: draft.boardId,
+          threadId: draft.threadId ?? null,
+        };
+        let decision = await confirm({ ...request, attempt: 1 });
+        if (!decision.confirmed) {
+          throw new PluginApiError(403, "CANCELED", "書き込みがキャンセルされました");
+        }
+        try {
+          return await pluginApi.createPost(draft, decision.turnstileToken);
+        } catch (error) {
+          // トークンは 1 回限り。Turnstile で落ちたときだけ、ホストに取り直させて 1 回やり直す。
+          const retryable =
+            error instanceof PluginApiError && error.status === 400 && error.code === "TURNSTILE_FAILED";
+          if (!retryable) throw error;
+          decision = await confirm({ ...request, attempt: 2, errorMessage: error.message });
+          if (!decision.confirmed) {
+            throw new PluginApiError(403, "CANCELED", "書き込みがキャンセルされました");
+          }
+          return pluginApi.createPost(draft, decision.turnstileToken);
+        }
       }
 
       case "net.fetch": {

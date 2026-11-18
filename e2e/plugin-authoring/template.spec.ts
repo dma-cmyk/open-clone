@@ -61,7 +61,8 @@ async function createThread(
 }
 
 async function findPluginId(request: APIRequestContext, name: string): Promise<string | null> {
-  const response = await request.get(`${API_BASE}/v1/plugins?q=${encodeURIComponent(name)}`, {
+  // `mine=true` を付けないと、下書き（draft）は一覧に出ず後始末が空振りする。
+  const response = await request.get(`${API_BASE}/v1/plugins?q=${encodeURIComponent(name)}&mine=true`, {
     headers: { Origin: ALLOWED_ORIGIN, Cookie: `oc_sess=${USER_SESSION}` },
   });
   const body = await readEnvelope<{ items: Array<{ id: string; name: string }> }>(response);
@@ -135,19 +136,23 @@ test.describe("テンプレートから作る", () => {
     }
   });
 
-  test("サイコロ: フォームだけで保存・導入でき、スレのレス下にボタンが出て振れる", async ({
+  test("サイコロ: ボタンから !NdM 付きのレスが書き込まれ、出目が名前に残る", async ({
     page,
     context,
     request,
   }) => {
+    test.setTimeout(180_000);
     await loginAsTestUser(context);
     const thread = await createThread(request, "サイコロのテスト");
     const name = unique("dice-tpl");
 
     try {
-      await openTemplate(page, "dice-button", "サイコロ／占いボタン");
+      await openTemplate(page, "dice-button", "サイコロ（レスに書き込む）");
       await page.getByLabel("プラグイン名").fill(name);
+      await page.getByLabel("ボタンの文字").fill("🎲 2d6");
+      await page.getByLabel("振る個数").fill("2");
       await page.getByLabel("面の数").fill("6");
+      await page.getByLabel("一緒に書く本文（任意）").fill("プラグインから振りました");
 
       const checked = waitForPost(page, /\/api\/v1\/plugins\/preview-check$/);
       await page.getByRole("button", { name: "プレビュー" }).click();
@@ -163,14 +168,40 @@ test.describe("テンプレートから作る", () => {
       expect((await installed).status()).toBe(201);
       await expect(page.getByText("できました", { exact: true })).toBeVisible();
 
-      // スレ画面: thread-post-footer → post-actions に sandbox iframe でボタンが出る
+      // スレ画面: thread-bottom の sandbox iframe にボタンが出る
       await page.goto(`/b/${thread.slug}/t/${thread.threadId}`);
-      await expect(page.locator('[data-plugin-slot="post-actions"]').first()).toBeVisible({ timeout: 15_000 });
-      const frame = page.frameLocator('iframe[title$="プラグイン"]').first();
-      const diceButton = frame.getByRole("button", { name: /🎲 1d6/ });
+      const slot = page.locator('[data-plugin-slot="thread-bottom"]');
+      await expect(slot).toBeVisible({ timeout: 15_000 });
+      const frame = page.frameLocator(
+        `[data-plugin-slot="thread-bottom"] iframe[title="${name} プラグイン"]`,
+      );
+      const diceButton = frame.getByRole("button", { name: /🎲 2d6/ });
       await expect(diceButton).toBeVisible({ timeout: 15_000 });
+
+      // ボタン → ホストの確認モーダル（iframe の外）→ 書き込む。
+      // 板は turnstile: off なので Turnstile ウィジェットは出ない。
       await diceButton.click();
-      await expect(frame.getByText(/→ \d+/)).toBeVisible();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible({ timeout: 20_000 });
+      await expect(dialog).toContainText(`プラグイン「${name}」が次の内容で書き込みます`);
+      await expect(dialog).toContainText("!2d6");
+      await expect(dialog).toContainText("プラグインから振りました");
+      const posted = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" && new URL(response.url()).pathname === "/api/v1/posts",
+      );
+      await dialog.getByRole("button", { name: "書き込む" }).click();
+      expect((await posted).status()).toBe(201);
+      await expect(dialog).toHaveCount(0, { timeout: 20_000 });
+
+      // 投稿するとホストが導入一覧を取り直してスロットを作り直す。書き込み自体は
+      // スレを読み直して確認する（サーバーが振った出目が名前欄に付いて残る）。
+      await page.reload();
+      const postName = page.locator("#p2 .oc-post-name");
+      await expect(postName).toBeVisible({ timeout: 20_000 });
+      await expect(postName).toContainText("【2d6:");
+      expect((await postName.textContent()) ?? "").toMatch(/【2d6:[1-6]\+[1-6]=([2-9]|1[0-2])】$/);
+      await expect(page.locator("#p2")).toContainText("プラグインから振りました");
     } finally {
       await cleanupPlugin(request, name);
     }

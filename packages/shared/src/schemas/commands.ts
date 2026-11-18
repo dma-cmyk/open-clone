@@ -29,11 +29,29 @@ export type ThreadCommandKey = "aku" | "kaijo" | "sub" | "cap" | "reset" | "nopi
 /** スレタイに埋め込む作成時フラグ。 */
 export const TITLE_FLAG_COMMANDS = ["!no_id", "!sage", "!oekaki", "!timer", "!live"] as const;
 
+/** 名前欄のサイコロ指定（`!2d6`）。出目はサーバーが振る。 */
+export interface NameDice {
+  /** 振る個数（1〜10） */
+  count: number;
+  /** 面の数（2〜1000） */
+  sides: number;
+}
+
+export const NAME_DICE_COUNT_MIN = 1;
+export const NAME_DICE_COUNT_MAX = 10;
+export const NAME_DICE_SIDES_MIN = 2;
+export const NAME_DICE_SIDES_MAX = 1000;
+
+/** `!NdM`。直後が空白か末尾のときだけコマンドとして扱う（他の名前コマンドと同じ境界）。 */
+const NAME_DICE = /!(\d{1,2})d(\d{1,4})(?=\s|$)/g;
+
 export interface ParsedName {
   /** コマンドを除去した素の名前 */
   name: string;
   /** 使用されたコマンド（重複なし） */
   commands: NameCommand[];
+  /** `!NdM` の指定（書式外・2 個目以降は無視する） */
+  dice: NameDice | null;
   /** `!random` 等により sage が強制されるか */
   forceSage: boolean;
   /** AA（等幅）表示 */
@@ -43,7 +61,17 @@ export interface ParsedName {
 /** 名前欄のコマンドを解釈する（`!ninja` 等はサーバ側で名前へ付加する）。 */
 export function parseNameCommands(rawName: string): ParsedName {
   const commands: NameCommand[] = [];
-  let name = rawName;
+  // 1 レスにつき振るのは 1 個だけ。2 個目以降の有効な指定は振らずに名前から取り除く
+  // （数字が範囲外の `!0d6` などはコマンドではなく、そのまま名前の文字として残す）。
+  const validDice: NameDice[] = [];
+  let name = rawName.replace(NAME_DICE, (token: string, countText: string, sidesText: string) => {
+    const count = Number(countText);
+    const sides = Number(sidesText);
+    if (count < NAME_DICE_COUNT_MIN || count > NAME_DICE_COUNT_MAX) return token;
+    if (sides < NAME_DICE_SIDES_MIN || sides > NAME_DICE_SIDES_MAX) return token;
+    if (validDice.length === 0) validDice.push({ count, sides });
+    return " ";
+  });
   for (const command of NAME_COMMANDS) {
     const pattern = new RegExp(`${escapeRegExp(command)}(?=\\s|$)`, "gi");
     if (pattern.test(name)) {
@@ -54,6 +82,7 @@ export function parseNameCommands(rawName: string): ParsedName {
   return {
     name: name.replace(/\s{2,}/g, " ").trim(),
     commands,
+    dice: validDice[0] ?? null,
     forceSage: commands.includes("!random"),
     aa: commands.includes("!AA"),
   };

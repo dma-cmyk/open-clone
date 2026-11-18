@@ -281,36 +281,7 @@ function validateParameter(
   }
 }
 
-function parseDiceMessages(
-  text: string,
-  sides: number,
-): { ok: true; messages: Record<string, string> } | { ok: false; message: string } {
-  const messages: Record<string, string> = {};
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  if (lines.length > 10) return { ok: false, message: "コメントは 10 行以内にしてください" };
-  for (const line of lines) {
-    if (line.length > 40) return { ok: false, message: "各行は 40 文字以内にしてください" };
-    const matched = /^(\d{1,3})\s*[:：]\s*(.+)$/.exec(line);
-    if (!matched) {
-      return { ok: false, message: "「面:文言」の形式で入力してください（例 6:大当たり）" };
-    }
-    const face = Number(matched[1]);
-    if (face < 1 || face > sides) {
-      return { ok: false, message: `面は 1〜${sides} で指定してください` };
-    }
-    const key = String(face);
-    if (messages[key] !== undefined) {
-      return { ok: false, message: `面 ${face} が重複しています` };
-    }
-    messages[key] = (matched[2] ?? "").trim();
-  }
-  return { ok: true, messages };
-}
-
-/** 生成後にしか分からない制約（正規表現長・コメント形式）を検証する。 */
+/** 生成後にしか分からない制約（正規表現長）を検証する。 */
 function postValidate(template: PluginTemplateDefinition, values: Record<string, unknown>): TemplateFieldError[] {
   if (template.id === "ng-word-mask") {
     const words = values.words as string[];
@@ -323,10 +294,6 @@ function postValidate(template: PluginTemplateDefinition, values: Record<string,
         },
       ];
     }
-  }
-  if (template.id === "dice-button") {
-    const parsed = parseDiceMessages(String(values.messages ?? ""), Number(values.sides));
-    if (!parsed.ok) return [{ key: "messages", message: parsed.message }];
   }
   return [];
 }
@@ -512,7 +479,12 @@ function slotNames(
   return [...(template.baseManifest.slots ?? [])];
 }
 
-/** サイコロ: 乱数は crypto.getRandomValues（公式サンプルと同方式）。 */
+/**
+ * サイコロ: `!NdM` 付きのレスを書き込む。
+ * 乱数・出目はサーバー（名前欄コマンド）が決める。ここで振ると他人に見えない・偽装できるため、
+ * クライアント側では乱数を一切使わない。書き込みの確認（名前欄・本文・Turnstile）は
+ * ホストが行うため、iframe 内では確認 UI を持たない（二重確認にしない）。
+ */
 function diceCode(slot: string, config: unknown): string {
   return `register({
   slots: {
@@ -521,22 +493,28 @@ function diceCode(slot: string, config: unknown): string {
       var api = ctx.api;
       var root = ctx.root;
       var wrap = document.createElement('div');
-      wrap.style.cssText = 'display:flex;gap:6px;align-items:center;font-size:12px;padding:2px 0;';
+      wrap.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;padding:2px 0;';
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.textContent = CONFIG.label;
       btn.style.cssText = 'font-size:12px;padding:1px 8px;cursor:pointer;';
-      var out = document.createElement('span');
+      var state = document.createElement('span');
       btn.addEventListener('click', function () {
-        var buf = new Uint32Array(CONFIG.count);
-        crypto.getRandomValues(buf);
-        var total = 0;
-        for (var i = 0; i < buf.length; i++) total += (buf[i] % CONFIG.sides) + 1;
-        out.textContent = '→ ' + total + (CONFIG.messages[total] || '');
+        btn.disabled = true;
+        state.textContent = ' 書き込み中…';
         api.ui.resize(Math.max(document.documentElement.scrollHeight, 1));
+        api.data.createPost({ name: CONFIG.name, body: CONFIG.body || '（サイコロ）' }).then(function (post) {
+          btn.disabled = false;
+          state.textContent = ' レス ' + (post && post.num ? post.num : '?') + ' に書き込みました';
+          api.ui.resize(Math.max(document.documentElement.scrollHeight, 1));
+        }).catch(function (error) {
+          btn.disabled = false;
+          state.textContent = ' 投稿に失敗しました: ' + ((error && error.message) || error);
+          api.ui.resize(Math.max(document.documentElement.scrollHeight, 1));
+        });
       });
       wrap.appendChild(btn);
-      wrap.appendChild(out);
+      wrap.appendChild(state);
       root.appendChild(wrap);
     }
   }
@@ -625,44 +603,24 @@ function quickReplyCode(config: unknown): string {
       btn.textContent = CONFIG.buttonLabel;
       btn.style.cssText = 'font-size:12px;padding:1px 8px;cursor:pointer;';
       var state = document.createElement('span');
-      var confirmBox = document.createElement('span');
-      confirmBox.style.cssText = 'display:none;gap:6px;align-items:center;';
-      var yes = document.createElement('button');
-      yes.type = 'button';
-      yes.textContent = 'する';
-      var no = document.createElement('button');
-      no.type = 'button';
-      no.textContent = 'やめる';
-      function reset() {
-        confirmBox.style.display = 'none';
-        state.textContent = '';
-      }
       btn.addEventListener('click', function () {
-        state.textContent = ' ' + CONFIG.confirmText;
-        confirmBox.style.display = 'inline-flex';
+        btn.disabled = true;
+        state.textContent = ' 書き込み中…';
         api.ui.resize(Math.max(document.documentElement.scrollHeight, 1));
-      });
-      no.addEventListener('click', reset);
-      yes.addEventListener('click', function () {
-        yes.disabled = true;
         var draft = { body: CONFIG.body };
         if (CONFIG.postName) draft.name = CONFIG.postName;
         api.data.createPost(draft).then(function (post) {
-          yes.disabled = false;
-          reset();
+          btn.disabled = false;
           state.textContent = ' 投稿しました（レス ' + (post && post.num ? post.num : '?') + '）';
           api.notify.show('投稿しました', { level: 'success' });
         }).catch(function (error) {
-          yes.disabled = false;
+          btn.disabled = false;
           state.textContent = ' 投稿に失敗しました: ' + ((error && error.message) || error);
           api.notify.show('投稿に失敗しました', { level: 'error' });
         });
       });
-      confirmBox.appendChild(yes);
-      confirmBox.appendChild(no);
       wrap.appendChild(btn);
       wrap.appendChild(state);
-      wrap.appendChild(confirmBox);
       root.appendChild(wrap);
     }
   }
@@ -678,14 +636,12 @@ function buildSlotTemplate(
   let code: string;
   switch (template.id) {
     case "dice-button": {
+      const count = Number(values.count);
       const sides = Number(values.sides);
-      const parsed = parseDiceMessages(String(values.messages ?? ""), sides);
-      if (!parsed.ok) throw new TemplateGenerationError(parsed.message);
       config = {
+        name: `!${count}d${sides}`,
         label: values.label,
-        sides,
-        count: Number(values.count),
-        messages: parsed.messages,
+        body: values.body ?? "",
       };
       code = diceCode(String(values.slot), config);
       break;
@@ -713,7 +669,6 @@ function buildSlotTemplate(
         buttonLabel: values.buttonLabel,
         body: values.body,
         postName: values.postName ?? "",
-        confirmText: values.confirmText ?? "",
       };
       code = quickReplyCode(config);
       break;

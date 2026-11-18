@@ -170,7 +170,7 @@ describe("generateFromTemplate: 代表パラメータ", () => {
 
   it("必須・型・上限を検証する", () => {
     expect(generateFromTemplate("ng-word-mask", { ...representativeParams("ng-word-mask"), words: [] }).ok).toBe(false);
-    expect(generateFromTemplate("dice-button", { ...representativeParams("dice-button"), sides: 101 }).ok).toBe(false);
+    expect(generateFromTemplate("dice-button", { ...representativeParams("dice-button"), sides: 1001 }).ok).toBe(false);
     expect(generateFromTemplate("dice-button", { ...representativeParams("dice-button"), sides: 6.5 }).ok).toBe(false);
     expect(generateFromTemplate("counter", { ...representativeParams("counter"), storageKey: "a b" }).ok).toBe(false);
     expect(generateFromTemplate("quick-reply", { ...representativeParams("quick-reply"), body: "" }).ok).toBe(false);
@@ -187,18 +187,18 @@ describe("generateFromTemplate: 境界パラメータ", () => {
     [
       "dice-button",
       {
-        slot: "thread-bottom",
+        slot: "thread-head",
         label: "L".repeat(20),
-        sides: 100,
+        sides: 1000,
         count: 10,
-        messages: Array.from({ length: 10 }, (_, index) => `${index + 1}:ok`).join("\n"),
+        body: "あ".repeat(2000),
       },
     ],
     ["counter", { label: "c".repeat(20), start: 999_999, step: 100, storageKey: "k".repeat(40) }],
     ["thread-info", { fields: ["title", "count", "board"], prefix: "p".repeat(8) }],
     [
       "quick-reply",
-      { buttonLabel: "b".repeat(20), body: "あ".repeat(2000), postName: "n".repeat(100), confirmText: "c".repeat(60) },
+      { buttonLabel: "b".repeat(20), body: "あ".repeat(2000), postName: "n".repeat(100) },
     ],
   ];
 
@@ -226,13 +226,26 @@ describe("generateFromTemplate: 境界パラメータ", () => {
     if (!result.ok) expect(result.fieldErrors.some((error) => error.key === "words")).toBe(true);
   });
 
-  it("サイコロのコメント形式・面の範囲・重複を検証する", () => {
+  it("サイコロは !NdM を名前欄に置いて書き込み、乱数を持たない", () => {
     const base = representativeParams("dice-button");
-    for (const messages of ["6", "6:", "7:out", "6:a\n6:b", "1:a\n2:b"]) {
-      const result = generateFromTemplate("dice-button", { ...base, messages });
-      if (messages === "1:a\n2:b") expect(result.ok).toBe(true);
-      else expect(result.ok).toBe(false);
+    for (const [count, sides] of [
+      [1, 6],
+      [10, 1000],
+      [2, 2],
+    ] as const) {
+      const result = generateOk("dice-button", { ...base, count, sides });
+      expect(result.manifest.permissions).toEqual(["ui:slot", "data:write:post"]);
+      expect(result.code).toContain(`"name":"!${count}d${sides}"`);
+      expect(result.code).toContain("api.data.createPost");
+      // 出目はサーバーが決める。クライアント側の乱数は使わない。
+      expect(result.code).not.toContain("crypto.getRandomValues");
+      expect(result.code).not.toContain("Math.random");
     }
+    // 表示場所はスレ上部・下部の 2 つだけ
+    expect(generateFromTemplate("dice-button", { ...base, slot: "thread-post-footer" }).ok).toBe(false);
+    expect(generateOk("dice-button", { ...base, slot: "thread-head" }).manifest.slots).toEqual(["thread-head"]);
+    expect(generateFromTemplate("dice-button", { ...base, count: 11 }).ok).toBe(false);
+    expect(generateFromTemplate("dice-button", { ...base, sides: 1 }).ok).toBe(false);
   });
 });
 
@@ -266,7 +279,6 @@ describe("generateFromTemplate: 注入耐性", () => {
         if (id === "quick-reply") {
           params.body = injected;
           params.postName = injected.slice(0, 100);
-          params.confirmText = injected.slice(0, 60);
         }
         const result = generateOk(id, params);
         const { skeleton, config } = codeSkeleton(result.code);

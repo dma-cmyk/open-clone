@@ -128,7 +128,7 @@ describe("フォームのエラー文言（報告書 27 §6.2）", () => {
     const state = initialFormState(template);
     state.sides = "1";
     expect(validateForm(template, state).fieldErrors.sides).toBe(
-      "面の数 は 2〜100 の整数で入力してください",
+      "面の数 は 2〜1000 の整数で入力してください",
     );
   });
 
@@ -149,11 +149,15 @@ describe("フォームのエラー文言（報告書 27 §6.2）", () => {
     expect(errors.words).toContain("単語が多すぎます");
   });
 
-  it("サイコロのコメント形式の誤りはフィールドに出す", () => {
+  it("サイコロの面の数は 1000 まで受け付ける", () => {
     const template = templateOf("dice-button");
     const state = initialFormState(template);
-    state.messages = "大当たり";
-    expect(validateForm(template, state).fieldErrors.messages).toContain("「面:文言」");
+    state.sides = "1001";
+    expect(validateForm(template, state).fieldErrors.sides).toContain("2〜1000");
+    state.sides = "1000";
+    const validation = validateForm(template, state);
+    expect(validation.ok).toBe(true);
+    expect(validation.values.sides).toBe(1000);
   });
 
   it("mapFieldErrors は未知キーをそのまま通す", () => {

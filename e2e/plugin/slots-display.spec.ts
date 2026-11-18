@@ -1,8 +1,9 @@
 // プラグインの表示場所（スロット）の E2E。
 //
-// 設計 60 の直し方 4:
-//  - テンプレート「サイコロ／占いボタン」を「各レスの下」（thread-post-footer）と
-//    「スレ下部に 1 つ」（thread-bottom）で個人用に導入 → スレでボタンが出る → 押すと結果が出る
+// 設計 60 の直し方 4 / A-2:
+//  - テンプレート「サイコロ（レスに書き込む）」を「スレ上部に 1 つ」（thread-head → thread-top）と
+//    「スレ下部に 1 つ」（thread-bottom）で個人用に導入 → スレでボタンが出る → 押すと !NdM 付きの
+//    レスが書き込まれ、サーバーの出目が名前に残る
 //  - ログインなし（端末所有）とログインありの両方
 //  - 1000 レスのスレでも iframe は画面に近いレスだけ / `/plugins/active` はページで 1 回
 //  - 未設置だった post-form-extra・thread-nav・board-sidebar に実際に出る
@@ -133,25 +134,41 @@ function countActiveCalls(page: Page): { count: () => number } {
 }
 
 test.describe("プラグインの表示場所", () => {
-  test("各レスの下: ログインなしでもサイコロがレスごとに出て振れる", async ({ page, request }) => {
+  test("スレ上部: ログインなしでもサイコロボタンから !NdM 付きのレスが書き込める", async ({ page, request }) => {
     test.setTimeout(180_000);
     const name = unique("slot-anon").toLowerCase();
     const thread = await createThread(request);
-    await installDiceFromTemplate(page, name);
+    await installDiceFromTemplate(page, name, "スレ上部に 1 つ");
     try {
       const active = countActiveCalls(page);
       await page.goto(`/b/${thread.slug}/t/${thread.threadId}?r=l50`);
       await expect(page.locator("#p1")).toBeVisible({ timeout: 20_000 });
-      await expect(page.locator('[data-plugin-slot="post-actions"]').first()).toBeVisible({ timeout: 20_000 });
-
-      const frame = page.frameLocator('iframe[title$="プラグイン"]').first();
+      // thread-head は WP2 の thread-top に割り当てられる。
+      const head = page.locator('[data-plugin-slot="thread-top"]');
+      await expect(head).toBeVisible({ timeout: 20_000 });
+      const frame = page.frameLocator(`[data-plugin-slot="thread-top"] iframe[title="${name} プラグイン"]`);
       const dice = frame.getByRole("button", { name: /🎲 1d6/ });
       await expect(dice).toBeVisible({ timeout: 20_000 });
-      await dice.click();
-      await expect(frame.getByText(/→ \d+/)).toBeVisible();
-
-      // 取得はページで 1 回（レスごとに /plugins/active を呼ばない）。
+      // 取得はページで 1 回（レスごとに /plugins/active を呼ばない）。投稿後は
+      // ホストが導入一覧を取り直すので、押す前の値で確認する。
       expect(active.count()).toBe(1);
+
+      await dice.click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible({ timeout: 20_000 });
+      await expect(dialog).toContainText(`プラグイン「${name}」が次の内容で書き込みます`);
+      const posted = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" && new URL(response.url()).pathname === "/api/v1/posts",
+      );
+      await dialog.getByRole("button", { name: "書き込む" }).click();
+      expect((await posted).status()).toBe(201);
+      await expect(dialog).toHaveCount(0, { timeout: 20_000 });
+
+      await page.reload();
+      const postName = page.locator("#p2 .oc-post-name");
+      await expect(postName).toBeVisible({ timeout: 20_000 });
+      expect((await postName.textContent()) ?? "").toMatch(/^名無しさん 【1d6:[1-6]】$/);
     } finally {
       await cleanupInstall(page.request, name, undefined);
     }
@@ -172,9 +189,20 @@ test.describe("プラグインの表示場所", () => {
       // 宣言していないスロットには DOM を作らない。
       await expect(page.locator('[data-plugin-slot="post-actions"]')).toHaveCount(0);
 
-      const frame = page.frameLocator('[data-plugin-slot="thread-bottom"] iframe').first();
+      const frame = page.frameLocator(`[data-plugin-slot="thread-bottom"] iframe[title="${name} プラグイン"]`);
       await frame.getByRole("button", { name: /🎲 1d6/ }).click();
-      await expect(frame.getByText(/→ \d+/)).toBeVisible();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible({ timeout: 20_000 });
+      const posted = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" && new URL(response.url()).pathname === "/api/v1/posts",
+      );
+      await dialog.getByRole("button", { name: "書き込む" }).click();
+      expect((await posted).status()).toBe(201);
+      await expect(dialog).toHaveCount(0, { timeout: 20_000 });
+
+      await page.reload();
+      await expect(page.locator("#p2 .oc-post-name")).toContainText("【1d6:", { timeout: 20_000 });
     } finally {
       await cleanupInstall(request, name, `oc_sess=${OWNER_SESSION}`);
     }

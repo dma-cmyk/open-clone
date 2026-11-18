@@ -22,6 +22,7 @@ import {
 } from "shared";
 import { batch, writeStats, type SqlWriteStats } from "./db";
 import { computeDisplayId, jienDisplayId, ninjaLevelFor } from "./id";
+import { decorateName } from "./name-decoration";
 import { planThreadCommands, type CommandActor, type CommandPlan } from "./commands";
 import { checkRateLimitMulti } from "./do";
 import type { Env } from "./env";
@@ -156,8 +157,6 @@ export interface CreateTsubuyakiResult {
   post: Post;
   writeStats: SqlWriteStats;
 }
-
-const DEFAULT_NAME = "名無しさん";
 
 function utf8Length(value: string): number {
   return new TextEncoder().encode(value).length;
@@ -328,24 +327,6 @@ function applyNgWords(settings: BoardSettings, body: string): { body: string; hi
   return { body: result, hit };
 }
 
-function randomInt(maxExclusive: number): number {
-  const buffer = new Uint32Array(1);
-  crypto.getRandomValues(buffer);
-  return buffer[0]! % maxExclusive;
-}
-
-const OMIKUJI = ["大吉", "中吉", "小吉", "吉", "末吉", "凶", "大凶"] as const;
-
-/** 名前欄コマンドの表示上の付加（`!ninja` / `!random` / `!kuji` / `!dama`）。 */
-function decorateName(rawName: string, ninjaLv: number, commands: readonly string[]): string {
-  let name = rawName.trim().length > 0 ? rawName.trim() : DEFAULT_NAME;
-  if (commands.includes("!ninja")) name += ` (Lv${ninjaLv})`;
-  if (commands.includes("!random")) name += ` (乱数:${randomInt(101)})`;
-  if (commands.includes("!kuji")) name += ` 【${OMIKUJI[randomInt(OMIKUJI.length)]!}】`;
-  if (commands.includes("!dama")) name += ` (お年玉:${randomInt(10_001)}円)`;
-  return name.slice(0, 64);
-}
-
 /** 本文から `#タグ` を抽出する（最大 5・30 文字）。 */
 function extractHashtags(body: string): string[] {
   const tags: string[] = [];
@@ -513,7 +494,7 @@ export async function createPostInternal(input: CreatePostInput, deps: PipelineD
     throw ApiError.forbidden("このスレはコテ禁です（名前欄を使用できません）");
   }
   const { name: rawName, trip } = parseTripName(parsedName.name);
-  const displayName = decorateName(rawName, ninjaLv, parsedName.commands);
+  const displayName = decorateName(rawName, ninjaLv, parsedName.commands, parsedName.dice);
 
   if (state.nopic && (input.attachmentIds?.length ?? 0) > 0) {
     throw ApiError.forbidden("このスレは画像投稿が禁止されています");
@@ -777,7 +758,7 @@ export async function createThreadInternal(input: CreateThreadInput, deps: Pipel
     .bind(identity.deviceHash)
     .first<{ post_count: number }>();
   const ninjaLv = ninjaLevelFor((deviceRow?.post_count ?? 0) + 1);
-  const displayName = decorateName(rawName, ninjaLv, parsedName.commands);
+  const displayName = decorateName(rawName, ninjaLv, parsedName.commands, parsedName.dice);
   const baseId = await computeDisplayId({ salt: env.ID_SALT, boardId: board.id, ipHash: identity.ipHash, now });
   const displayId = settings.noId || parsedTitle.flags.noId ? "???" : baseId;
 
@@ -1022,7 +1003,7 @@ export async function createTsubuyakiInternal(input: CreateTsubuyakiInput, deps:
   const parsedName = parseNameCommands(input.name ?? "");
   const { name: rawName } = parseTripName(parsedName.name);
   // 名前の !ninja もレスと同じ Lv を出す（ID の Lv と食い違わせない）。
-  const name = decorateName(rawName, ninjaLv, parsedName.commands);
+  const name = decorateName(rawName, ninjaLv, parsedName.commands, parsedName.dice);
 
   // DB の posts.kind は本番 D1 のテーブル作り直しを避けるため 'kome' のまま保存する
   // （CHECK 制約と既存 migration を変えない）。外向けの PostKind は 'tsubuyaki'。

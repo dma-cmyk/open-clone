@@ -1,5 +1,5 @@
-// 証拠スクリーンショット（E2E_EVIDENCE=1 のときだけ）。各レスの下のサイコロ・押した結果・
-// pc と 360px。E2E_EVIDENCE_DIR に PNG を書く（既定は /var/tmp）。
+// 証拠スクリーンショット（E2E_EVIDENCE=1 のときだけ）。スレ下部のサイコロ・確認・
+// 書き込まれたレス（出目つきの名前）・pc と 360px。E2E_EVIDENCE_DIR に PNG を書く（既定は /var/tmp）。
 
 import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
 import { ALLOWED_ORIGIN, API_BASE, readEnvelope } from "../helpers/api";
@@ -44,7 +44,7 @@ async function login(context: BrowserContext): Promise<void> {
 test.describe("証拠スクリーンショット", () => {
   test.skip(!enabled, "E2E_EVIDENCE=1 のときだけ実行");
 
-  test("各レスの下のサイコロ・押した結果（pc と 360px）", async ({ page, context, request }) => {
+  test("スレ下部のサイコロ・確認・書き込まれたレス（pc と 360px）", async ({ page, context, request }) => {
     test.setTimeout(180_000);
     await login(context);
     const name = unique("shot-dice").toLowerCase();
@@ -63,21 +63,40 @@ test.describe("証拠スクリーンショット", () => {
       // PC
       await page.setViewportSize({ width: 1280, height: 900 });
       await page.goto(`/b/${thread.slug}/t/${thread.threadId}?r=l50`);
-      await expect(page.locator('[data-plugin-slot="post-actions"]').first()).toBeVisible({ timeout: 20_000 });
-      const frame = page.frameLocator('iframe[title$="プラグイン"]').first();
+      const slot = page.locator('[data-plugin-slot="thread-bottom"]');
+      await expect(slot).toBeVisible({ timeout: 20_000 });
+      const frame = page.frameLocator(`[data-plugin-slot="thread-bottom"] iframe[title="${name} プラグイン"]`);
       await expect(frame.getByRole("button", { name: /🎲 1d6/ })).toBeVisible({ timeout: 20_000 });
-      await page.screenshot({ path: `${outputDir}/${test.info().project.name}_pc_post_actions_dice.png` });
+      await slot.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${outputDir}/${test.info().project.name}_pc_thread_bottom_dice.png` });
+
       await frame.getByRole("button", { name: /🎲 1d6/ }).click();
-      await expect(frame.getByText(/→ \d+/)).toBeVisible();
-      await page.screenshot({ path: `${outputDir}/${test.info().project.name}_pc_post_actions_dice_clicked.png` });
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible({ timeout: 20_000 });
+      await page.screenshot({ path: `${outputDir}/${test.info().project.name}_pc_thread_bottom_dice_confirm.png` });
+
+      const posted = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" && new URL(response.url()).pathname === "/api/v1/posts",
+      );
+      await dialog.getByRole("button", { name: "書き込む" }).click();
+      expect((await posted).status()).toBe(201);
+      await expect(dialog).toHaveCount(0, { timeout: 20_000 });
+      await page.reload();
+      await expect(page.locator(".oc-post-name").filter({ hasText: "【1d6:" })).toBeVisible({ timeout: 20_000 });
+      await page.screenshot({ path: `${outputDir}/${test.info().project.name}_pc_thread_bottom_dice_posted.png` });
 
       // 360px
       await page.setViewportSize({ width: 360, height: 740 });
       await page.goto(`/b/${thread.slug}/t/${thread.threadId}?r=l50`);
-      await expect(page.locator('[data-plugin-slot="post-actions"]').first()).toBeVisible({ timeout: 20_000 });
-      const narrowFrame = page.frameLocator('iframe[title$="プラグイン"]').first();
+      const narrowSlot = page.locator('[data-plugin-slot="thread-bottom"]');
+      await expect(narrowSlot).toBeVisible({ timeout: 20_000 });
+      const narrowFrame = page.frameLocator(
+        `[data-plugin-slot="thread-bottom"] iframe[title="${name} プラグイン"]`,
+      );
       await expect(narrowFrame.getByRole("button", { name: /🎲 1d6/ })).toBeVisible({ timeout: 20_000 });
-      await page.screenshot({ path: `${outputDir}/${test.info().project.name}_narrow360_post_actions_dice.png` });
+      await narrowSlot.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${outputDir}/${test.info().project.name}_narrow360_thread_bottom_dice.png` });
     } finally {
       const list = await request.get(`${API_BASE}/v1/plugins?q=${encodeURIComponent(name)}&mine=true`, {
         headers: ownerHeaders(),

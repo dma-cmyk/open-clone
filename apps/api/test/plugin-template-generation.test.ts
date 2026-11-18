@@ -39,11 +39,11 @@ const BOUNDARIES: Array<[string, Record<string, unknown>]> = [
   [
     "dice-button",
     {
-      slot: "thread-bottom",
+      slot: "thread-head",
       label: "L".repeat(20),
-      sides: 100,
+      sides: 1000,
       count: 10,
-      messages: Array.from({ length: 10 }, (_, index) => `${index + 1}:ok`).join("\n"),
+      body: "あ".repeat(2000),
     },
   ],
   ["counter", { label: "c".repeat(20), start: 999_999, step: 100, storageKey: "k".repeat(40) }],
@@ -54,7 +54,6 @@ const BOUNDARIES: Array<[string, Record<string, unknown>]> = [
       buttonLabel: "b".repeat(20),
       body: "あ".repeat(2000),
       postName: "n".repeat(100),
-      confirmText: "c".repeat(60),
     },
   ],
 ];
@@ -98,7 +97,6 @@ describe("テンプレート生成物 × runStaticChecks", () => {
         if (id === "quick-reply") {
           params.body = injected;
           params.postName = injected.slice(0, 100);
-          params.confirmText = injected.slice(0, 60);
         }
         const result = generateOk(id, params);
         const checks = await runStaticChecks(result.code, result.manifest);

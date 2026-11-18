@@ -206,23 +206,23 @@ export const PLUGIN_TEMPLATES: readonly PluginTemplateDefinition[] = [
   {
     id: "dice-button",
     kind: "slot",
-    risk: "low",
-    label: "サイコロ／占いボタン",
+    risk: "medium",
+    label: "サイコロ（レスに書き込む）",
     description:
-      "レスごと、またはスレ下部にサイコロボタンを追加します。押すと乱数と任意のコメントを表示します。",
+      "スレ上部か下部にサイコロボタンを追加します。押すと `!NdM` 付きのレスを書き込むので、出目はサーバーが振り、スレに残って全員に見えます（書き込み前にホストが内容と Bot 確認を出します）。",
     parameters: [
       nameParameter("dice-button"),
-      summaryParameter("レスにサイコロボタンを追加"),
+      summaryParameter("サーバーのサイコロでレスする"),
       {
         key: "slot",
         label: "表示場所",
         type: "select",
         required: false,
-        default: "thread-post-footer",
+        default: "thread-bottom",
         constraints: {
           options: [
-            { value: "thread-post-footer", label: "各レスの下" },
             { value: "thread-bottom", label: "スレ下部に 1 つ" },
+            { value: "thread-head", label: "スレ上部に 1 つ" },
           ],
         },
       },
@@ -235,14 +235,6 @@ export const PLUGIN_TEMPLATES: readonly PluginTemplateDefinition[] = [
         constraints: { minLength: 1, maxLength: 20 },
       },
       {
-        key: "sides",
-        label: "面の数",
-        type: "number",
-        required: false,
-        default: 6,
-        constraints: { min: 2, max: 100, integer: true },
-      },
-      {
         key: "count",
         label: "振る個数",
         type: "number",
@@ -251,19 +243,27 @@ export const PLUGIN_TEMPLATES: readonly PluginTemplateDefinition[] = [
         constraints: { min: 1, max: 10, integer: true },
       },
       {
-        key: "messages",
-        label: "結果コメント（任意・「面:文言」を 1 行 1 件）",
+        key: "sides",
+        label: "面の数",
+        type: "number",
+        required: false,
+        default: 6,
+        constraints: { min: 2, max: 1000, integer: true },
+      },
+      {
+        key: "body",
+        label: "一緒に書く本文（任意）",
         type: "text",
         required: false,
         default: "",
-        constraints: { maxLength: 400, placeholder: "6:大当たり" },
+        constraints: { maxLength: 2000, placeholder: "空なら「（サイコロ）」" },
       },
     ],
     baseManifest: {
       version: "1.0.0",
       scope: [...SCOPES],
-      permissions: ["ui:slot"],
-      slots: ["thread-post-footer"],
+      permissions: ["ui:slot", "data:write:post"],
+      slots: ["thread-bottom", "thread-head"],
     },
   },
   {
@@ -369,7 +369,7 @@ export const PLUGIN_TEMPLATES: readonly PluginTemplateDefinition[] = [
     risk: "medium",
     label: "定型レスボタン",
     description:
-      "スレ下部に定型文の返信ボタンを追加します。押した人の名義で投稿されるため、確認 UI を挟みます。",
+      "スレ下部に定型文の返信ボタンを追加します。押した人の名義で投稿されるため、ホストが書き込み内容の確認 UI を挟みます。",
     parameters: [
       nameParameter("quick-reply"),
       summaryParameter("定型文をワンタップで返信"),
@@ -396,14 +396,6 @@ export const PLUGIN_TEMPLATES: readonly PluginTemplateDefinition[] = [
         required: false,
         default: "",
         constraints: { maxLength: 100, placeholder: "空なら板の既定名" },
-      },
-      {
-        key: "confirmText",
-        label: "確認メッセージ",
-        type: "string",
-        required: false,
-        default: "この内容で投稿しますか？",
-        constraints: { maxLength: 60 },
       },
     ],
     baseManifest: {
