@@ -39,3 +39,4 @@ export * from "./schemas/webhook";
 export * from "./schemas/admin";
 export * from "./schemas/auth";
 export * from "./schemas/password-reset";
+export * from "./schemas/pet";
