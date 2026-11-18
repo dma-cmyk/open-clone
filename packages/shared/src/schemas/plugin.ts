@@ -23,6 +23,7 @@ export const PLUGIN_PERMISSIONS = [
   "data:read:board",
   "data:write:post",
   "storage:shared",
+  "storage:thread",
   "net:fetch",
   "upload:start",
   "github:gist",
@@ -40,6 +41,8 @@ export const PLUGIN_PERMISSION_RISK: Readonly<Record<PluginPermission, "low" | "
   "data:read:board": "low",
   "data:write:post": "medium",
   "storage:shared": "low",
+  // 誰でも自由文を書ける（entries）ため、共有 KV より一段高い。
+  "storage:thread": "medium",
   "net:fetch": "medium",
   "upload:start": "medium",
   "github:gist": "high",
@@ -170,6 +173,46 @@ const originSchema = z
     }
   }, "https のオリジン（https://example.com）のみ指定できます");
 
+/** スレごとの共有値のキー。manifest で宣言したキーだけを API が受け付ける。 */
+export const PLUGIN_THREAD_STATE_KEY_PATTERN = /^[a-z0-9_-]{1,32}$/;
+/** manifest で宣言できる threadState の最大件数。 */
+export const PLUGIN_THREAD_STATE_MAX = 8;
+
+const pluginThreadStateKeySchema = z
+  .string()
+  .regex(PLUGIN_THREAD_STATE_KEY_PATTERN, "key は英小文字/数字/_/- の 1〜32 文字です");
+
+/**
+ * スレごとの共有値の宣言（DESIGN §7.2 / 設計「スレごとの共有値」）。
+ * プラグインは値の形だけを宣言し、1 人 1 回・上限・本文検査はサーバーが強制する。
+ */
+export const pluginThreadStateSchema = z.discriminatedUnion("kind", [
+  z.object({
+    key: pluginThreadStateKeySchema,
+    kind: z.literal("tally"),
+    /** anyone=未ログインも可 / login=ログイン済みのみ（未ログインは 401）。 */
+    who: z.enum(["anyone", "login"]).default("anyone"),
+  }),
+  z.object({
+    key: pluginThreadStateKeySchema,
+    kind: z.literal("choice"),
+    who: z.enum(["anyone", "login"]).default("anyone"),
+    options: z.array(z.string().min(1).max(30)).min(2).max(10),
+  }),
+  z.object({
+    key: pluginThreadStateKeySchema,
+    kind: z.literal("entries"),
+    who: z.enum(["anyone", "login"]).default("anyone"),
+    /** 1 人（actor）あたりの件数。既定 1・上限 10。 */
+    maxPerActor: z.number().int().min(1).max(10).default(1),
+    /** スレ×キー全体の保持件数。既定 200・上限 500。 */
+    maxEntries: z.number().int().min(1).max(500).default(200),
+    /** 1 件の最大文字数。既定 100・上限 200。 */
+    maxLength: z.number().int().min(1).max(200).default(100),
+  }),
+]);
+export type PluginThreadStateDeclaration = z.infer<typeof pluginThreadStateSchema>;
+
 /** プラグイン manifest。DESIGN §7.2 を正本とする。 */
 export const pluginManifestSchema = z
   .object({
@@ -187,6 +230,8 @@ export const pluginManifestSchema = z
       .default(PLUGIN_ENTRY_FILENAME),
     slots: z.array(z.enum(PLUGIN_SLOTS)).max(8).default([]),
     hooks: z.array(z.enum(PLUGIN_HOOKS)).max(4).default([]),
+    /** スレごとの共有値（tally / choice / entries）。storage:thread 権限と対で宣言する。 */
+    threadState: z.array(pluginThreadStateSchema).max(PLUGIN_THREAD_STATE_MAX).default([]),
     /** 宣言的レンダー規則（投稿表示変換）。 */
     render: z
       .object({ post: z.array(pluginPostRenderRuleSchema).max(20).optional() })
@@ -225,6 +270,33 @@ export const pluginManifestSchema = z
         path: ["permissions"],
         message: "ui:slot 権限を宣言する場合は slots を 1 つ以上指定してください",
       });
+    }
+
+    // threadState と storage:thread は必ず対で宣言する（片方だけの manifest は弾く）。
+    if (manifest.threadState.length > 0 && !permissions.has("storage:thread")) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["permissions"],
+        message: "threadState を使う場合は storage:thread 権限を宣言してください",
+      });
+    }
+    if (permissions.has("storage:thread") && manifest.threadState.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["threadState"],
+        message: "storage:thread 権限を宣言する場合は threadState を 1 件以上指定してください",
+      });
+    }
+    const seenKeys = new Set<string>();
+    for (const state of manifest.threadState) {
+      if (seenKeys.has(state.key)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["threadState"],
+          message: `threadState の key が重複しています: ${state.key}`,
+        });
+      }
+      seenKeys.add(state.key);
     }
   });
 
@@ -308,6 +380,12 @@ export const PLUGIN_RPC_PERMISSIONS: Readonly<Record<string, PluginPermission | 
   "storage.set": "storage:shared",
   "storage.delete": "storage:shared",
   "storage.list": "storage:shared",
+  // スレごとの共有値。threadId はホストの ctx.threadId だけを使う（プラグインは指定できない）。
+  "thread.state.get": "storage:thread",
+  "thread.tally.set": "storage:thread",
+  "thread.choice.set": "storage:thread",
+  "thread.entries.add": "storage:thread",
+  "thread.entries.remove": "storage:thread",
   "data.thread.get": "data:read:thread",
   "data.posts.list": "data:read:thread",
   "data.board.get": "data:read:board",
@@ -518,6 +596,69 @@ export const pluginStateSetSchema = z.object({
   value: z.string().max(PLUGIN_STATE_MAX_BYTES),
 });
 export type PluginStateSetInput = z.infer<typeof pluginStateSetSchema>;
+
+/** manifest の threadState 宣言から、key に対応する 1 件を返す（未宣言は undefined）。 */
+export function findThreadStateDeclaration(
+  manifest: Pick<PluginManifest, "threadState">,
+  key: string,
+): PluginThreadStateDeclaration | undefined {
+  return manifest.threadState.find((state) => state.key === key);
+}
+
+/** PUT /v1/plugins/:id/threads/:threadId/state/:key/tally */
+export const pluginThreadTallySetSchema = z.strictObject({ on: z.boolean() });
+export type PluginThreadTallySetInput = z.infer<typeof pluginThreadTallySetSchema>;
+
+/** PUT /v1/plugins/:id/threads/:threadId/state/:key/choice（null = 取り消し）。 */
+export const pluginThreadChoiceSetSchema = z.strictObject({
+  option: z.number().int().min(0).max(9).nullable(),
+});
+export type PluginThreadChoiceSetInput = z.infer<typeof pluginThreadChoiceSetSchema>;
+
+/** POST /v1/plugins/:id/threads/:threadId/state/:key/entries */
+export const pluginThreadEntryCreateSchema = z.strictObject({
+  text: z.string().min(1).max(1000),
+});
+export type PluginThreadEntryCreateInput = z.infer<typeof pluginThreadEntryCreateSchema>;
+
+/** GET/PUT/POST の state 読み書きで共通の 1 人分の状態。 */
+export interface PluginThreadTallyState {
+  kind: "tally";
+  count: number;
+  /** 本人がオンにしているか（他人の識別子は返さない）。 */
+  mine: boolean;
+}
+
+export interface PluginThreadChoiceState {
+  kind: "choice";
+  options: string[];
+  /** options と同じ並びの票数。 */
+  counts: number[];
+  /** 本人が選んでいる選択肢の index（未選択は null）。 */
+  mine: number | null;
+}
+
+export interface PluginThreadEntry {
+  id: string;
+  /** レスの ID と同じ作り方の表示名（例 `ID:abcd`）。 */
+  label: string;
+  text: string;
+  createdAt: number;
+  mine: boolean;
+}
+
+export interface PluginThreadEntriesState {
+  kind: "entries";
+  /** 新しい順（最大 maxEntries 件）。 */
+  items: PluginThreadEntry[];
+  /** スレ×キーの総件数。 */
+  total: number;
+}
+
+export type PluginThreadStateValue =
+  | PluginThreadTallyState
+  | PluginThreadChoiceState
+  | PluginThreadEntriesState;
 
 /** POST /v1/plugin-net/fetch — sandbox の net:fetch プロキシ入力。 */
 export const pluginNetFetchSchema = z.object({

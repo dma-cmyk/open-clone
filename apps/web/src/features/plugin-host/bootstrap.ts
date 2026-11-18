@@ -60,6 +60,13 @@ export const PLUGIN_BOOTSTRAP_SCRIPT = String.raw`(function () {
         delete: function (key) { return call('storage.delete', { key: key }); },
         list: function () { return call('storage.list', {}); }
       },
+      thread: {
+        state: function (key) { return call('thread.state.get', { key: key }); },
+        setTally: function (key, on) { return call('thread.tally.set', { key: key, on: on }); },
+        choose: function (key, option) { return call('thread.choice.set', { key: key, option: option }); },
+        addEntry: function (key, text) { return call('thread.entries.add', { key: key, text: text }); },
+        removeEntry: function (key, id) { return call('thread.entries.remove', { key: key, id: id }); }
+      },
       net: { fetch: function (input) { return call('net.fetch', input); } },
       upload: { start: function (options) { return call('upload.start', options || {}); } },
       github: {

@@ -212,7 +212,7 @@ describe("サンプルと表示用の派生", () => {
   });
 
   it("slot 系はサンプルを持たない", () => {
-    for (const id of ["dice-button", "counter", "thread-info", "quick-reply"]) {
+    for (const id of ["dice-button", "tally", "choice", "entries", "thread-info", "quick-reply"]) {
       expect(buildRenderSamples(id, {})).toEqual([]);
     }
   });

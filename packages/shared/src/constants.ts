@@ -154,6 +154,11 @@ export const RATE_LIMITS = {
   /** プラグイン作成トークン（トークン単位）。日次上限は plugin_author_usage で別途制御。 */
   pluginAuthor: { windowSeconds: 60, max: 30 },
   /**
+   * スレごとの共有値（storage:thread）。1 人（actor_key）あたり 1 分 30 回。
+   * 読み直し（15 秒間隔）は閲覧なので数えない。書き込み・削除だけを数える。
+   */
+  threadState: { windowSeconds: 60, max: 30 },
+  /**
    * 匿名（端末所有）プラグインの作成＋版追加（報告 40 設計）。
    * 端末窓と IP 窓の両方に 1 日 20 回。Cookie を消して繰り返す抜け道を IP 側で抑える。
    */

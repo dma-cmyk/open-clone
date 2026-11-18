@@ -113,7 +113,7 @@
 - 生成物を手で編集したい場合は「コードを見る・手で編集する」で `/plugins/new/?from=template` へ
   引き継げます（未保存の入力内容は sessionStorage の `oc.templateDraft` を 1 回だけ読みます）。
 
-初期テンプレート（7 件）:
+初期テンプレート（9 件）:
 
 | id | 名前 | 種別 | 入力の例 |
 |---|---|---|---|
@@ -121,7 +121,9 @@
 | `ng-word-mask` | NG ワード表示置換 | 表示ルール | 伏せたい単語（1 行 1 語） |
 | `keyword-deco` | キーワード装飾 | 表示ルール | 目立たせたい語・装飾スタイル |
 | `dice-button` | サイコロ（レスに書き込む） | スロット | 表示場所・ボタンの文字・振る個数・面の数・本文 |
-| `counter` | カウンタ | スロット | ラベル・初期値・増加量 |
+| `tally` | 人数カウンタ（参加・いいね） | スロット | ボタンの文字・押せる人 |
+| `choice` | スレのアンケート | スロット | 質問・選択肢（2〜10）・投票できる人 |
+| `entries` | 参加表明・一言リスト | スロット | ボタンの文字・入力欄の説明・1 人の上限 |
 | `thread-info` | スレ情報表示 | スロット | 表示する項目（タイトル・レス数・板名） |
 | `quick-reply` | 定型レスボタン | スロット | ボタンの文字・投稿する本文 |
 
@@ -207,6 +209,7 @@
 | `data:read:board` | 板情報の閲覧 | 低 |
 | `data:write:post` | 投稿（**閲覧者本人の操作として**。ホストが内容と Bot 確認のモーダルを必ず出す） | 中 |
 | `storage:shared` | `plugin_state` の共有 KV（板/サイト単位） | 低 |
+| `storage:thread` | スレごとの共有値（`threadState` の tally / choice / entries。1 人 1 回・上限はサーバーが強制） | 中 |
 | `net:fetch` | ホストプロキシ経由の外部 fetch（allowlist + 監査） | 中 |
 | `upload:start` | アップローダ起動 | 中 |
 | `github:gist` / `github:repo` | 閲覧者が GitHub 連携済みの場合のみ、本人リソースを操作（都度同意） | 高 |
@@ -225,6 +228,7 @@
 |---|---|
 | `handshake` / `ui.resize` / `ui.setTitle` / `log` | 不要 |
 | `storage.get/set/delete/list` | `storage:shared` |
+| `thread.state.get` / `thread.tally.set` / `thread.choice.set` / `thread.entries.add` / `thread.entries.remove` | `storage:thread` |
 | `data.thread.get` / `data.posts.list` | `data:read:thread` |
 | `data.board.get` | `data:read:board` |
 | `data.post.create` | `data:write:post` |
@@ -242,6 +246,34 @@
 利用者が Bot 確認を済ませ、ホストが得たトークンを投稿に添えます。**トークンはプラグインには渡りません**。
 利用者が「やめる」を選ぶとホストは 403 `CANCELED` を返すので、プラグイン側は失敗として扱ってください。
 二重確認にしないため、プラグイン側で独自の確認 UI を出す必要はありません。
+
+### スレごとの共有値（`storage:thread`）
+
+スレ単位の「参加人数・アンケート・一言リスト」は、manifest の `threadState` で宣言した key だけを使えます。
+値の保存・1 人 1 回・上限・本文検査はすべてサーバーが行い、プラグインは形を宣言して読み書きするだけです。
+
+```json
+{
+  "permissions": ["ui:slot", "storage:thread"],
+  "slots": ["thread-head"],
+  "threadState": [
+    { "key": "join", "kind": "tally", "who": "anyone" },
+    { "key": "poll", "kind": "choice", "who": "login", "options": ["はい", "いいえ"] },
+    { "key": "memo", "kind": "entries", "maxPerActor": 1, "maxEntries": 200, "maxLength": 100 }
+  ]
+}
+```
+
+- `tally`: 1 人 1 回のオン/オフ（`api.thread.setTally(key, on)`）。`state(key)` は `{kind,count,mine}`
+- `choice`: 1 人 1 票（`api.thread.choose(key, option|null)`）。`state(key)` は `{kind,options,counts,mine}`
+- `entries`: 追記リスト（`api.thread.addEntry(key, text)` / `removeEntry(key, id)`）。表示名はレスと同じ ID
+- entries の本文は長さ（`maxLength`）を検査し、制御文字は **C0 と DEL を除去**（レス本文と同じ扱い）、
+  板の NG ワードも適用します
+- 未宣言の key と、宣言と違う種類の操作（tally の key に choice 等）は **400**、
+  `who:"login"` を未ログインで使うと **401**、他人の entry の削除は **403**
+- 未ログインは IP ごとに人数・件数の上限があり、超えると **429**。書き込みは 1 人 1 分 30 回まで
+- `threadId` はホストの `ctx.threadId` だけを使います（プラグインから別のスレは指定できません）
+- 表示は必ず `textContent` を使い、他人の文字を HTML として解釈しないでください
 
 ### AI 連携（`ai:complete`）
 
@@ -312,6 +344,7 @@ export default definePlugin({
 | `api.ui` | `resize(height)` / `setTitle(title)` | 不要 |
 | `api.data` | `thread(threadId?)` / `board({slug?, boardId?})` / `posts(threadId)` / `createPost(draft)` | `data:read:thread` / `data:read:board` / `data:write:post` |
 | `api.storage` | `get` / `set` / `delete` / `list` | `storage:shared` |
+| `api.thread` | `state(key)` / `setTally(key, on)` / `choose(key, option)` / `addEntry(key, text)` / `removeEntry(key, id)` | `storage:thread` |
 | `api.net` | `fetch({url, method, headers, body})` | `net:fetch` |
 | `api.upload` | `start(options?)` | `upload:start` |
 | `api.github` | `createGist(input)` / `pushFile(input)` | `github:gist` / `github:repo` |

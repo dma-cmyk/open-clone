@@ -1054,6 +1054,10 @@ export async function deletePlugin(
     db.prepare(`DELETE FROM plugin_state WHERE plugin_id = ? AND ${noForeign}`).bind(...bindValues),
     db.prepare(`DELETE FROM plugin_reviews WHERE plugin_id = ? AND ${noForeign}`).bind(...bindValues),
     db.prepare(`DELETE FROM plugin_reports WHERE plugin_id = ? AND ${noForeign}`).bind(...bindValues),
+    // スレごとの共有値（storage:thread）。plugins への FK があるため本体より先に消す。
+    db.prepare(`DELETE FROM plugin_thread_tallies WHERE plugin_id = ? AND ${noForeign}`).bind(...bindValues),
+    db.prepare(`DELETE FROM plugin_thread_choices WHERE plugin_id = ? AND ${noForeign}`).bind(...bindValues),
+    db.prepare(`DELETE FROM plugin_thread_entries WHERE plugin_id = ? AND ${noForeign}`).bind(...bindValues),
     db.prepare(`DELETE FROM plugin_versions WHERE plugin_id = ? AND ${noForeign}`).bind(...bindValues),
     db.prepare(`DELETE FROM plugins WHERE id = ? AND ${noForeign}`).bind(...bindValues),
   ]);

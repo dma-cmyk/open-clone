@@ -73,7 +73,7 @@ describe("MCP /mcp-plugin の基本", () => {
     }
   });
 
-  it("list_templates は 7 テンプレートの id/パラメータ/既定 manifest を返す", async () => {
+  it("list_templates は 9 テンプレートの id/パラメータ/既定 manifest を返す", async () => {
     const { client } = await setup();
     try {
       const result = await client.callTool({ name: "authoring.list_templates", arguments: {} });
@@ -85,7 +85,9 @@ describe("MCP /mcp-plugin の基本", () => {
         "ng-word-mask",
         "keyword-deco",
         "dice-button",
-        "counter",
+        "tally",
+        "choice",
+        "entries",
         "thread-info",
         "quick-reply",
       ]);

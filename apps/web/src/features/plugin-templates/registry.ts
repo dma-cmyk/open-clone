@@ -15,6 +15,7 @@ export type { PluginTemplateDefinition };
 const PERMISSION_LABEL: Record<string, string> = {
   "ui:slot": "画面に表示",
   "storage:shared": "保存領域",
+  "storage:thread": "スレごとの共有値",
   "data:read:thread": "スレの読み取り",
   "data:read:board": "板の読み取り",
   "data:write:post": "投稿",
