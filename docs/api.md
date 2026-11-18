@@ -75,6 +75,7 @@
 | aiAction | 60s | 30 |
 | pluginAi | 60s | 10 |
 | pluginAuthor | 60s | 30 |
+| threadState | 60s | 30 |
 | pluginAnonCreate | 86400s | 20 |
 | pluginAnonCreateIp | 86400s | 20 |
 | postIp | 300s | 40 |
@@ -98,25 +99,26 @@
 | GET | `/me/sessions` | `requireAuth` | `accounts.ts` | 129 |
 | DELETE | `/me/sessions/:id` | `requireAuth` | `accounts.ts` | 147 |
 | POST | `/me/sessions/revoke-others` | `requireAuth` | `accounts.ts` | 168 |
-| POST | `/owner/setup` | — | `admin.ts` | 69 |
-| GET | `/overview` | `requireAdminActive` | `admin.ts` | 121 |
-| GET | `/users` | `requireAdminActive` | `admin.ts` | 149 |
-| GET | `/users/:id` | `requireAdminActive` | `admin.ts` | 212 |
-| POST | `/password-resets` | `requireOwnerActive` | `admin.ts` | 243 |
-| GET | `/password-resets` | `requireOwnerActive` | `admin.ts` | 292 |
-| POST | `/password-resets/:id/revoke` | `requireOwnerActive` | `admin.ts` | 310 |
-| GET | `/suspensions` | `requireAdminActive` | `admin.ts` | 330 |
-| POST | `/suspensions` | `requireAdminActive` | `admin.ts` | 340 |
-| POST | `/suspensions/:id/lift` | `requireAdminActive` | `admin.ts` | 355 |
-| DELETE | `/suspensions/:id` | `requireAdminActive` | `admin.ts` | 370 |
-| GET | `/audit` | `requireAdminActive` | `admin.ts` | 387 |
-| GET | `/plugin-reports` | `requireAdminActive`, `requireOwnerActive` | `admin.ts` | 455 |
-| GET | `/site-config` | `requireAdminActive`, `requireOwnerActive` | `admin.ts` | 463 |
-| PUT | `/site-config` | `requireOwnerActive` | `admin.ts` | 467 |
-| GET | `/special-admins` | `requireOwnerActive` | `admin.ts` | 484 |
-| POST | `/special-admins/:id/stop` | `requireOwnerActive` | `admin.ts` | 498 |
-| POST | `/special-admins/:id/restore` | `requireOwnerActive` | `admin.ts` | 517 |
-| POST | `/special-admins/:id/totp-reset` | `requireOwnerActive` | `admin.ts` | 534 |
+| POST | `/owner/setup` | — | `admin.ts` | 72 |
+| GET | `/overview` | `requireAdminActive` | `admin.ts` | 124 |
+| GET | `/users` | `requireAdminActive` | `admin.ts` | 152 |
+| GET | `/users/:id` | `requireAdminActive` | `admin.ts` | 215 |
+| POST | `/password-resets` | `requireOwnerActive` | `admin.ts` | 246 |
+| GET | `/password-resets` | `requireOwnerActive` | `admin.ts` | 295 |
+| POST | `/password-resets/:id/revoke` | `requireOwnerActive` | `admin.ts` | 313 |
+| GET | `/suspensions` | `requireAdminActive` | `admin.ts` | 333 |
+| POST | `/suspensions` | `requireAdminActive` | `admin.ts` | 343 |
+| POST | `/suspensions/:id/lift` | `requireAdminActive` | `admin.ts` | 358 |
+| DELETE | `/suspensions/:id` | `requireAdminActive` | `admin.ts` | 373 |
+| GET | `/audit` | `requireAdminActive` | `admin.ts` | 390 |
+| GET | `/plugin-reports` | `requireAdminActive` | `admin.ts` | 458 |
+| GET | `/hidden-posts` | `requireAdminActive` | `admin.ts` | 467 |
+| GET | `/site-config` | `requireAdminActive`, `requireOwnerActive` | `admin.ts` | 486 |
+| PUT | `/site-config` | `requireOwnerActive` | `admin.ts` | 490 |
+| GET | `/special-admins` | `requireOwnerActive` | `admin.ts` | 507 |
+| POST | `/special-admins/:id/stop` | `requireOwnerActive` | `admin.ts` | 521 |
+| POST | `/special-admins/:id/restore` | `requireOwnerActive` | `admin.ts` | 540 |
+| POST | `/special-admins/:id/totp-reset` | `requireOwnerActive` | `admin.ts` | 557 |
 | POST | `/complete` | — | `ai.ts` | 195 |
 | GET | `/me` | — | `ai.ts` | 209 |
 | POST | `/act` | — | `ai.ts` | 220 |
@@ -164,35 +166,36 @@
 | GET | `/metrics` | `requireAuth` | `ai.ts` | 1094 |
 | GET | `/actions` | `requireAuth` | `ai.ts` | 1100 |
 | POST | `/register` | `requireTurnstile` | `auth.ts` | 107 |
-| POST | `/login` | `requireTurnstile` | `auth.ts` | 185 |
-| POST | `/logout` | — | `auth.ts` | 268 |
-| GET | `/session` | `requireAuth` | `auth.ts` | 275 |
-| GET | `/totp/status` | `requireAuth` | `auth.ts` | 284 |
-| POST | `/totp/setup` | `requireAuth` | `auth.ts` | 290 |
-| POST | `/totp/enable` | `requireAuth` | `auth.ts` | 297 |
-| POST | `/totp/disable` | `requireAuth` | `auth.ts` | 311 |
-| POST | `/recovery-codes/regenerate` | `requireAuth` | `auth.ts` | 325 |
-| POST | `/recovery` | `requireTurnstile` | `auth.ts` | 364 |
-| POST | `/password-reset` | `requireTurnstile` | `auth.ts` | 420 |
-| POST | `/password-reset/operator` | `requireTurnstile` | `auth.ts` | 485 |
-| GET | `/github/status` | — | `auth.ts` | 539 |
-| GET | `/github/start` | — | `auth.ts` | 543 |
-| POST | `/github/callback` | — | `auth.ts` | 549 |
-| POST | `/step-up` | `requireAuth` | `auth.ts` | 584 |
-| GET | `/` | — | `boards.ts` | 44 |
-| POST | `/` | `requireAuth` | `boards.ts` | 100 |
-| GET | `/:slug` | — | `boards.ts` | 171 |
-| GET | `/:slug/turnstile` | — | `boards.ts` | 228 |
-| PATCH | `/:slug` | `requireAuth` | `boards.ts` | 257 |
-| DELETE | `/:slug` | `requireAuth` | `boards.ts` | 298 |
-| GET | `/:slug/threads` | — | `boards.ts` | 321 |
-| POST | `/:slug/threads` | — | `boards.ts` | 348 |
-| GET | `/:slug/staff` | — | `boards.ts` | 394 |
-| POST | `/:slug/staff` | `requireAuth` | `boards.ts` | 420 |
-| DELETE | `/:slug/staff/:accountId` | `requireAuth` | `boards.ts` | 454 |
-| GET | `/:slug/bans` | `requireAuth` | `boards.ts` | 484 |
-| POST | `/:slug/bans` | `requireAuth` | `boards.ts` | 521 |
-| DELETE | `/:slug/bans/:id` | `requireAuth` | `boards.ts` | 559 |
+| POST | `/login` | `requireTurnstile` | `auth.ts` | 186 |
+| POST | `/logout` | — | `auth.ts` | 269 |
+| GET | `/session` | `requireAuth` | `auth.ts` | 276 |
+| GET | `/totp/status` | `requireAuth` | `auth.ts` | 285 |
+| POST | `/totp/setup` | `requireAuth` | `auth.ts` | 291 |
+| POST | `/totp/enable` | `requireAuth` | `auth.ts` | 298 |
+| POST | `/totp/disable` | `requireAuth` | `auth.ts` | 312 |
+| POST | `/recovery-codes/regenerate` | `requireAuth` | `auth.ts` | 326 |
+| POST | `/recovery` | `requireTurnstile` | `auth.ts` | 365 |
+| POST | `/password-reset` | `requireTurnstile` | `auth.ts` | 421 |
+| POST | `/password-reset/operator` | `requireTurnstile` | `auth.ts` | 486 |
+| GET | `/github/status` | — | `auth.ts` | 540 |
+| GET | `/github/start` | — | `auth.ts` | 544 |
+| POST | `/github/callback` | — | `auth.ts` | 550 |
+| POST | `/step-up` | `requireAuth` | `auth.ts` | 585 |
+| GET | `/` | — | `boards.ts` | 53 |
+| POST | `/` | `requireAuth` | `boards.ts` | 109 |
+| GET | `/:slug` | — | `boards.ts` | 180 |
+| GET | `/:slug/turnstile` | — | `boards.ts` | 237 |
+| PATCH | `/:slug` | `requireAuth` | `boards.ts` | 266 |
+| DELETE | `/:slug` | `requireAuth` | `boards.ts` | 307 |
+| GET | `/:slug/threads` | — | `boards.ts` | 330 |
+| GET | `/:slug/hidden-posts` | `requireAuth` | `boards.ts` | 360 |
+| POST | `/:slug/threads` | — | `boards.ts` | 375 |
+| GET | `/:slug/staff` | — | `boards.ts` | 421 |
+| POST | `/:slug/staff` | `requireAuth` | `boards.ts` | 447 |
+| DELETE | `/:slug/staff/:accountId` | `requireAuth` | `boards.ts` | 481 |
+| GET | `/:slug/bans` | `requireAuth` | `boards.ts` | 511 |
+| POST | `/:slug/bans` | `requireAuth` | `boards.ts` | 548 |
+| DELETE | `/:slug/bans/:id` | `requireAuth` | `boards.ts` | 586 |
 | GET | `/:slug/subject.txt` | — | `compat.ts` | 70 |
 | GET | `/:slug/dat/:file` | — | `compat.ts` | 119 |
 | GET | `/bbsmenu.html` | — | `compat.ts` | 160 |
@@ -232,52 +235,58 @@
 | GET | `/log` | `requireRole` | `plugin-net.ts` | 116 |
 | POST | `/revoke-all` | `requireAuth` | `plugin-tokens.ts` | 83 |
 | DELETE | `/:id` | `requireAuth` | `plugin-tokens.ts` | 97 |
-| GET | `/mine` | — | `plugins.ts` | 159 |
-| GET | `/active` | — | `plugins.ts` | 174 |
-| GET | `/installed` | — | `plugins.ts` | 207 |
-| GET | `/reviews` | `requireRole` | `plugins.ts` | 273 |
-| POST | `/preview-check` | `requireAuth` | `plugins.ts` | 287 |
-| POST | `/import/gist` | `requireAuth` | `plugins.ts` | 294 |
-| POST | `/import/repo` | `requireAuth` | `plugins.ts` | 318 |
-| POST | `/hooks/github` | — | `plugins.ts` | 350 |
-| GET | `/:id` | — | `plugins.ts` | 529 |
-| GET | `/:id/versions` | — | `plugins.ts` | 540 |
-| GET | `/:id/code` | — | `plugins.ts` | 564 |
-| POST | `/:id/versions` | — | `plugins.ts` | 622 |
-| POST | `/:id/publish` | `requireAuth` | `plugins.ts` | 696 |
-| POST | `/:id/install` | — | `plugins.ts` | 746 |
-| POST | `/:id/update` | — | `plugins.ts` | 826 |
-| POST | `/:id/uninstall` | — | `plugins.ts` | 858 |
-| POST | `/:id/report` | — | `plugins.ts` | 880 |
-| GET | `/:id/reports` | — | `plugins.ts` | 904 |
-| POST | `/reports/:id/handle` | `requireAuth` | `plugins.ts` | 926 |
-| POST | `/:id/disable` | — | `plugins.ts` | 948 |
-| POST | `/:id/enable` | — | `plugins.ts` | 985 |
-| DELETE | `/:id` | — | `plugins.ts` | 1007 |
-| POST | `/:id/disable-install` | — | `plugins.ts` | 1047 |
-| POST | `/:id/enable-install` | — | `plugins.ts` | 1071 |
-| POST | `/:id/fork` | `requireAuth` | `plugins.ts` | 1094 |
-| GET | `/:id/state` | — | `plugins.ts` | 1138 |
-| POST | `/:id/state` | — | `plugins.ts` | 1162 |
-| DELETE | `/:id/state` | — | `plugins.ts` | 1198 |
-| POST | `/:id/review` | `requireRole` | `plugins.ts` | 1227 |
-| GET | `/:id/review` | `requireRole` | `plugins.ts` | 1259 |
-| POST | `/:id/export/gist` | `requireAuth` | `plugins.ts` | 1275 |
-| POST | `/:id/export/repo` | `requireAuth` | `plugins.ts` | 1302 |
-| POST | `/:id/sync` | `requireAuth` | `plugins.ts` | 1342 |
-| GET | `/:id` | — | `posts.ts` | 81 |
-| POST | `/` | — | `posts.ts` | 108 |
-| POST | `/tsubuyaki` | — | `posts.ts` | 141 |
-| POST | `/:id/like` | — | `posts.ts` | 171 |
-| GET | `/:id/like` | — | `posts.ts` | 205 |
-| POST | `/:id/hide` | `requireAuth` | `posts.ts` | 224 |
-| POST | `/:id/restore` | `requireAuth` | `posts.ts` | 234 |
-| DELETE | `/:id` | — | `posts.ts` | 247 |
-| PATCH | `/:id` | — | `posts.ts` | 297 |
-| GET | `/:id/history` | — | `posts.ts` | 344 |
-| GET | `/:id/poll` | — | `posts.ts` | 376 |
-| POST | `/:id/poll/vote` | — | `posts.ts` | 416 |
-| GET | `/:id/backlinks` | — | `posts.ts` | 444 |
+| GET | `/mine` | — | `plugins.ts` | 178 |
+| GET | `/active` | — | `plugins.ts` | 193 |
+| GET | `/installed` | — | `plugins.ts` | 226 |
+| GET | `/reviews` | `requireRole` | `plugins.ts` | 292 |
+| POST | `/preview-check` | `requireAuth` | `plugins.ts` | 306 |
+| POST | `/import/gist` | `requireAuth` | `plugins.ts` | 313 |
+| POST | `/import/repo` | `requireAuth` | `plugins.ts` | 337 |
+| POST | `/hooks/github` | — | `plugins.ts` | 369 |
+| GET | `/:id` | — | `plugins.ts` | 548 |
+| GET | `/:id/versions` | — | `plugins.ts` | 559 |
+| GET | `/:id/code` | — | `plugins.ts` | 583 |
+| POST | `/:id/versions` | — | `plugins.ts` | 641 |
+| POST | `/:id/publish` | `requireAuth` | `plugins.ts` | 715 |
+| POST | `/:id/install` | — | `plugins.ts` | 765 |
+| POST | `/:id/update` | — | `plugins.ts` | 845 |
+| POST | `/:id/uninstall` | — | `plugins.ts` | 877 |
+| POST | `/:id/report` | — | `plugins.ts` | 899 |
+| GET | `/:id/reports` | — | `plugins.ts` | 923 |
+| POST | `/reports/:id/handle` | `requireAuth` | `plugins.ts` | 945 |
+| POST | `/:id/disable` | — | `plugins.ts` | 967 |
+| POST | `/:id/enable` | — | `plugins.ts` | 1004 |
+| DELETE | `/:id` | — | `plugins.ts` | 1026 |
+| POST | `/:id/disable-install` | — | `plugins.ts` | 1066 |
+| POST | `/:id/enable-install` | — | `plugins.ts` | 1090 |
+| POST | `/:id/fork` | `requireAuth` | `plugins.ts` | 1113 |
+| GET | `/:id/state` | — | `plugins.ts` | 1142 |
+| POST | `/:id/state` | — | `plugins.ts` | 1166 |
+| DELETE | `/:id/state` | — | `plugins.ts` | 1202 |
+| GET | `/:id/threads/:threadId/state/:key` | — | `plugins.ts` | 1247 |
+| PUT | `/:id/threads/:threadId/state/:key/tally` | — | `plugins.ts` | 1256 |
+| PUT | `/:id/threads/:threadId/state/:key/choice` | — | `plugins.ts` | 1267 |
+| POST | `/:id/threads/:threadId/state/:key/entries` | — | `plugins.ts` | 1278 |
+| DELETE | `/:id/threads/:threadId/state/:key/entries/:entryId` | — | `plugins.ts` | 1289 |
+| DELETE | `/:id/threads/:threadId/state/:key` | `requireRole` | `plugins.ts` | 1299 |
+| POST | `/:id/review` | `requireRole` | `plugins.ts` | 1311 |
+| GET | `/:id/review` | `requireRole` | `plugins.ts` | 1343 |
+| POST | `/:id/export/gist` | `requireAuth` | `plugins.ts` | 1359 |
+| POST | `/:id/export/repo` | `requireAuth` | `plugins.ts` | 1386 |
+| POST | `/:id/sync` | `requireAuth` | `plugins.ts` | 1426 |
+| GET | `/:id` | — | `posts.ts` | 83 |
+| POST | `/` | — | `posts.ts` | 110 |
+| POST | `/tsubuyaki` | — | `posts.ts` | 143 |
+| POST | `/:id/like` | — | `posts.ts` | 173 |
+| GET | `/:id/like` | — | `posts.ts` | 207 |
+| POST | `/:id/hide` | `requireAuth` | `posts.ts` | 226 |
+| POST | `/:id/restore` | `requireAuth` | `posts.ts` | 250 |
+| DELETE | `/:id` | — | `posts.ts` | 277 |
+| PATCH | `/:id` | — | `posts.ts` | 327 |
+| GET | `/:id/history` | — | `posts.ts` | 374 |
+| GET | `/:id/poll` | — | `posts.ts` | 406 |
+| POST | `/:id/poll/vote` | — | `posts.ts` | 446 |
+| GET | `/:id/backlinks` | — | `posts.ts` | 474 |
 | GET | `/` | — | `ranking.ts` | 223 |
 | POST | `/` | — | `reports.ts` | 125 |
 | GET | `/` | `requireAuth` | `reports.ts` | 178 |
@@ -6670,7 +6679,7 @@
         },
         "permissions": {
           "default": [],
-          "maxItems": 12,
+          "maxItems": 13,
           "type": "array",
           "items": {
             "type": "string",
@@ -6680,6 +6689,7 @@
               "data:read:board",
               "data:write:post",
               "storage:shared",
+              "storage:thread",
               "net:fetch",
               "upload:start",
               "github:gist",
@@ -6740,6 +6750,119 @@
             "enum": [
               "beforePost",
               "onPostRendered"
+            ]
+          }
+        },
+        "threadState": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "tally"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "choice"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "options": {
+                    "minItems": 2,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 30
+                    }
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind",
+                  "options"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "entries"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "maxPerActor": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "maxEntries": {
+                    "default": 200,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500
+                  },
+                  "maxLength": {
+                    "default": 100,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              }
             ]
           }
         },
@@ -6823,7 +6946,9 @@
         "ng-word-mask",
         "keyword-deco",
         "dice-button",
-        "counter",
+        "tally",
+        "choice",
+        "entries",
         "thread-info",
         "quick-reply"
       ]
@@ -6870,7 +6995,7 @@
       }
     },
     "permissions": {
-      "maxItems": 12,
+      "maxItems": 13,
       "type": "array",
       "items": {
         "type": "string",
@@ -6880,6 +7005,7 @@
           "data:read:board",
           "data:write:post",
           "storage:shared",
+          "storage:thread",
           "net:fetch",
           "upload:start",
           "github:gist",
@@ -6913,6 +7039,118 @@
           "thread-bottom",
           "board-manage",
           "post-actions"
+        ]
+      }
+    },
+    "threadState": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[a-z0-9_-]{1,32}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "tally"
+              },
+              "who": {
+                "default": "anyone",
+                "type": "string",
+                "enum": [
+                  "anyone",
+                  "login"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[a-z0-9_-]{1,32}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "choice"
+              },
+              "who": {
+                "default": "anyone",
+                "type": "string",
+                "enum": [
+                  "anyone",
+                  "login"
+                ]
+              },
+              "options": {
+                "minItems": 2,
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                }
+              }
+            },
+            "required": [
+              "key",
+              "kind",
+              "options"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[a-z0-9_-]{1,32}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "entries"
+              },
+              "who": {
+                "default": "anyone",
+                "type": "string",
+                "enum": [
+                  "anyone",
+                  "login"
+                ]
+              },
+              "maxPerActor": {
+                "default": 1,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "maxEntries": {
+                "default": 200,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 500
+              },
+              "maxLength": {
+                "default": 100,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200
+              }
+            },
+            "required": [
+              "key",
+              "kind"
+            ]
+          }
         ]
       }
     },
@@ -7050,7 +7288,7 @@
         },
         "permissions": {
           "default": [],
-          "maxItems": 12,
+          "maxItems": 13,
           "type": "array",
           "items": {
             "type": "string",
@@ -7060,6 +7298,7 @@
               "data:read:board",
               "data:write:post",
               "storage:shared",
+              "storage:thread",
               "net:fetch",
               "upload:start",
               "github:gist",
@@ -7120,6 +7359,119 @@
             "enum": [
               "beforePost",
               "onPostRendered"
+            ]
+          }
+        },
+        "threadState": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "tally"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "choice"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "options": {
+                    "minItems": 2,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 30
+                    }
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind",
+                  "options"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "entries"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "maxPerActor": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "maxEntries": {
+                    "default": 200,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500
+                  },
+                  "maxLength": {
+                    "default": 100,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              }
             ]
           }
         },
@@ -7320,7 +7672,7 @@
         },
         "permissions": {
           "default": [],
-          "maxItems": 12,
+          "maxItems": 13,
           "type": "array",
           "items": {
             "type": "string",
@@ -7330,6 +7682,7 @@
               "data:read:board",
               "data:write:post",
               "storage:shared",
+              "storage:thread",
               "net:fetch",
               "upload:start",
               "github:gist",
@@ -7390,6 +7743,119 @@
             "enum": [
               "beforePost",
               "onPostRendered"
+            ]
+          }
+        },
+        "threadState": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "tally"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "choice"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "options": {
+                    "minItems": 2,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 30
+                    }
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind",
+                  "options"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "entries"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "maxPerActor": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "maxEntries": {
+                    "default": 200,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500
+                  },
+                  "maxLength": {
+                    "default": 100,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              }
             ]
           }
         },
@@ -7481,7 +7947,9 @@
         "ng-word-mask",
         "keyword-deco",
         "dice-button",
-        "counter",
+        "tally",
+        "choice",
+        "entries",
         "thread-info",
         "quick-reply"
       ]
@@ -7612,7 +8080,7 @@
             },
             "permissions": {
               "default": [],
-              "maxItems": 12,
+              "maxItems": 13,
               "type": "array",
               "items": {
                 "type": "string",
@@ -7622,6 +8090,7 @@
                   "data:read:board",
                   "data:write:post",
                   "storage:shared",
+                  "storage:thread",
                   "net:fetch",
                   "upload:start",
                   "github:gist",
@@ -7682,6 +8151,119 @@
                 "enum": [
                   "beforePost",
                   "onPostRendered"
+                ]
+              }
+            },
+            "threadState": {
+              "default": [],
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9_-]{1,32}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "tally"
+                      },
+                      "who": {
+                        "default": "anyone",
+                        "type": "string",
+                        "enum": [
+                          "anyone",
+                          "login"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9_-]{1,32}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "choice"
+                      },
+                      "who": {
+                        "default": "anyone",
+                        "type": "string",
+                        "enum": [
+                          "anyone",
+                          "login"
+                        ]
+                      },
+                      "options": {
+                        "minItems": 2,
+                        "maxItems": 10,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 30
+                        }
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "kind",
+                      "options"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9_-]{1,32}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "entries"
+                      },
+                      "who": {
+                        "default": "anyone",
+                        "type": "string",
+                        "enum": [
+                          "anyone",
+                          "login"
+                        ]
+                      },
+                      "maxPerActor": {
+                        "default": 1,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10
+                      },
+                      "maxEntries": {
+                        "default": 200,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 500
+                      },
+                      "maxLength": {
+                        "default": 100,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 200
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "kind"
+                    ]
+                  }
                 ]
               }
             },
@@ -8251,7 +8833,7 @@
                 }
               },
               "permissions": {
-                "maxItems": 12,
+                "maxItems": 13,
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -8261,6 +8843,7 @@
                     "data:read:board",
                     "data:write:post",
                     "storage:shared",
+                    "storage:thread",
                     "net:fetch",
                     "upload:start",
                     "github:gist",
@@ -8294,6 +8877,118 @@
                     "thread-bottom",
                     "board-manage",
                     "post-actions"
+                  ]
+                }
+              },
+              "threadState": {
+                "maxItems": 8,
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9_-]{1,32}$"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "tally"
+                        },
+                        "who": {
+                          "default": "anyone",
+                          "type": "string",
+                          "enum": [
+                            "anyone",
+                            "login"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "kind"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9_-]{1,32}$"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "choice"
+                        },
+                        "who": {
+                          "default": "anyone",
+                          "type": "string",
+                          "enum": [
+                            "anyone",
+                            "login"
+                          ]
+                        },
+                        "options": {
+                          "minItems": 2,
+                          "maxItems": 10,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 30
+                          }
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "kind",
+                        "options"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9_-]{1,32}$"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "entries"
+                        },
+                        "who": {
+                          "default": "anyone",
+                          "type": "string",
+                          "enum": [
+                            "anyone",
+                            "login"
+                          ]
+                        },
+                        "maxPerActor": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 10
+                        },
+                        "maxEntries": {
+                          "default": 200,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 500
+                        },
+                        "maxLength": {
+                          "default": 100,
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 200
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "kind"
+                      ]
+                    }
                   ]
                 }
               },
@@ -8452,7 +9147,7 @@
         },
         "permissions": {
           "default": [],
-          "maxItems": 12,
+          "maxItems": 13,
           "type": "array",
           "items": {
             "type": "string",
@@ -8462,6 +9157,7 @@
               "data:read:board",
               "data:write:post",
               "storage:shared",
+              "storage:thread",
               "net:fetch",
               "upload:start",
               "github:gist",
@@ -8522,6 +9218,119 @@
             "enum": [
               "beforePost",
               "onPostRendered"
+            ]
+          }
+        },
+        "threadState": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "tally"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "choice"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "options": {
+                    "minItems": 2,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 30
+                    }
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind",
+                  "options"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "entries"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "maxPerActor": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "maxEntries": {
+                    "default": 200,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500
+                  },
+                  "maxLength": {
+                    "default": 100,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              }
             ]
           }
         },
@@ -9011,7 +9820,9 @@
     "ng-word-mask",
     "keyword-deco",
     "dice-button",
-    "counter",
+    "tally",
+    "choice",
+    "entries",
     "thread-info",
     "quick-reply"
   ]
@@ -9185,7 +9996,7 @@
           }
         },
         "permissions": {
-          "maxItems": 12,
+          "maxItems": 13,
           "type": "array",
           "items": {
             "type": "string",
@@ -9195,6 +10006,7 @@
               "data:read:board",
               "data:write:post",
               "storage:shared",
+              "storage:thread",
               "net:fetch",
               "upload:start",
               "github:gist",
@@ -9228,6 +10040,118 @@
               "thread-bottom",
               "board-manage",
               "post-actions"
+            ]
+          }
+        },
+        "threadState": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "tally"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "choice"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "options": {
+                    "minItems": 2,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 30
+                    }
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind",
+                  "options"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "entries"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "maxPerActor": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "maxEntries": {
+                    "default": 200,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500
+                  },
+                  "maxLength": {
+                    "default": 100,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              }
             ]
           }
         },
@@ -9930,7 +10854,7 @@
         },
         "permissions": {
           "default": [],
-          "maxItems": 12,
+          "maxItems": 13,
           "type": "array",
           "items": {
             "type": "string",
@@ -9940,6 +10864,7 @@
               "data:read:board",
               "data:write:post",
               "storage:shared",
+              "storage:thread",
               "net:fetch",
               "upload:start",
               "github:gist",
@@ -10000,6 +10925,119 @@
             "enum": [
               "beforePost",
               "onPostRendered"
+            ]
+          }
+        },
+        "threadState": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "tally"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "choice"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "options": {
+                    "minItems": 2,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 30
+                    }
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind",
+                  "options"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "entries"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "maxPerActor": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "maxEntries": {
+                    "default": 200,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500
+                  },
+                  "maxLength": {
+                    "default": 100,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              }
             ]
           }
         },
@@ -10092,7 +11130,9 @@
         "ng-word-mask",
         "keyword-deco",
         "dice-button",
-        "counter",
+        "tally",
+        "choice",
+        "entries",
         "thread-info",
         "quick-reply"
       ]
@@ -10387,7 +11427,7 @@
     },
     "permissions": {
       "default": [],
-      "maxItems": 12,
+      "maxItems": 13,
       "type": "array",
       "items": {
         "type": "string",
@@ -10397,6 +11437,7 @@
           "data:read:board",
           "data:write:post",
           "storage:shared",
+          "storage:thread",
           "net:fetch",
           "upload:start",
           "github:gist",
@@ -10457,6 +11498,119 @@
         "enum": [
           "beforePost",
           "onPostRendered"
+        ]
+      }
+    },
+    "threadState": {
+      "default": [],
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[a-z0-9_-]{1,32}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "tally"
+              },
+              "who": {
+                "default": "anyone",
+                "type": "string",
+                "enum": [
+                  "anyone",
+                  "login"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[a-z0-9_-]{1,32}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "choice"
+              },
+              "who": {
+                "default": "anyone",
+                "type": "string",
+                "enum": [
+                  "anyone",
+                  "login"
+                ]
+              },
+              "options": {
+                "minItems": 2,
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                }
+              }
+            },
+            "required": [
+              "key",
+              "kind",
+              "options"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[a-z0-9_-]{1,32}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "entries"
+              },
+              "who": {
+                "default": "anyone",
+                "type": "string",
+                "enum": [
+                  "anyone",
+                  "login"
+                ]
+              },
+              "maxPerActor": {
+                "default": 1,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "maxEntries": {
+                "default": 200,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 500
+              },
+              "maxLength": {
+                "default": 100,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 200
+              }
+            },
+            "required": [
+              "key",
+              "kind"
+            ]
+          }
         ]
       }
     },
@@ -10690,7 +11844,7 @@
         },
         "permissions": {
           "default": [],
-          "maxItems": 12,
+          "maxItems": 13,
           "type": "array",
           "items": {
             "type": "string",
@@ -10700,6 +11854,7 @@
               "data:read:board",
               "data:write:post",
               "storage:shared",
+              "storage:thread",
               "net:fetch",
               "upload:start",
               "github:gist",
@@ -10760,6 +11915,119 @@
             "enum": [
               "beforePost",
               "onPostRendered"
+            ]
+          }
+        },
+        "threadState": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "tally"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "choice"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "options": {
+                    "minItems": 2,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 30
+                    }
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind",
+                  "options"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "entries"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "maxPerActor": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "maxEntries": {
+                    "default": 200,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500
+                  },
+                  "maxLength": {
+                    "default": 100,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              }
             ]
           }
         },
@@ -11327,6 +12595,185 @@
 }
 ```
 
+#### `pluginThreadChoiceSetSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "option": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "option"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `pluginThreadEntryCreateSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    }
+  },
+  "required": [
+    "text"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `pluginThreadStateSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z0-9_-]{1,32}$"
+        },
+        "kind": {
+          "type": "string",
+          "const": "tally"
+        },
+        "who": {
+          "default": "anyone",
+          "type": "string",
+          "enum": [
+            "anyone",
+            "login"
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "kind"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z0-9_-]{1,32}$"
+        },
+        "kind": {
+          "type": "string",
+          "const": "choice"
+        },
+        "who": {
+          "default": "anyone",
+          "type": "string",
+          "enum": [
+            "anyone",
+            "login"
+          ]
+        },
+        "options": {
+          "minItems": 2,
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 30
+          }
+        }
+      },
+      "required": [
+        "key",
+        "kind",
+        "options"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z0-9_-]{1,32}$"
+        },
+        "kind": {
+          "type": "string",
+          "const": "entries"
+        },
+        "who": {
+          "default": "anyone",
+          "type": "string",
+          "enum": [
+            "anyone",
+            "login"
+          ]
+        },
+        "maxPerActor": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "maxEntries": {
+          "default": 200,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        },
+        "maxLength": {
+          "default": 100,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "required": [
+        "key",
+        "kind"
+      ]
+    }
+  ]
+}
+```
+
+#### `pluginThreadTallySetSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "on": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "on"
+  ],
+  "additionalProperties": false
+}
+```
+
 #### `pluginUninstallSchema`
 
 ```json
@@ -11431,7 +12878,7 @@
         },
         "permissions": {
           "default": [],
-          "maxItems": 12,
+          "maxItems": 13,
           "type": "array",
           "items": {
             "type": "string",
@@ -11441,6 +12888,7 @@
               "data:read:board",
               "data:write:post",
               "storage:shared",
+              "storage:thread",
               "net:fetch",
               "upload:start",
               "github:gist",
@@ -11501,6 +12949,119 @@
             "enum": [
               "beforePost",
               "onPostRendered"
+            ]
+          }
+        },
+        "threadState": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "tally"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "choice"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "options": {
+                    "minItems": 2,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 30
+                    }
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind",
+                  "options"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_-]{1,32}$"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "entries"
+                  },
+                  "who": {
+                    "default": "anyone",
+                    "type": "string",
+                    "enum": [
+                      "anyone",
+                      "login"
+                    ]
+                  },
+                  "maxPerActor": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "maxEntries": {
+                    "default": 200,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500
+                  },
+                  "maxLength": {
+                    "default": 100,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
+                  }
+                },
+                "required": [
+                  "key",
+                  "kind"
+                ]
+              }
             ]
           }
         },
@@ -11695,6 +13256,123 @@
   "required": [
     "body"
   ]
+}
+```
+
+#### `hiddenPostItemSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "postId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "boardId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "boardSlug": {
+      "type": "string"
+    },
+    "boardName": {
+      "type": "string"
+    },
+    "boardStatus": {
+      "type": "string",
+      "enum": [
+        "active",
+        "deleted"
+      ]
+    },
+    "threadId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "threadTitle": {
+      "type": "string"
+    },
+    "num": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "name": {
+      "type": "string"
+    },
+    "excerpt": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "createdAt": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "hiddenAt": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "hiddenByName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "postId",
+    "boardId",
+    "boardSlug",
+    "boardName",
+    "boardStatus",
+    "threadId",
+    "threadTitle",
+    "num",
+    "name",
+    "excerpt",
+    "createdAt",
+    "hiddenAt",
+    "hiddenByName"
+  ]
+}
+```
+
+#### `hiddenPostListQuerySchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "board": {
+      "type": "string",
+      "maxLength": 32
+    },
+    "limit": {
+      "default": 50,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "cursor": {
+      "type": "string",
+      "maxLength": 64
+    }
+  }
 }
 ```
 
