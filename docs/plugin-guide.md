@@ -354,7 +354,7 @@ export default definePlugin({
 | `api.upload` | `start(options?)` | `upload:start` |
 | `api.github` | `createGist(input)` / `pushFile(input)` | `github:gist` / `github:repo` |
 | `api.events` | `subscribe(topics)` | `events:subscribe` |
-| `api.notify` | `show(message, options?)` | `notify` |
+| `api.notify` | `show(message, options?)`（500 文字まで。1 つの iframe につき 10 秒に 5 件まで、超えた分は表示されず `RATE_LIMITED`） | `notify` |
 | `api.ai` | `complete(prompt, options?)` | `ai:complete` |
 | `api.log` | ホストのデバッグログへ出力 | 不要 |
 
