@@ -99,6 +99,8 @@ export const PET_LIMITS = {
   /** 中継の回数制限（キー=アカウント ID、未ログインは端末＋IP）。 */
   perMinute: 20,
   perDay: 600,
+  /** `POST /v1/pet/models` の回数制限（chat とは別の枠）。 */
+  modelsPerMinute: 10,
 } as const;
 
 /** OpenAI の function 名の制約（`^[a-zA-Z0-9_-]{1,64}$`）より狭くし、全事業者で通る形にする。 */
@@ -165,6 +167,34 @@ export interface PetChatResponse {
   /** 事業者が返したモデル名（無ければ要求のモデル名）。 */
   model: string;
   usage: { inputTokens: number | null; outputTokens: number | null };
+}
+
+/**
+ * `POST /v1/pet/models` — 事業者のモデル一覧を取り寄せる（キーは同じく `X-Pet-Api-Key`）。
+ * openai 形式は `GET {base}/models`、anthropic は `GET {base}/models`（`x-api-key`・ページ送りは `has_more`/`after_id`）。
+ * GET にしないのは、custom の URL をクエリに載せずに済ませるため（アクセスログに残さない）。
+ */
+export const petModelsRequestSchema = z
+  .object({
+    provider: z.enum(PET_PROVIDER_IDS),
+    baseUrl: z.string().max(PET_LIMITS.baseUrlMaxChars).optional(),
+  })
+  .strict();
+export type PetModelsRequest = z.infer<typeof petModelsRequestSchema>;
+
+export interface PetModelInfo {
+  /** 要求の `model` にそのまま入れる値。 */
+  id: string;
+  /** 事業者が返した表示名（無ければ null）。 */
+  label: string | null;
+}
+
+/** 一覧の上限（OpenRouter は数百件ある）。id 順に並べ、上限を超えた分は捨てて truncated を true にする。 */
+export const PET_MODELS_MAX = 2_000;
+
+export interface PetModelsResponse {
+  models: PetModelInfo[];
+  truncated: boolean;
 }
 
 /** API キーを渡すヘッダー（本文に入れない＝要求本文のログにキーが混ざらない）。 */
