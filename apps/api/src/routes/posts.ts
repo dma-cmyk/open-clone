@@ -15,6 +15,7 @@ import {
 import type { AppEnv } from "../lib/env";
 import { getReqCtx } from "../lib/context";
 import { requireAuth } from "../lib/middleware/auth";
+import { writeAudit } from "../lib/audit";
 import {
   createTsubuyakiInternal,
   createPostInternal,
@@ -39,6 +40,7 @@ import {
 import {
   actorFrom,
   assertBoardStaff,
+  auditActorType,
   canHardDeletePost,
   canReadBoardContent,
   hasBoardStaff,
@@ -220,23 +222,51 @@ app.get("/:id/like", async (c) => {
   return c.json(ok({ postId: row.id, ...counts }));
 });
 
-/** 非表示（板スタッフ moderator 以上）。 */
+/** 非表示（板スタッフ moderator 以上）。監査ログに post.hide を残す（管理画面から再表示できる）。 */
 app.post("/:id/hide", requireAuth, async (c) => {
   const db = c.env.DB;
+  const actor = actorFrom(getReqCtx(c).session!.account);
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
-  await assertBoardStaff(db, actorFrom(getReqCtx(c).session!.account), row.board_id, "moderator");
+  await assertBoardStaff(db, actor, row.board_id, "moderator");
   await assertPostBoardWritable(db, row);
   await hidePost(row.id, { env: c.env, ctx: c.executionCtx });
+  await writeAudit(db, {
+    actorType: auditActorType(actor),
+    actorId: actor.accountId,
+    action: "post.hide",
+    target: String(row.id),
+    detail: {
+      postId: row.id,
+      boardId: row.board_id,
+      threadId: row.thread_id,
+      num: row.num,
+      source: "post_menu",
+    },
+  });
   return c.json(ok({ postId: row.id, hidden: true }));
 });
 
-/** 非表示の解除（板スタッフ moderator 以上）。 */
+/** 非表示の解除（板スタッフ moderator 以上）。監査ログに post.restore を残す。 */
 app.post("/:id/restore", requireAuth, async (c) => {
   const db = c.env.DB;
+  const actor = actorFrom(getReqCtx(c).session!.account);
   const row = await loadPostRow(db, parsePostId(c.req.param("id")));
-  await assertBoardStaff(db, actorFrom(getReqCtx(c).session!.account), row.board_id, "moderator");
+  await assertBoardStaff(db, actor, row.board_id, "moderator");
   await assertPostBoardWritable(db, row);
   await unhidePost(row.id, { env: c.env, ctx: c.executionCtx });
+  await writeAudit(db, {
+    actorType: auditActorType(actor),
+    actorId: actor.accountId,
+    action: "post.restore",
+    target: String(row.id),
+    detail: {
+      postId: row.id,
+      boardId: row.board_id,
+      threadId: row.thread_id,
+      num: row.num,
+      source: "post_menu",
+    },
+  });
   return c.json(ok({ postId: row.id, hidden: false }));
 });
 

@@ -34,6 +34,7 @@ const NAV: NavItem[] = [
   { href: "/admin/ai", label: "AI 管理" },
   { href: "/admin/ai/queue", label: "AI 承認キュー" },
   { href: "/admin/reports", label: "通報" },
+  { href: "/admin/hidden-posts", label: "非表示のレス" },
   { href: "/plugins", label: "プラグイン管理" },
   { href: "/b", label: "全板一覧" },
 ];

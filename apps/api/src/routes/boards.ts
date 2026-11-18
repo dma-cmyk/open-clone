@@ -7,6 +7,7 @@ import {
   boardSettingsSchema,
   createBoardBanRequestSchema,
   createBoardRequestSchema,
+  hiddenPostListQuerySchema,
   likeContains,
   ok,
   setBoardStaffRequestSchema,
@@ -32,11 +33,19 @@ import {
   resolveBoardRow,
   type BoardRow,
 } from "../services/board/store";
-import { actorFrom, canReadBoardContent, hasBoardStaff, isSiteAdmin, resolveManageableBoard } from "../services/board/access";
+import {
+  actorFrom,
+  assertBoardStaff,
+  canReadBoardContent,
+  hasBoardStaff,
+  isSiteAdmin,
+  resolveManageableBoard,
+} from "../services/board/access";
 import { assertReadRateLimit } from "../lib/do";
 import { createThreadInternal } from "../lib/pipeline";
 import { publishEvent } from "../services/board/realtime";
 import { listThreads } from "../services/board/threads";
+import { listHiddenPosts } from "../services/board/hidden-posts";
 
 const app = new Hono<AppEnv>();
 
@@ -342,6 +351,24 @@ app.get("/:slug/threads", async (c) => {
   });
 
   return c.json(ok({ items: result.items, nextCursor: result.nextCursor }));
+});
+
+/**
+ * 全員から非表示にしたレスの一覧（その板のスタッフ moderator 以上とサイト管理者）。
+ * 削除済みの板でも板スタッフ・サイト管理者は読める（K2 の規則に合わせる）。
+ */
+app.get("/:slug/hidden-posts", requireAuth, async (c) => {
+  const db = c.env.DB;
+  const actor = actorFrom(getReqCtx(c).session!.account);
+  const row = await resolveBoardRow(db, c.req.param("slug"));
+  if (!row) throw ApiError.notFound("板が見つかりません");
+  await assertBoardStaff(db, actor, row.id, "moderator");
+  const query = hiddenPostListQuerySchema.parse({
+    limit: c.req.query("limit") ?? undefined,
+    cursor: c.req.query("cursor") ?? undefined,
+  });
+  const result = await listHiddenPosts(db, { boardId: row.id, limit: query.limit, cursor: query.cursor });
+  return c.json(ok(result));
 });
 
 /** 板内スレ作成（>>1 を含む）。 */

@@ -3,6 +3,7 @@
 // 板管理画面のシェル。ルール・デザイン・スタッフ・プラグイン・AI・通報。
 import { useEffect, useState } from "react";
 import { api } from "@/features/board-ui/api";
+import { HiddenPostsPanel } from "@/features/board-ui/hidden-posts-panel";
 import { boardPath } from "@/features/board-ui/format";
 import { useApiData, errorMessage } from "@/features/board-ui/use-api-data";
 import { PluginSlot } from "@/components/plugin-slot";
@@ -24,6 +25,7 @@ const TABS = [
   { value: "plugins", label: "プラグイン" },
   { value: "ai", label: "AI 管理者" },
   { value: "reports", label: "通報" },
+  { value: "hidden", label: "非表示のレス" },
 ];
 
 export function ManageView({ slug, tab }: { slug: string; tab: string }) {
@@ -198,6 +200,8 @@ export function ManageView({ slug, tab }: { slug: string; tab: string }) {
           ) : null}
 
           {active === "reports" ? <ManageReports slug={slug} /> : null}
+
+          {active === "hidden" ? <HiddenPostsPanel scope="board" board={slug} /> : null}
           </div>
         </div>
       </div>

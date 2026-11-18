@@ -198,6 +198,26 @@ export const REASONS = [
 
 export type ReportReason = (typeof REASONS)[number]["value"];
 
+/**
+ * 管理画面「非表示のレス」の 1 行（shared の hiddenPostItemSchema に対応）。
+ * hiddenAt / hiddenByName は監査ログから。記録が無い既存の非表示は null。
+ */
+export interface HiddenPostItem {
+  postId: number;
+  boardId: number;
+  boardSlug: string;
+  boardName: string;
+  boardStatus: "active" | "deleted";
+  threadId: number;
+  threadTitle: string;
+  num: number;
+  name: string;
+  excerpt: string;
+  createdAt: number;
+  hiddenAt: number | null;
+  hiddenByName: string | null;
+}
+
 export interface ReportItem {
   id: string | number;
   boardId?: number;

@@ -19,6 +19,17 @@ export function isSiteAdmin(actor: AccessActor): boolean {
   return actor.role === "owner" || actor.role === "special_admin";
 }
 
+/**
+ * 監査ログの actor_type。板の管理操作は板スタッフとして残す（サイト管理者は owner /
+ * special_admin をそのまま使う）。post.hide / post.restore のように、板スタッフと
+ * サイト管理者の両方が実行できる操作で共通に使う。
+ */
+export function auditActorType(actor: AccessActor): "owner" | "special_admin" | "board_staff" {
+  if (actor.role === "owner") return "owner";
+  if (actor.role === "special_admin") return "special_admin";
+  return "board_staff";
+}
+
 /** 板スタッフ（minLevel 以上）か。owner/special_admin は全板で通す。 */
 export async function hasBoardStaff(
   db: D1Database,

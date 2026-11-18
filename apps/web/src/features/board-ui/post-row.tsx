@@ -224,8 +224,8 @@ export function PostRow({
         ) : null}
         {canManage ? (
           <>
-            <button type="button" onClick={() => onDelete(post, "hide")}>
-              非表示
+            <button type="button" onClick={() => onDelete(post, "hide")} title="全員から見えなくなります（管理画面から戻せます）">
+              全員から非表示
             </button>
             <button type="button" onClick={() => onDelete(post, "delete")}>
               削除

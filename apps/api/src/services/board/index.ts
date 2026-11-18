@@ -6,7 +6,7 @@ import { ApiError } from "shared";
 import type { Env } from "../../lib/env";
 import type { WaitUntilContext } from "../../lib/pipeline";
 import { publishToThreadAndBoard } from "./realtime";
-import { POST_COLUMNS, type PostRow } from "./store";
+import { POST_COLUMNS, assertThreadActive, getThreadRow, type PostRow } from "./store";
 
 /** 内部サービス呼び出しに必要なバインディング。`ctx` があれば Realtime publisher を waitUntil で実行する。 */
 export interface BoardServiceDeps {
@@ -34,6 +34,8 @@ export async function assertBoardContentWritable(db: D1Database, boardId: number
 export async function hidePost(postId: number, deps: BoardServiceDeps): Promise<void> {
   const row = await loadPostRow(deps.env.DB, postId);
   await assertBoardContentWritable(deps.env.DB, row.board_id);
+  // 削除済みスレの内容も変更しない（削除板と同じ 409。レビュー M2）。
+  await assertThreadActive(await getThreadRow(deps.env.DB, row.thread_id));
   await deps.env.DB.prepare("UPDATE posts SET hidden = 1 WHERE id = ?").bind(postId).run();
   await publishToThreadAndBoard(deps.env, deps.ctx, row.thread_id, row.board_id, "post.hidden", {
     postId,
@@ -46,6 +48,8 @@ export async function hidePost(postId: number, deps: BoardServiceDeps): Promise<
 export async function unhidePost(postId: number, deps: BoardServiceDeps): Promise<void> {
   const row = await loadPostRow(deps.env.DB, postId);
   await assertBoardContentWritable(deps.env.DB, row.board_id);
+  // 削除済みスレでは再表示もしない（非表示にする操作と同じ判定。レビュー M2）。
+  await assertThreadActive(await getThreadRow(deps.env.DB, row.thread_id));
   await deps.env.DB.prepare("UPDATE posts SET hidden = 0 WHERE id = ?").bind(postId).run();
   await publishToThreadAndBoard(deps.env, deps.ctx, row.thread_id, row.board_id, "post.updated", {
     postId,

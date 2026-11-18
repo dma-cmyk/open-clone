@@ -34,7 +34,7 @@ import { resetThreadRenderBudget } from "@/features/plugin-host/render-worker-cl
 import { Link, navigate, useLocation } from "../router";
 
 const POST_REMOVAL_DONE_MESSAGES: Record<"hide" | "delete", string> = {
-  hide: "非表示にしました",
+  hide: "全員から非表示にしました。板の管理画面の「非表示のレス」から戻せます。",
   delete: "削除しました",
 };
 
@@ -367,8 +367,11 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   };
 
   const onDelete = async (post: Post, mode: "hide" | "delete") => {
-    const label = mode === "hide" ? "非表示" : "削除";
-    if (!window.confirm(`レス ${post.num} を${label}しますか？`)) return;
+    const prompt =
+      mode === "hide"
+        ? `レス ${post.num} を全員から非表示にしますか？\n全員から見えなくなります。管理画面の「非表示のレス」から戻せます。`
+        : `レス ${post.num} を削除しますか？\n削除は取り消せません。`;
+    if (!window.confirm(prompt)) return;
     try {
       if (mode === "hide") {
         await api.hidePost(post.id);
@@ -379,7 +382,7 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
       }
       toast.show(POST_REMOVAL_DONE_MESSAGES[mode]);
     } catch (cause) {
-      toast.show(cause instanceof Error ? cause.message : `${label}に失敗しました`);
+      toast.show(cause instanceof Error ? cause.message : mode === "hide" ? "非表示に失敗しました" : "削除に失敗しました");
     }
   };
 
