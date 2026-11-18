@@ -9,6 +9,7 @@ import {
   type PluginPermission,
 } from "shared";
 import { authorizeRpc, createRpcDispatcher, sanitizeDraftPatch } from "./bridge";
+import { pluginApi, PluginApiError } from "./api";
 import { buildSandboxCsp, PLUGIN_IFRAME_SANDBOX } from "./csp";
 import { buildPluginSrcdoc, escapeHtmlText } from "./bootstrap";
 import { applyAllPostRenderRules, applyPostRenderRules, escapeHtml } from "./render-rules";
@@ -218,6 +219,110 @@ describe("RPC ディスパッチャ", () => {
     });
     const response = await dispatch({ v: 1, id: 15, method: "data.thread.get", params: {} });
     expect(response).toMatchObject({ ok: true, result: { id: 42, title: "sample" } });
+  });
+
+  it("data.post.create はホストの確認が無ければ投稿しない", async () => {
+    const context: RpcHostContext = {
+      pluginId: "plugin-1",
+      version: "1.0.0",
+      manifest: manifest(["data:write:post"]),
+      permissions: ["data:write:post"],
+      scope: "personal",
+      boardId: 7,
+      threadId: 3,
+      handlers: {},
+    };
+    const response = await createRpcDispatcher(context)({
+      v: 1,
+      id: 20,
+      method: "data.post.create",
+      params: { name: "!1d6", body: "x" },
+    });
+    expect(response.ok).toBe(false);
+    if (!response.ok) expect(response.error.code).toBe("CONFIRM_REQUIRED");
+  });
+
+  it("data.post.create は確認後にだけ、ホストが得たトークンを付けて投稿する", async () => {
+    const post = vi.spyOn(pluginApi, "createPost").mockResolvedValue({ postId: 1, num: 2 });
+    try {
+      const confirmations: Array<{ attempt: number; name: string; body: string }> = [];
+      const context: RpcHostContext = {
+        pluginId: "plugin-1",
+        version: "1.0.0",
+        manifest: manifest(["data:write:post"]),
+        permissions: ["data:write:post"],
+        scope: "personal",
+        boardId: 7,
+        boardSlug: "b-7",
+        threadId: 3,
+        handlers: {
+          onPostConfirm: async (request) => {
+            confirmations.push({ attempt: request.attempt, name: request.name, body: request.body });
+            return { confirmed: true, turnstileToken: "tok-1" };
+          },
+        },
+      };
+      const response = await createRpcDispatcher(context)({
+        v: 1,
+        id: 21,
+        method: "data.post.create",
+        params: { name: "!2d6", body: "サイコロ" },
+      });
+      expect(response.ok).toBe(true);
+      expect(confirmations).toEqual([{ attempt: 1, name: "!2d6", body: "サイコロ" }]);
+      expect(post).toHaveBeenCalledWith(
+        expect.objectContaining({ boardId: 7, threadId: 3, name: "!2d6", body: "サイコロ" }),
+        "tok-1",
+      );
+
+      // 拒否されたら投稿しない。
+      post.mockClear();
+      const denied = createRpcDispatcher({
+        ...context,
+        handlers: { onPostConfirm: async () => ({ confirmed: false }) },
+      });
+      const rejected = await denied({ v: 1, id: 22, method: "data.post.create", params: { body: "x" } });
+      expect(rejected.ok).toBe(false);
+      if (!rejected.ok) expect(rejected.error.code).toBe("CANCELED");
+      expect(post).not.toHaveBeenCalled();
+    } finally {
+      post.mockRestore();
+    }
+  });
+
+  it("Turnstile で落ちたときだけ、確認をやり直して 1 回再送する", async () => {
+    const post = vi
+      .spyOn(pluginApi, "createPost")
+      .mockRejectedValueOnce(new PluginApiError(400, "TURNSTILE_FAILED", "Turnstile トークンが必要です"))
+      .mockResolvedValueOnce({ postId: 2, num: 3 });
+    try {
+      const attempts: Array<number | undefined> = [];
+      const context: RpcHostContext = {
+        pluginId: "plugin-1",
+        version: "1.0.0",
+        manifest: manifest(["data:write:post"]),
+        permissions: ["data:write:post"],
+        scope: "personal",
+        boardId: 7,
+        handlers: {
+          onPostConfirm: async (request) => {
+            attempts.push(request.attempt);
+            return { confirmed: true, turnstileToken: `tok-${request.attempt}` };
+          },
+        },
+      };
+      const response = await createRpcDispatcher(context)({
+        v: 1,
+        id: 23,
+        method: "data.post.create",
+        params: { body: "x" },
+      });
+      expect(response.ok).toBe(true);
+      expect(attempts).toEqual([1, 2]);
+      expect(post).toHaveBeenNthCalledWith(2, expect.anything(), "tok-2");
+    } finally {
+      post.mockRestore();
+    }
   });
 });
 

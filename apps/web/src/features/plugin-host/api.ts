@@ -468,16 +468,46 @@ export const pluginApi = {
     return request("GET", `/threads/${threadId}/posts${query({ limit: 100 })}`);
   },
 
-  createPost(draft: {
-    boardId?: number;
-    threadId?: number | null;
-    name?: string;
-    mail?: string;
-    body: string;
-  }): Promise<{ postId: number; num: number }> {
+  /**
+   * 板がこの端末に求める Turnstile の状態（既存の `GET /boards/:slug/turnstile`）。
+   * プラグイン中継の投稿は確認済みの省略を使えないため、`required` が true なら
+   * ホストが確認モーダルの中でトークンを取り直す。
+   */
+  turnstileStatus(target: { slug?: string; boardId?: number }): Promise<{
+    required: boolean;
+    passed: boolean;
+    policy: "off" | "anonymous" | "always";
+  }> {
+    const key = target.slug ?? target.boardId;
+    if (key === undefined) throw new PluginApiError(400, "VALIDATION", "slug か boardId が必要です");
+    return request<{ required: boolean; passed: boolean; policy: "off" | "anonymous" | "always" }>(
+      "GET",
+      `/boards/${encodeURIComponent(String(key))}/turnstile`,
+    ).then((data) => ({
+      required: data.required === true,
+      passed: data.passed === true,
+      policy: data.policy ?? "anonymous",
+    }));
+  },
+
+  createPost(
+    draft: {
+      boardId?: number;
+      threadId?: number | null;
+      name?: string;
+      mail?: string;
+      body: string;
+    },
+    /**
+     * ホストが確認モーダルで得た Turnstile トークン。プラグインの引数には含めない
+     * （プラグインはトークンを受け取らない・偽装できない）。
+     */
+    turnstileToken?: string,
+  ): Promise<{ postId: number; num: number }> {
     // プラグインからの投稿であることを **ホスト側で必ず** 示す（レビュー 82 / R82-01）。
     // サーバーはこのヘッダが付いた投稿では「確認済みによる省略」をせず、毎回 Turnstile を検証する。
     // draft はプラグインが渡す値なので、ここでヘッダに混ぜない（偽装不可）。
-    return request("POST", "/posts", draft, { "x-oc-plugin-relay": "1" });
+    const payload = turnstileToken === undefined ? draft : { ...draft, turnstileToken };
+    return request("POST", "/posts", payload, { "x-oc-plugin-relay": "1" });
   },
 };

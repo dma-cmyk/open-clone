@@ -8,11 +8,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PluginActiveInstall, PluginSlotName } from "shared";
 import { pluginApi, PluginApiError } from "./api";
 import { useActiveInstalls } from "./active-installs";
-import { type PluginBridge, createPluginBridge } from "./bridge";
+import { type PluginBridge, createPluginBridge, type PostConfirmDecision, type PostConfirmRequest } from "./bridge";
 import { buildSandboxCsp, PLUGIN_IFRAME_SANDBOX } from "./csp";
 import { buildPluginSrcdoc } from "./bootstrap";
 import { subscribePluginEvents } from "./events";
 import { observeNearViewport } from "./lazy";
+import { type PluginPostConfirmRequest, PluginPostConfirmDialog } from "./post-confirm-dialog";
 import { resolveDeclaredSlot } from "./slots";
 import { PluginUploadDialog, type PluginUploadResult } from "./upload-dialog";
 
@@ -85,6 +86,7 @@ export function PluginSlot(props: PluginSlotProps) {
               install={install}
               slot={pluginSlot}
               boardId={props.boardId}
+              boardSlug={props.boardSlug}
               threadId={props.threadId}
               postId={props.postId}
               data={props.data}
@@ -100,6 +102,7 @@ interface PluginFrameProps {
   install: PluginActiveInstall;
   slot: PluginSlotName;
   boardId?: number;
+  boardSlug?: string;
   threadId?: number;
   postId?: number;
   data?: unknown;
@@ -125,6 +128,13 @@ function PluginFrame(props: PluginFrameProps) {
   const [error, setError] = useState<string | null>(null);
   const [uploadRequest, setUploadRequest] = useState<{ resolve: (result: PluginUploadResult) => void } | null>(null);
   const uploadPendingRef = useRef(false);
+  // プラグイン投稿の直前確認（ホストのモーダル）。名前欄・本文を見せ、必要なら Turnstile を取る。
+  const [postConfirm, setPostConfirm] = useState<{
+    request: PluginPostConfirmRequest;
+    resolve: (decision: PostConfirmDecision) => void;
+  } | null>(null);
+  const [confirmSeq, setConfirmSeq] = useState(0);
+  const postConfirmingRef = useRef(false);
 
   const { install, slot } = props;
   const dataRef = useRef(props.data);
@@ -155,6 +165,7 @@ function PluginFrame(props: PluginFrameProps) {
       permissions: install.manifest.permissions,
       scope: install.scope,
       boardId: install.scope === "board" ? Number(install.scopeRef) : props.boardId,
+      boardSlug: props.boardSlug,
       threadId: props.threadId,
       handlers: {
         onResize(height) {
@@ -172,6 +183,31 @@ function PluginFrame(props: PluginFrameProps) {
           uploadPendingRef.current = true;
           const { promise, resolve } = Promise.withResolvers<PluginUploadResult>();
           setUploadRequest({ resolve });
+          return promise;
+        },
+        onPostConfirm(request: PostConfirmRequest) {
+          // ホストのモーダルで名前欄・本文を見せ、必要なら Turnstile のトークンを取る。
+          // 同時に 2 件の投稿 RPC が来てもモーダルは 1 つにする（後続は開かずに拒否）。
+          if (postConfirmingRef.current) {
+            return Promise.resolve({ confirmed: false });
+          }
+          postConfirmingRef.current = true;
+          const { promise, resolve } = Promise.withResolvers<PostConfirmDecision>();
+          setConfirmSeq((value) => value + 1);
+          setPostConfirm({
+            request: {
+              pluginName: request.pluginName,
+              name: request.name,
+              body: request.body,
+              boardSlug: request.boardSlug ?? props.boardSlug,
+              boardId: request.boardId ?? props.boardId,
+              errorMessage: request.errorMessage,
+            },
+            resolve: (decision) => {
+              postConfirmingRef.current = false;
+              resolve(decision);
+            },
+          });
           return promise;
         },
         async onAiConsent() {
@@ -279,6 +315,17 @@ function PluginFrame(props: PluginFrameProps) {
             uploadPendingRef.current = false;
             uploadRequest.resolve(result);
             setUploadRequest(null);
+          }}
+        />
+      ) : null}
+      {postConfirm ? (
+        <PluginPostConfirmDialog
+          // 再確認（Turnstile 失敗後）ではウィジェットを作り直して新しいトークンを取る。
+          key={`confirm-${confirmSeq}`}
+          request={postConfirm.request}
+          onDone={(decision) => {
+            postConfirm.resolve(decision);
+            setPostConfirm(null);
           }}
         />
       ) : null}
