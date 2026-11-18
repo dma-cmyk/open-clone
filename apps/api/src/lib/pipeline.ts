@@ -312,7 +312,7 @@ function escapeRegExp(value: string): string {
 }
 
 /** 板設定の NG ワードを適用する。reject は呼び出し側が 400 にする。 */
-function applyNgWords(settings: BoardSettings, body: string): { body: string; hit: boolean } {
+export function applyNgWords(settings: BoardSettings, body: string): { body: string; hit: boolean } {
   let result = body;
   let hit = false;
   for (const word of settings.ngWords) {

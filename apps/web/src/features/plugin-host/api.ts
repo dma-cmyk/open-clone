@@ -13,6 +13,10 @@ import type {
   PluginReviewInfo,
   PluginScope,
   PluginStaticCheckResult,
+  PluginThreadChoiceState,
+  PluginThreadEntriesState,
+  PluginThreadStateValue,
+  PluginThreadTallyState,
   PluginVersionInfo,
 } from "shared";
 
@@ -386,6 +390,61 @@ export const pluginApi = {
       return request(
         "GET",
         `/plugins/${encodeURIComponent(pluginId)}/state${query({ scope: scope.scope, boardId: scope.boardId })}`,
+      );
+    },
+  },
+
+  /**
+   * スレごとの共有値（storage:thread）。threadId はホストが ctx.threadId から渡す。
+   * サーバーが manifest の threadState・1 人 1 回・上限・本文検査を強制する。
+   */
+  threadState: {
+    get(pluginId: string, threadId: number, key: string): Promise<PluginThreadStateValue> {
+      return request(
+        "GET",
+        `/plugins/${encodeURIComponent(pluginId)}/threads/${threadId}/state/${encodeURIComponent(key)}`,
+      );
+    },
+    setTally(pluginId: string, threadId: number, key: string, on: boolean): Promise<PluginThreadTallyState> {
+      return request(
+        "PUT",
+        `/plugins/${encodeURIComponent(pluginId)}/threads/${threadId}/state/${encodeURIComponent(key)}/tally`,
+        { on },
+      );
+    },
+    setChoice(
+      pluginId: string,
+      threadId: number,
+      key: string,
+      option: number | null,
+    ): Promise<PluginThreadChoiceState> {
+      return request(
+        "PUT",
+        `/plugins/${encodeURIComponent(pluginId)}/threads/${threadId}/state/${encodeURIComponent(key)}/choice`,
+        { option },
+      );
+    },
+    addEntry(
+      pluginId: string,
+      threadId: number,
+      key: string,
+      text: string,
+    ): Promise<PluginThreadEntriesState> {
+      return request(
+        "POST",
+        `/plugins/${encodeURIComponent(pluginId)}/threads/${threadId}/state/${encodeURIComponent(key)}/entries`,
+        { text },
+      );
+    },
+    removeEntry(
+      pluginId: string,
+      threadId: number,
+      key: string,
+      entryId: string,
+    ): Promise<PluginThreadEntriesState> {
+      return request(
+        "DELETE",
+        `/plugins/${encodeURIComponent(pluginId)}/threads/${threadId}/state/${encodeURIComponent(key)}/entries/${encodeURIComponent(entryId)}`,
       );
     },
   },

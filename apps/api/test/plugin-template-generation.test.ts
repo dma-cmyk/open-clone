@@ -46,7 +46,9 @@ const BOUNDARIES: Array<[string, Record<string, unknown>]> = [
       messages: Array.from({ length: 10 }, (_, index) => `${index + 1}:ok`).join("\n"),
     },
   ],
-  ["counter", { label: "c".repeat(20), start: 999_999, step: 100, storageKey: "k".repeat(40) }],
+  ["tally", { label: "c".repeat(20), onLabel: "o".repeat(20) }],
+  ["choice", { question: "q".repeat(60), options: Array.from({ length: 10 }, (_, index) => `o${index}`) }],
+  ["entries", { buttonLabel: "b".repeat(20), inputHint: "h".repeat(60), maxPerActor: 10 }],
   ["thread-info", { fields: ["title", "count", "board"], prefix: "p".repeat(8) }],
   [
     "quick-reply",
@@ -89,11 +91,19 @@ describe("テンプレート生成物 × runStaticChecks", () => {
     });
   }
 
-  for (const id of ["dice-button", "counter", "thread-info", "quick-reply"]) {
+  for (const id of ["dice-button", "tally", "choice", "entries", "thread-info", "quick-reply"]) {
     it(`${id}: 注入を狙う入力でも allowed=true`, async () => {
       for (const injected of INJECTION_STRINGS) {
         const params = { ...representativeParams(id) };
-        if (id === "dice-button" || id === "counter") params.label = injected.slice(0, 20);
+        if (id === "dice-button" || id === "tally") params.label = injected.slice(0, 20);
+        if (id === "choice") {
+          params.question = injected.slice(0, 60);
+          params.options = [injected.slice(0, 30), "b"];
+        }
+        if (id === "entries") {
+          params.buttonLabel = injected.slice(0, 20);
+          params.inputHint = injected.slice(0, 60);
+        }
         if (id === "thread-info") params.prefix = injected.slice(0, 8);
         if (id === "quick-reply") {
           params.body = injected;

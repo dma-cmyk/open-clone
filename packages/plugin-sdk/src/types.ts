@@ -20,6 +20,11 @@ import type {
   PluginScope,
   PluginSlotName,
   PluginThread,
+  PluginThreadChoiceState,
+  PluginThreadEntriesState,
+  PluginThreadEntry,
+  PluginThreadStateValue,
+  PluginThreadTallyState,
   PluginUploadOptions,
 } from "shared";
 
@@ -35,6 +40,11 @@ export type {
   PluginPost,
   PluginRepoFileInput,
   PluginThread,
+  PluginThreadChoiceState,
+  PluginThreadEntriesState,
+  PluginThreadEntry,
+  PluginThreadStateValue,
+  PluginThreadTallyState,
   PluginUploadOptions,
 };
 
@@ -84,6 +94,18 @@ export interface PluginApi {
     set(key: string, value: string): Promise<void>;
     delete(key: string): Promise<void>;
     list(): Promise<Record<string, string>>;
+  };
+
+  /**
+   * スレごとの共有値（`storage:thread`）。manifest の `threadState` で宣言した key だけを使える。
+   * スレ画面の外（`ctx.threadId` がない場所）では `NO_THREAD` で失敗する。
+   */
+  thread: {
+    state(key: string): Promise<PluginThreadStateValue>;
+    setTally(key: string, on: boolean): Promise<PluginThreadTallyState>;
+    choose(key: string, option: number | null): Promise<PluginThreadChoiceState>;
+    addEntry(key: string, text: string): Promise<PluginThreadEntriesState>;
+    removeEntry(key: string, id: string): Promise<PluginThreadEntriesState>;
   };
 
   net: {

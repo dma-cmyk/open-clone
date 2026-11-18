@@ -23,6 +23,9 @@ function manifest(permissions: PluginPermission[]): PluginManifest {
     permissions,
     connectAllowlist: permissions.includes("net:fetch") ? ["https://api.example.com"] : [],
     slots: permissions.includes("ui:slot") ? ["thread-head"] : [],
+    threadState: permissions.includes("storage:thread")
+      ? [{ key: "main", kind: "tally" as const, who: "anyone" as const }]
+      : [],
   });
 }
 

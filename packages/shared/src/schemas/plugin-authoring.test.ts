@@ -65,8 +65,8 @@ const INJECTION_STRINGS = [
 ];
 
 describe("テンプレート定義", () => {
-  it("7 件が定義され、公開形スキーマ（strict）を通る", () => {
-    expect(PLUGIN_TEMPLATES).toHaveLength(7);
+  it("9 件が定義され、公開形スキーマ（strict）を通る", () => {
+    expect(PLUGIN_TEMPLATES).toHaveLength(9);
     for (const template of PLUGIN_TEMPLATES) {
       const info = toAuthoringTemplateInfo(template);
       expect(authoringTemplateInfoSchema.safeParse(info).success).toBe(true);
@@ -98,6 +98,27 @@ describe("テンプレート定義", () => {
     }
   });
 
+  it("スレごとの共有値テンプレートは threadState と storage:thread を生成する", () => {
+    const tally = generateOk("tally", representativeParams("tally")).manifest;
+    expect(tally.permissions).toContain("storage:thread");
+    expect(tally.threadState).toEqual([{ key: "tally", kind: "tally", who: "anyone" }]);
+
+    const choice = generateOk("choice", representativeParams("choice")).manifest;
+    const choiceState = choice.threadState[0];
+    expect(choiceState).toMatchObject({ key: "choice", kind: "choice", who: "anyone" });
+    expect(choiceState?.kind === "choice" ? choiceState.options.length : 0).toBe(3);
+
+    const entries = generateOk("entries", representativeParams("entries")).manifest;
+    expect(entries.threadState[0]).toEqual({
+      key: "entries",
+      kind: "entries",
+      who: "anyone",
+      maxPerActor: 1,
+      maxEntries: 200,
+      maxLength: 100,
+    });
+  });
+
   it("使用スロット・権限はマウント済みのものだけ（報告書 27 §1.1/§1.3）", () => {
     const mounted: Record<string, true> = {
       "thread-head": true,
@@ -115,6 +136,7 @@ describe("テンプレート定義", () => {
       "data:read:board": true,
       "data:write:post": true,
       "storage:shared": true,
+      "storage:thread": true,
       notify: true,
     };
     for (const template of PLUGIN_TEMPLATES) {
@@ -172,7 +194,7 @@ describe("generateFromTemplate: 代表パラメータ", () => {
     expect(generateFromTemplate("ng-word-mask", { ...representativeParams("ng-word-mask"), words: [] }).ok).toBe(false);
     expect(generateFromTemplate("dice-button", { ...representativeParams("dice-button"), sides: 101 }).ok).toBe(false);
     expect(generateFromTemplate("dice-button", { ...representativeParams("dice-button"), sides: 6.5 }).ok).toBe(false);
-    expect(generateFromTemplate("counter", { ...representativeParams("counter"), storageKey: "a b" }).ok).toBe(false);
+    expect(generateFromTemplate("choice", { ...representativeParams("choice"), options: ["only"] }).ok).toBe(false);
     expect(generateFromTemplate("quick-reply", { ...representativeParams("quick-reply"), body: "" }).ok).toBe(false);
     expect(generateFromTemplate("keyword-deco", { ...representativeParams("keyword-deco"), deco: "nope" }).ok).toBe(false);
     expect(generateFromTemplate("spoiler", { ...representativeParams("spoiler"), openTag: "" }).ok).toBe(false);
@@ -194,7 +216,9 @@ describe("generateFromTemplate: 境界パラメータ", () => {
         messages: Array.from({ length: 10 }, (_, index) => `${index + 1}:ok`).join("\n"),
       },
     ],
-    ["counter", { label: "c".repeat(20), start: 999_999, step: 100, storageKey: "k".repeat(40) }],
+    ["tally", { label: "c".repeat(20), onLabel: "o".repeat(20) }],
+    ["choice", { question: "q".repeat(60), options: Array.from({ length: 10 }, (_, index) => `o${index}`) }],
+    ["entries", { buttonLabel: "b".repeat(20), inputHint: "h".repeat(60), maxPerActor: 10 }],
     ["thread-info", { fields: ["title", "count", "board"], prefix: "p".repeat(8) }],
     [
       "quick-reply",
@@ -253,15 +277,23 @@ describe("generateFromTemplate: 注入耐性", () => {
 
   it("slot 系: 入力は CONFIG データにだけ入り、コード骨格は変わらない", () => {
     const baseline: Record<string, string> = {};
-    for (const id of ["dice-button", "counter", "thread-info", "quick-reply"]) {
+    for (const id of ["dice-button", "tally", "choice", "entries", "thread-info", "quick-reply"]) {
       baseline[id] = codeSkeleton(generateOk(id, representativeParams(id)).code).skeleton;
     }
 
-    for (const id of ["dice-button", "counter", "thread-info", "quick-reply"]) {
+    for (const id of ["dice-button", "tally", "choice", "entries", "thread-info", "quick-reply"]) {
       for (const injected of INJECTION_STRINGS) {
         const params = { ...representativeParams(id) };
         if (id === "dice-button") params.label = injected.slice(0, 20);
-        if (id === "counter") params.label = injected.slice(0, 20);
+        if (id === "tally") params.label = injected.slice(0, 20);
+        if (id === "choice") {
+          params.question = injected.slice(0, 60);
+          params.options = [injected.slice(0, 30), "b"];
+        }
+        if (id === "entries") {
+          params.buttonLabel = injected.slice(0, 20);
+          params.inputHint = injected.slice(0, 60);
+        }
         if (id === "thread-info") params.prefix = injected.slice(0, 8);
         if (id === "quick-reply") {
           params.body = injected;
@@ -271,8 +303,11 @@ describe("generateFromTemplate: 注入耐性", () => {
         const result = generateOk(id, params);
         const { skeleton, config } = codeSkeleton(result.code);
         expect(skeleton, `${id}: ${injected}`).toBe(baseline[id]);
-        if (id === "dice-button" || id === "counter") {
+        if (id === "dice-button" || id === "tally") {
           expect(config.label).toBe(injected.slice(0, 20).trim());
+        }
+        if (id === "entries") {
+          expect(config.buttonLabel).toBe(injected.slice(0, 20).trim());
         }
         if (id === "quick-reply") {
           expect(config.body).toBe(injected);

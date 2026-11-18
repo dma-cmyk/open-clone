@@ -40,6 +40,7 @@ register({
 | `data:read:board` | 板情報取得 | 低 |
 | `data:write:post` | 閲覧者本人としての投稿（確認 UI あり） | 中 |
 | `storage:shared` | 共有 KV（64KB/スコープ） | 低 |
+| `storage:thread` | スレごとの共有値（`threadState`: tally / choice / entries。1 人 1 回・上限はサーバーが強制） | 中 |
 | `net:fetch` | `connectAllowlist` のオリジンへの外部 fetch（プロキシ・監査付き） | 中 |
 | `upload:start` | アップローダー起動 | 中 |
 | `github:gist` / `github:repo` | 閲覧者の GitHub 連携リソース操作（都度同意） | 高 |
@@ -84,6 +85,8 @@ register({
 - `api.ui.resize(height)` / `api.ui.setTitle(title)`
 - `api.data.thread(threadId?)` / `api.data.board({slug|boardId})` / `api.data.posts(threadId)` / `api.data.createPost(draft)`
 - `api.storage.get/set/delete/list`
+- `api.thread.state(key)` / `api.thread.setTally(key, on)` / `api.thread.choose(key, option|null)` /
+  `api.thread.addEntry(key, text)` / `api.thread.removeEntry(key, id)` — manifest の `threadState` で宣言した key のみ
 - `api.net.fetch({url, method, headers, body})` — `connectAllowlist` のオリジンのみ
 - `api.upload.start({accept, maxBytes})`
 - `api.github.createGist({filename, content, public})` / `api.github.pushFile({owner, repo, path, content})`
@@ -111,6 +114,8 @@ JS を書かずに投稿表示を変換できます（ホストが実行。キ�
 - `document.cookie` / `localStorage` / 親 DOM / 直接 `fetch` は **使えません**（不透明オリジン + CSP）。
 - 無限ループ・`eval`・`new Function` は静的検査で公開がブロックされます。
 - コードは 512KB まで。`storage:shared` はスコープあたり 64KB まで。
+- `storage:thread` の entries 本文は長さを検査し、制御文字（C0 と DEL）を除去してから保存します
+  （レス本文と同じ扱い）。板の NG ワードも適用されます。
 - サーバー側では実行されません（Cloudflare Workers Free にユーザーコード隔離機構がないため）。
 
 ## 開発の流れ

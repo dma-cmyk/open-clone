@@ -3,6 +3,7 @@
 // 500 にせず 403 に丸める（依存 WP の未完成でプラグイン API 全体を落とさないため）。
 
 import { ApiError, type AppRequestContext, type PluginScope } from "shared";
+import { findInstall } from "./registry";
 
 export interface PluginActor {
   accountId: string | null;
@@ -160,4 +161,22 @@ export async function assertBoardStopPermission(
   if (!(await isBoardStaff(db, actor.accountId, boardId))) {
     throw ApiError.forbidden("板スタッフのみ板内のプラグインを停止できます");
   }
+}
+
+/**
+ * そのスコープでプラグインが有効か（所有者の個人プレビューは導入なしでも可）。
+ * スレごとの共有値（storage:thread）と storage:shared の両方が使う。
+ */
+export async function isPluginActiveFor(
+  db: D1Database,
+  pluginId: string,
+  actor: PluginActor,
+  scope: PluginScope,
+  boardId: number | undefined,
+  plugin: PluginOwnership,
+): Promise<boolean> {
+  const scopeRef = scopeRefFor(scope, actor, boardId);
+  const install = await findInstall(db, pluginId, scope, scopeRef);
+  if (install) return true;
+  return scope === "personal" && isPluginOwner(actor, plugin);
 }

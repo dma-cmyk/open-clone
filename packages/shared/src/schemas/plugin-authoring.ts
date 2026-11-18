@@ -22,12 +22,15 @@ import {
   PLUGIN_SCOPES,
   PLUGIN_SLOTS,
   PLUGIN_STATUSES,
+  PLUGIN_THREAD_STATE_MAX,
   PLUGIN_VISIBILITIES,
   pluginManifestSchema,
+  pluginThreadStateSchema,
   semverSchema,
   type PluginManifest,
   type PluginPostRenderRule,
   type PluginSlotName,
+  type PluginThreadStateDeclaration,
 } from "./plugin";
 import {
   PLUGIN_TEMPLATE_IDS,
@@ -94,6 +97,7 @@ export const authoringBaseManifestSchema = z.strictObject({
   scope: z.array(z.enum(PLUGIN_SCOPES)).min(1).max(3).optional(),
   permissions: z.array(z.enum(PLUGIN_PERMISSIONS)).max(PLUGIN_PERMISSIONS.length).optional(),
   slots: z.array(z.enum(PLUGIN_SLOTS)).max(8).optional(),
+  threadState: z.array(pluginThreadStateSchema).max(PLUGIN_THREAD_STATE_MAX).optional(),
   hooks: z.array(z.enum(PLUGIN_HOOKS)).max(4).optional(),
   entry: z
     .string()
@@ -328,6 +332,12 @@ function postValidate(template: PluginTemplateDefinition, values: Record<string,
     const parsed = parseDiceMessages(String(values.messages ?? ""), Number(values.sides));
     if (!parsed.ok) return [{ key: "messages", message: parsed.message }];
   }
+  if (template.id === "choice") {
+    const options = values.options as string[] | undefined;
+    if (!options || options.length < 2) {
+      return [{ key: "options", message: "選択肢は 2 件以上にしてください" }];
+    }
+  }
   return [];
 }
 
@@ -512,6 +522,33 @@ function slotNames(
   return [...(template.baseManifest.slots ?? [])];
 }
 
+/** テンプレートが宣言する threadState（storage:thread と対で manifest に入れる）。 */
+function threadStateFor(
+  template: PluginTemplateDefinition,
+  values: Record<string, unknown>,
+): PluginThreadStateDeclaration[] {
+  const who = values.who === "login" ? "login" : "anyone";
+  switch (template.id) {
+    case "tally":
+      return [{ key: "tally", kind: "tally", who }];
+    case "choice":
+      return [{ key: "choice", kind: "choice", who, options: values.options as string[] }];
+    case "entries":
+      return [
+        {
+          key: "entries",
+          kind: "entries",
+          who,
+          maxPerActor: Number(values.maxPerActor ?? 1),
+          maxEntries: 200,
+          maxLength: 100,
+        },
+      ];
+    default:
+      return [];
+  }
+}
+
 /** サイコロ: 乱数は crypto.getRandomValues（公式サンプルと同方式）。 */
 function diceCode(slot: string, config: unknown): string {
   return `register({
@@ -544,8 +581,56 @@ function diceCode(slot: string, config: unknown): string {
 `;
 }
 
-/** カウンタ: storage:shared に現在値を保存する。 */
-function counterCode(config: unknown): string {
+/** 人数カウンタ: スレごとの tally（1 人 1 回）を読み書きする。表示は textContent のみ。 */
+function tallyCode(config: unknown): string {
+  return `register({
+  slots: {
+    "thread-head": function (ctx) {
+      var CONFIG = ${jsonLiteral(config)};
+      var api = ctx.api;
+      var root = ctx.root;
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;gap:6px;align-items:center;font-size:12px;padding:2px 0;';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.style.cssText = 'font-size:12px;padding:1px 8px;cursor:pointer;';
+      var num = document.createElement('span');
+      var busy = false;
+      function paint(state) {
+        btn.textContent = state && state.mine ? CONFIG.onLabel : CONFIG.label;
+        num.textContent = ' ' + (state && typeof state.count === 'number' ? state.count : 0) + ' 人';
+      }
+      function load() {
+        api.thread.state(CONFIG.key).then(paint).catch(function (error) {
+          num.textContent = ' ' + ((error && error.message) || '読み込みに失敗しました');
+        });
+      }
+      btn.addEventListener('click', function () {
+        if (busy) return;
+        busy = true;
+        btn.disabled = true;
+        api.thread.state(CONFIG.key).then(function (state) {
+          return api.thread.setTally(CONFIG.key, !(state && state.mine));
+        }).then(paint).catch(function (error) {
+          num.textContent = ' ' + ((error && error.message) || '更新に失敗しました');
+        }).then(function () {
+          btn.disabled = false;
+          busy = false;
+        });
+      });
+      wrap.appendChild(btn);
+      wrap.appendChild(num);
+      root.appendChild(wrap);
+      load();
+      setInterval(load, 15000);
+    }
+  }
+});
+`;
+}
+
+/** スレのアンケート: スレごとの choice（1 人 1 票、選び直し・取り消し可）。 */
+function choiceCode(config: unknown): string {
   return `register({
   slots: {
     "thread-head": function (ctx) {
@@ -553,26 +638,171 @@ function counterCode(config: unknown): string {
       var api = ctx.api;
       var root = ctx.root;
       var box = document.createElement('div');
-      box.style.cssText = 'display:flex;gap:6px;align-items:center;font-size:12px;padding:2px 0;';
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = CONFIG.label;
-      btn.style.cssText = 'font-size:12px;padding:1px 8px;cursor:pointer;';
-      var num = document.createElement('span');
-      function paint(v) { num.textContent = ' ' + v; }
-      api.storage.get(CONFIG.storageKey).then(function (v) {
-        paint(v == null ? CONFIG.start : Number(v));
-      }).catch(function () { paint(CONFIG.start); });
-      btn.addEventListener('click', function () {
-        api.storage.get(CONFIG.storageKey).then(function (v) {
-          var cur = (v == null ? CONFIG.start : Number(v)) + CONFIG.step;
-          return api.storage.set(CONFIG.storageKey, String(cur)).then(function () { paint(cur); });
-        }).catch(function () {});
-        api.ui.resize(Math.max(document.documentElement.scrollHeight, 1));
-      });
-      box.appendChild(btn);
-      box.appendChild(num);
+      box.style.cssText = 'font-size:12px;padding:2px 0;';
+      var title = document.createElement('div');
+      title.textContent = CONFIG.question;
+      title.style.cssText = 'font-weight:bold;margin-bottom:2px;';
+      box.appendChild(title);
+      var status = document.createElement('div');
+      status.style.cssText = 'color:#555;';
+      var rows = [];
+      var mineIndex = -1;
+      function paint(state) {
+        var counts = state && state.counts ? state.counts : [];
+        var mine = state && typeof state.mine === 'number' ? state.mine : -1;
+        var total = 0;
+        var i;
+        for (i = 0; i < CONFIG.options.length; i++) total += counts[i] || 0;
+        mineIndex = mine;
+        for (i = 0; i < rows.length; i++) {
+          var n = counts[i] || 0;
+          var pct = total > 0 ? Math.round((n * 100) / total) : 0;
+          rows[i].btn.textContent = CONFIG.options[i] + '（' + n + '）';
+          rows[i].btn.setAttribute('aria-pressed', i === mine ? 'true' : 'false');
+          rows[i].bar.style.width = pct + '%';
+          rows[i].pct.textContent = ' ' + pct + '%';
+        }
+        status.textContent = '合計 ' + total + ' 票' + (mine >= 0 ? '（あなたの票: ' + CONFIG.options[mine] + '）' : '');
+      }
+      function load() {
+        api.thread.state(CONFIG.key).then(paint).catch(function (error) {
+          status.textContent = (error && error.message) || '読み込みに失敗しました';
+        });
+      }
+      function choose(index) {
+        var option = mineIndex === index ? null : index;
+        api.thread.choose(CONFIG.key, option).then(paint).catch(function (error) {
+          status.textContent = (error && error.message) || '投票に失敗しました';
+        });
+      }
+      for (var index = 0; index < CONFIG.options.length; index++) {
+        rows.push(makeRow(index));
+        box.appendChild(rows[index].wrap);
+      }
+      box.appendChild(status);
       root.appendChild(box);
+      load();
+      setInterval(load, 15000);
+      function makeRow(rowIndex) {
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'margin:3px 0;';
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.style.cssText = 'font-size:12px;padding:1px 6px;cursor:pointer;text-align:left;';
+        btn.addEventListener('click', function () { choose(rowIndex); });
+        var meter = document.createElement('div');
+        meter.style.cssText = 'height:4px;background:#ddd;border-radius:2px;margin-top:2px;';
+        var bar = document.createElement('div');
+        bar.style.cssText = 'height:4px;background:#228811;border-radius:2px;width:0;';
+        meter.appendChild(bar);
+        var pct = document.createElement('span');
+        pct.style.cssText = 'color:#555;';
+        wrap.appendChild(btn);
+        wrap.appendChild(meter);
+        wrap.appendChild(pct);
+        return { wrap: wrap, btn: btn, bar: bar, pct: pct };
+      }
+    }
+  }
+});
+`;
+}
+
+/** 参加表明・一言リスト: スレごとの entries。自分のものだけ取り消せる。 */
+function entriesCode(config: unknown): string {
+  return `register({
+  slots: {
+    "thread-bottom": function (ctx) {
+      var CONFIG = ${jsonLiteral(config)};
+      var api = ctx.api;
+      var root = ctx.root;
+      var box = document.createElement('div');
+      box.style.cssText = 'font-size:12px;padding:2px 0;';
+      var heading = document.createElement('div');
+      heading.textContent = CONFIG.title;
+      heading.style.cssText = 'font-weight:bold;margin-bottom:2px;';
+      var form = document.createElement('div');
+      form.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:2px 0;';
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.maxLength = CONFIG.maxLength;
+      input.placeholder = CONFIG.inputHint;
+      input.style.cssText = 'font-size:12px;padding:2px 4px;flex:1;min-width:160px;';
+      var add = document.createElement('button');
+      add.type = 'button';
+      add.textContent = CONFIG.buttonLabel;
+      add.style.cssText = 'font-size:12px;padding:1px 8px;cursor:pointer;';
+      var status = document.createElement('span');
+      status.style.cssText = 'color:#555;';
+      var list = document.createElement('div');
+      function paint(state) {
+        list.textContent = '';
+        var items = state && state.items ? state.items : [];
+        if (items.length === 0) {
+          var empty = document.createElement('div');
+          empty.textContent = 'まだ書き込みはありません';
+          empty.style.cssText = 'color:#777;';
+          list.appendChild(empty);
+        }
+        items.forEach(function (item) {
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;gap:6px;align-items:baseline;margin:2px 0;';
+          var label = document.createElement('span');
+          label.textContent = item.label;
+          label.style.cssText = 'color:#555;white-space:nowrap;';
+          var text = document.createElement('span');
+          text.textContent = item.text;
+          text.style.cssText = 'flex:1;overflow-wrap:anywhere;';
+          row.appendChild(label);
+          row.appendChild(text);
+          if (item.mine) {
+            var remove = document.createElement('button');
+            remove.type = 'button';
+            remove.textContent = '取り消す';
+            remove.style.cssText = 'font-size:11px;padding:0 4px;cursor:pointer;';
+            remove.addEventListener('click', function () {
+              remove.disabled = true;
+              api.thread.removeEntry(CONFIG.key, item.id).then(paint).catch(function (error) {
+                remove.disabled = false;
+                status.textContent = (error && error.message) || '取り消しに失敗しました';
+              });
+            });
+            row.appendChild(remove);
+          }
+          list.appendChild(row);
+        });
+        status.textContent = state && typeof state.total === 'number' ? '全 ' + state.total + ' 件' : '';
+      }
+      function load() {
+        api.thread.state(CONFIG.key).then(paint).catch(function (error) {
+          status.textContent = (error && error.message) || '読み込みに失敗しました';
+        });
+      }
+      add.addEventListener('click', function () {
+        var value = input.value.trim();
+        if (!value) {
+          status.textContent = '内容を入力してください';
+          return;
+        }
+        add.disabled = true;
+        api.thread.addEntry(CONFIG.key, value).then(function () {
+          input.value = '';
+          add.disabled = false;
+          return load();
+        }).catch(function (error) {
+          add.disabled = false;
+          status.textContent = (error && error.message) || '書き込みに失敗しました';
+        });
+      });
+      form.appendChild(input);
+      form.appendChild(add);
+      box.appendChild(heading);
+      box.appendChild(form);
+      box.appendChild(status);
+      box.appendChild(list);
+      root.appendChild(box);
+      load();
+      setInterval(load, 15000);
     }
   }
 });
@@ -690,14 +920,35 @@ function buildSlotTemplate(
       code = diceCode(String(values.slot), config);
       break;
     }
-    case "counter": {
+    case "tally": {
       config = {
+        key: "tally",
         label: values.label,
-        start: Number(values.start),
-        step: Number(values.step),
-        storageKey: values.storageKey,
+        onLabel: values.onLabel,
       };
-      code = counterCode(config);
+      code = tallyCode(config);
+      break;
+    }
+    case "choice": {
+      config = {
+        key: "choice",
+        question: values.question,
+        options: values.options,
+      };
+      code = choiceCode(config);
+      break;
+    }
+    case "entries": {
+      const maxPerActor = Number(values.maxPerActor ?? 1);
+      config = {
+        key: "entries",
+        title: "ひとことリスト",
+        buttonLabel: values.buttonLabel,
+        inputHint: values.inputHint,
+        maxLength: 100,
+        maxPerActor: maxPerActor,
+      };
+      code = entriesCode(config);
       break;
     }
     case "thread-info": {
@@ -730,6 +981,7 @@ function buildSlotTemplate(
     scope: template.baseManifest.scope ?? [...PLUGIN_SCOPES],
     permissions: slotPermissions(template, values),
     slots: slotNames(template, values),
+    threadState: threadStateFor(template, values),
   });
   return { manifest, code };
 }

@@ -2,7 +2,7 @@
 //
 // かつてはここに manifest/code を手書きで複製していたが、テンプレート定義は
 // `packages/shared/src/plugin-templates-data.ts` が正本（report28 §6.1 / §8.2）。
-// このファイルは shared の 7 テンプレートを **既定値で生成** してエディタの形へ射影するだけにし、
+// このファイルは shared の 9 テンプレートを **既定値で生成** してエディタの形へ射影するだけにし、
 // 定義の二重管理をなくす。生成器（`generateFromTemplate`）を通すため、読み込んだサンプルも
 // 保存時の静的検査と同じ形になる。
 //
@@ -17,6 +17,7 @@ import {
   type PluginScope,
   type PluginSlotName,
   type PluginTemplateDefinition,
+  type PluginThreadStateDeclaration,
 } from "shared";
 
 export interface PluginTemplate {
@@ -30,6 +31,7 @@ export interface PluginTemplate {
   permissions: PluginPermission[];
   connectAllowlist: string[];
   slots: PluginSlotName[];
+  threadState: PluginThreadStateDeclaration[];
   render: PluginPostRenderRule[];
   code: string;
 }
@@ -64,6 +66,7 @@ function toEditorTemplate(definition: PluginTemplateDefinition): PluginTemplate 
     permissions: manifest.permissions,
     connectAllowlist: manifest.connectAllowlist,
     slots: manifest.slots,
+    threadState: manifest.threadState,
     render: manifest.render?.post ?? [],
     code,
   };

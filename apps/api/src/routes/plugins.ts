@@ -2,7 +2,7 @@
 // レジストリ（作成・版管理・公開・検索・導入・更新・通報・停止）と GitHub/Gist 連携の入口。
 // 権限・状態遷移の実体は services/plugins/* に置き、ここでは HTTP とアクター解決のみ行う。
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import {
   PLUGIN_ANON_CODE_MAX_BYTES,
   PLUGIN_ANON_MAX_PER_DEVICE,
@@ -27,6 +27,9 @@ import {
   pluginRepoImportSchema,
   pluginStateQuerySchema,
   pluginStateSetSchema,
+  pluginThreadChoiceSetSchema,
+  pluginThreadEntryCreateSchema,
+  pluginThreadTallySetSchema,
   pluginReviewDecisionSchema,
   pluginUninstallSchema,
   pluginUpdateSchema,
@@ -48,6 +51,7 @@ import {
   canViewDeviceOwnedPlugin,
   isBoardStaff,
   isDeviceOwnedPlugin,
+  isPluginActiveFor,
   isPluginOwner,
   pluginActorFrom,
   scopeRefFor,
@@ -98,6 +102,21 @@ import {
   fetchSourceByRef,
   parseGistId,
 } from "../services/plugins/github-sync";
+import {
+  addEntry,
+  assertThreadStateRateLimit,
+  assertThreadStateReadLimit,
+  assertThreadStateWritable,
+  clearThreadState,
+  getThreadStateValue,
+  loadThreadStateContext,
+  parseThreadStateKey,
+  parseThreadStateThreadId,
+  removeEntry,
+  setChoiceState,
+  setTallyState,
+  type ThreadStateContext,
+} from "../services/plugins/thread-state";
 
 const app = new Hono<AppEnv>();
 
@@ -1120,21 +1139,6 @@ app.post("/:id/fork", requireAuth, async (c) => {
 
 // ─── プラグイン共有 KV（storage:shared） ─────────────────────────
 
-/** そのスコープでプラグインが有効か（所有者の個人プレビューは導入なしでも可）。 */
-async function isPluginActiveFor(
-  db: D1Database,
-  pluginId: string,
-  actor: PluginActor,
-  scope: PluginScope,
-  boardId: number | undefined,
-  plugin: PluginRow,
-): Promise<boolean> {
-  const scopeRef = scopeRefFor(scope, actor, boardId);
-  const install = await findInstall(db, pluginId, scope, scopeRef);
-  if (install) return true;
-  return scope === "personal" && isPluginOwner(actor, plugin);
-}
-
 app.get("/:id/state", async (c) => {
   const actor = pluginActorFrom(getReqCtx(c));
   const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
@@ -1220,6 +1224,86 @@ app.delete("/:id/state", async (c) => {
   const scopeRef = scopeRefFor(query.scope, actor, query.boardId);
   await stateDelete(c.env.DB, { pluginId: plugin.id, scope: query.scope, scopeRef, key: query.key });
   return c.json(ok({ deleted: true }));
+});
+
+// ─── スレごとの共有値（storage:thread） ──────────────────────────
+//
+// threadId は URL の :threadId だけを使う。プラグイン（sandbox）はホストのブリッジ経由で
+// 呼び、ホストが ctx.threadId を URL に入れる（別のスレを指定できない）。
+// ルール（1 人 1 回・上限・本文検査・BAN・K2）は services/plugins/thread-state.ts が強制する。
+
+async function threadStateContext(c: Context<AppEnv>, plugin: PluginRow): Promise<ThreadStateContext> {
+  const reqCtx = getReqCtx(c);
+  return loadThreadStateContext({
+    db: c.env.DB,
+    plugin,
+    actor: pluginActorFrom(reqCtx),
+    threadId: parseThreadStateThreadId(c.req.param("threadId") ?? ""),
+    key: parseThreadStateKey(c.req.param("key") ?? ""),
+    ipHash: reqCtx.device.ipHash,
+  });
+}
+
+app.get("/:id/threads/:threadId/state/:key", async (c) => {
+  const actor = pluginActorFrom(getReqCtx(c));
+  const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
+  await assertThreadStateReadLimit(c.env, getReqCtx(c).device.ipHash);
+  const ctx = await threadStateContext(c, plugin);
+  return c.json(ok(await getThreadStateValue(c.env.DB, ctx)));
+});
+
+app.put("/:id/threads/:threadId/state/:key/tally", async (c) => {
+  const actor = pluginActorFrom(getReqCtx(c));
+  const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
+  const body = pluginThreadTallySetSchema.parse(await c.req.json());
+  const ctx = await threadStateContext(c, plugin);
+  await assertThreadStateWritable(c.env.DB, ctx, c.env);
+  await assertThreadStateRateLimit(c.env, ctx.actorKey);
+  return c.json(ok(await setTallyState(c.env.DB, ctx, body.on)));
+});
+
+app.put("/:id/threads/:threadId/state/:key/choice", async (c) => {
+  const actor = pluginActorFrom(getReqCtx(c));
+  const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
+  const body = pluginThreadChoiceSetSchema.parse(await c.req.json());
+  const ctx = await threadStateContext(c, plugin);
+  await assertThreadStateWritable(c.env.DB, ctx, c.env);
+  await assertThreadStateRateLimit(c.env, ctx.actorKey);
+  return c.json(ok(await setChoiceState(c.env.DB, ctx, body.option)));
+});
+
+app.post("/:id/threads/:threadId/state/:key/entries", async (c) => {
+  const actor = pluginActorFrom(getReqCtx(c));
+  const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
+  const body = pluginThreadEntryCreateSchema.parse(await c.req.json());
+  const ctx = await threadStateContext(c, plugin);
+  await assertThreadStateWritable(c.env.DB, ctx, c.env);
+  await assertThreadStateRateLimit(c.env, ctx.actorKey);
+  return c.json(ok(await addEntry(c.env.DB, c.env, ctx, body.text)), 201);
+});
+
+app.delete("/:id/threads/:threadId/state/:key/entries/:entryId", async (c) => {
+  const actor = pluginActorFrom(getReqCtx(c));
+  const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
+  const ctx = await threadStateContext(c, plugin);
+  await assertThreadStateWritable(c.env.DB, ctx, c.env);
+  await assertThreadStateRateLimit(c.env, ctx.actorKey);
+  return c.json(ok(await removeEntry(c.env.DB, ctx, c.req.param("entryId"))));
+});
+
+app.delete("/:id/threads/:threadId/state/:key", async (c) => {
+  const actor = pluginActorFrom(getReqCtx(c));
+  const plugin = await loadPlugin(c.env.DB, c.req.param("id"));
+  assertCanViewPlugin(actor, plugin);
+  const ctx = await threadStateContext(c, plugin);
+  await assertThreadStateRateLimit(c.env, ctx.actorKey);
+  await clearThreadState(c.env.DB, ctx);
+  return c.json(ok({ cleared: true }));
 });
 
 // ─── 審査判定 ─────────────────────────────────────────────────────

@@ -95,6 +95,23 @@ function requireString(params: unknown, key: string): string {
   return value;
 }
 
+function readBoolean(params: unknown, key: string): boolean | undefined {
+  if (!params || typeof params !== "object" || !(key in params)) return undefined;
+  const value: unknown = Reflect.get(params, key);
+  return typeof value === "boolean" ? value : undefined;
+}
+
+/**
+ * thread.state 系はホストの `ctx.threadId` だけを使う。
+ * params.threadId は読まない（プラグインが別のスレを指定できない）。
+ */
+function requireHostThreadId(ctx: RpcHostContext): number {
+  if (ctx.threadId === undefined) {
+    throw new PluginApiError(400, "NO_THREAD", "スレの外ではスレの共有値を使えません");
+  }
+  return ctx.threadId;
+}
+
 /** プラグインの RPC を処理するディスパッチャを作る。 */
 export function createRpcDispatcher(
   ctx: RpcHostContext,
@@ -159,6 +176,54 @@ export function createRpcDispatcher(
         if (ctx.preview) return Object.fromEntries(previewStore);
         const result = await pluginApi.state.list(ctx.pluginId, scope);
         return result.items;
+      }
+
+      case "thread.state.get": {
+        if (ctx.preview) throw new PluginApiError(400, "PREVIEW", "プレビューではスレの共有値を読めません");
+        const threadId = requireHostThreadId(ctx);
+        return pluginApi.threadState.get(ctx.pluginId, threadId, requireString(params, "key"));
+      }
+
+      case "thread.tally.set": {
+        if (ctx.preview) throw new PluginApiError(400, "PREVIEW", "プレビューではスレの共有値を更新できません");
+        const threadId = requireHostThreadId(ctx);
+        const on = readBoolean(params, "on");
+        if (on === undefined) throw new PluginApiError(400, "VALIDATION", "on が必要です");
+        return pluginApi.threadState.setTally(ctx.pluginId, threadId, requireString(params, "key"), on);
+      }
+
+      case "thread.choice.set": {
+        if (ctx.preview) throw new PluginApiError(400, "PREVIEW", "プレビューではスレの共有値を更新できません");
+        const threadId = requireHostThreadId(ctx);
+        const key = requireString(params, "key");
+        const raw =
+          params && typeof params === "object" && "option" in params ? Reflect.get(params, "option") : undefined;
+        if (raw !== null && !(typeof raw === "number" && Number.isInteger(raw))) {
+          throw new PluginApiError(400, "VALIDATION", "option は整数または null が必要です");
+        }
+        return pluginApi.threadState.setChoice(ctx.pluginId, threadId, key, raw);
+      }
+
+      case "thread.entries.add": {
+        if (ctx.preview) throw new PluginApiError(400, "PREVIEW", "プレビューではスレの共有値を更新できません");
+        const threadId = requireHostThreadId(ctx);
+        return pluginApi.threadState.addEntry(
+          ctx.pluginId,
+          threadId,
+          requireString(params, "key"),
+          requireString(params, "text"),
+        );
+      }
+
+      case "thread.entries.remove": {
+        if (ctx.preview) throw new PluginApiError(400, "PREVIEW", "プレビューではスレの共有値を更新できません");
+        const threadId = requireHostThreadId(ctx);
+        return pluginApi.threadState.removeEntry(
+          ctx.pluginId,
+          threadId,
+          requireString(params, "key"),
+          requireString(params, "id"),
+        );
       }
 
       case "data.thread.get": {

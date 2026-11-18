@@ -226,7 +226,7 @@ test("MCP ライフサイクル: 下書き作成 → 個人公開 → 個人導�
   try {
     const templates = await client.callTool({ name: "authoring.list_templates", arguments: {} });
     expect(templates.isError).toBeFalsy();
-    expect(toolJson<{ templates: { id: string }[] }>(templates).templates).toHaveLength(7);
+    expect(toolJson<{ templates: { id: string }[] }>(templates).templates).toHaveLength(9);
 
     const checked = await client.callTool({ name: "authoring.check", arguments: { code: "eval('1')" } });
     expect(toolJson<{ checks: { allowed: boolean } }>(checked).checks.allowed).toBe(false);

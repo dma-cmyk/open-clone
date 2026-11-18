@@ -18,4 +18,7 @@ export const PLUGIN_AUTHOR_INSTRUCTIONS = `あなたは「おーぷんクロー�
    投稿、板/サイトへの導入、審査の承認、他人のプラグインの操作、トークンの発行・失効はできません。
 6. テンプレートから作る場合は authoring.list_templates で定義を取得し、
    利用者入力はパラメータとして manifest / コードへ渡してください（独自の正規表現を書かせない）。
+   スレごとの共有値（tally / choice / entries）を使う場合は、manifest の threadState と
+   権限 storage:thread を必ず対で宣言し、api.thread.* で読み書きしてください。
+   1 人 1 回・上限・本文検査はサーバーが強制します。
 7. 利用者が日本語で話しかけてきた場合は日本語で応答してください。`;

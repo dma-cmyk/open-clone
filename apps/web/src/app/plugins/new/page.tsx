@@ -16,6 +16,7 @@ import {
   type PluginScope,
   type PluginSlotName,
   type PluginStaticCheckResult,
+  type PluginThreadStateDeclaration,
 } from "shared";
 import { PluginPreview, pluginApi } from "@/features/plugin-host";
 import { useSession } from "@/features/account/session";
@@ -87,6 +88,8 @@ export default function PluginEditorPage() {
   const [scopes, setScopes] = useState<PluginScope[]>(["personal"]);
   const [permissions, setPermissions] = useState<PluginPermission[]>(["ui:slot"]);
   const [slots, setSlots] = useState<PluginSlotName[]>(["thread-post-inline"]);
+  // 手書き編集でも threadState を落とさない（storage:thread 権限と対で必要なため）。
+  const [threadState, setThreadState] = useState<PluginThreadStateDeclaration[]>([]);
   const [allowlistText, setAllowlistText] = useState("");
   const [renderText, setRenderText] = useState(DEFAULT_RENDER);
   const [code, setCode] = useState(DEFAULT_CODE);
@@ -152,13 +155,14 @@ export default function PluginEditorPage() {
         entry: "plugin.js",
         slots,
         hooks: [],
+        threadState,
         render: renderRules.rules.length > 0 ? { post: renderRules.rules } : undefined,
       });
       return { manifest, error: null as string | null };
     } catch (caught) {
       return { manifest: null, error: describeError(caught) };
     }
-  }, [name, version, summary, description, scopes, permissions, allowlistText, slots, renderRules]);
+  }, [name, version, summary, description, scopes, permissions, allowlistText, slots, threadState, renderRules]);
 
   // 既存プラグインを編集（新バージョン追加）
   useEffect(() => {
@@ -177,6 +181,7 @@ export default function PluginEditorPage() {
         setScopes(detail.manifest.scope);
         setPermissions(detail.manifest.permissions);
         setSlots(detail.manifest.slots);
+        setThreadState(detail.manifest.threadState);
         setAllowlistText(detail.manifest.connectAllowlist.join("\n"));
         setRenderText(JSON.stringify(detail.manifest.render?.post ?? [], null, 2));
         setVisibility(detail.visibility);
@@ -215,6 +220,7 @@ export default function PluginEditorPage() {
       setScopes(anonymous ? ["personal"] : template.scopes);
       setPermissions(template.permissions);
       setSlots(template.slots);
+      setThreadState(template.threadState);
       setAllowlistText(template.connectAllowlist.join("\n"));
       setRenderText(JSON.stringify(template.render, null, 2));
       setCode(template.code);
@@ -256,6 +262,7 @@ export default function PluginEditorPage() {
       setScopes(anonymous ? ["personal"] : draft.manifest.scope);
       setPermissions(draft.manifest.permissions);
       setSlots(draft.manifest.slots);
+      setThreadState(draft.manifest.threadState);
       setAllowlistText(draft.manifest.connectAllowlist.join("\n"));
       setRenderText(JSON.stringify(draft.manifest.render?.post ?? [], null, 2));
       setCode(draft.code);
