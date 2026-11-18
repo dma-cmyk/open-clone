@@ -47,6 +47,15 @@ async function login(context: BrowserContext): Promise<void> {
 }
 
 test.describe("プラグインの通知（notify）", () => {
+  // 作ったプラグイン（同じ e2e-user の個人導入）を消す。残すと、同じ利用者で
+  // thread-bottom を数える別の spec に iframe が増える。
+  const createdPluginIds: string[] = [];
+  test.afterEach(async ({ request }) => {
+    for (const id of createdPluginIds.splice(0)) {
+      await request.delete(apiUrl(`/v1/plugins/${id}`), { headers: userHeaders() });
+    }
+  });
+
   test("スレ画面のトーストに文字で出て、500 文字で切られる", async ({ page, context }) => {
     await login(context);
 
@@ -91,6 +100,7 @@ test.describe("プラグインの通知（notify）", () => {
     expect(created.status(), await created.text()).toBe(201);
     const createdBody = await readEnvelope<{ id: string }>(created);
     if (!createdBody?.ok) throw new Error("プラグイン作成に失敗しました");
+    createdPluginIds.push(createdBody.data.id);
     const installed = await page.request.post(apiUrl(`/v1/plugins/${createdBody.data.id}/install`), {
       headers: userHeaders(),
       data: { scope: "personal" },

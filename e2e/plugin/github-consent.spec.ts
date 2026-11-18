@@ -66,6 +66,9 @@ async function login(context: BrowserContext): Promise<void> {
   ]);
 }
 
+/** afterEach で消す、この spec が作ったプラグイン。 */
+const createdPluginIds: string[] = [];
+
 async function prepare(page: Page): Promise<{ threadPath: string; name: string }> {
   // スタブの GitHub に PAT で連携する（アカウントは e2e-user）。
   const linked = await page.request.post(apiUrl("/v1/github/link/pat"), {
@@ -120,6 +123,7 @@ async function prepare(page: Page): Promise<{ threadPath: string; name: string }
   expect(created.status(), await created.text()).toBe(201);
   const createdBody = await readEnvelope<{ id: string }>(created);
   if (!createdBody?.ok) throw new Error("プラグイン作成に失敗しました");
+  createdPluginIds.push(createdBody.data.id);
 
   const installed = await page.request.post(apiUrl(`/v1/plugins/${createdBody.data.id}/install`), {
     headers: userHeaders(),
@@ -134,8 +138,13 @@ test.describe("GitHub 書き込みの直前確認", () => {
   test.skip(!GITHUB_STUB, "E2E_GITHUB_STUB=1（GitHub スタブ）でのみ実行");
 
   // 後続の GitHub 連携 spec（未連携の 403 を確認する）に影響しないよう解除する。
+  // 作ったプラグイン（同じ e2e-user の個人導入）も消す。残すと、同じ利用者で
+  // thread-bottom を数える別の spec に iframe が増える。
   test.afterEach(async ({ request }) => {
     await request.delete(apiUrl("/v1/github/link"), { headers: userHeaders() });
+    for (const id of createdPluginIds.splice(0)) {
+      await request.delete(apiUrl(`/v1/plugins/${id}`), { headers: userHeaders() });
+    }
   });
 
   test("やめるでは送信せず、書き込むで表示した内容だけを送る", async ({ page, context }) => {

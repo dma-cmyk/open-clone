@@ -183,7 +183,7 @@ test.describe("手で編集する経路でも threadState を保つ", () => {
         name,
       });
       await openThread(page, thread.slug, thread.threadId);
-      const frame = page.frameLocator('[data-plugin-slot="thread-top"] iframe');
+      const frame = page.frameLocator(`[data-plugin-slot="thread-top"] iframe[title="${name} プラグイン"]`);
       await expect(frame.getByRole("button", { name: /参加する/ })).toBeVisible({ timeout: 15_000 });
       await frame.getByRole("button", { name: /参加する/ }).click();
       await expect(frame.getByText("1 人")).toBeVisible();
@@ -211,7 +211,7 @@ test.describe("手で編集する経路でも threadState を保つ", () => {
         name,
       });
       await openThread(page, thread.slug, thread.threadId);
-      const frame = page.frameLocator('[data-plugin-slot="thread-top"] iframe');
+      const frame = page.frameLocator(`[data-plugin-slot="thread-top"] iframe[title="${name} プラグイン"]`);
       await expect(frame.getByText("どれが好き？", { exact: true })).toBeVisible({ timeout: 15_000 });
       await frame.getByRole("button", { name: "はい（0）" }).click();
       await expect(frame.getByRole("button", { name: "はい（1）" })).toBeVisible();
@@ -239,7 +239,7 @@ test.describe("手で編集する経路でも threadState を保つ", () => {
         name,
       });
       await openThread(page, thread.slug, thread.threadId);
-      const frame = page.frameLocator('[data-plugin-slot="thread-bottom"] iframe');
+      const frame = page.frameLocator(`[data-plugin-slot="thread-bottom"] iframe[title="${name} プラグイン"]`);
       const input = frame.locator('input[type="text"]');
       await expect(input).toBeVisible({ timeout: 15_000 });
       await input.fill("手書き経路の書き込み");
@@ -278,7 +278,7 @@ test.describe("スレごとの共有値テンプレート", () => {
       });
 
       await openThread(page, thread.slug, thread.threadId);
-      const frame = page.frameLocator('[data-plugin-slot="thread-top"] iframe');
+      const frame = page.frameLocator(`[data-plugin-slot="thread-top"] iframe[title="${name} プラグイン"]`);
       const join = frame.getByRole("button", { name: /参加する/ });
       await expect(join).toBeVisible({ timeout: 15_000 });
       await join.click();
@@ -286,13 +286,13 @@ test.describe("スレごとの共有値テンプレート", () => {
       await expect(frame.getByText("1 人")).toBeVisible();
 
       anon = await openAnonymous(browser, thread.slug, thread.threadId);
-      const anonFrame = anon.page.frameLocator('[data-plugin-slot="thread-top"] iframe');
+      const anonFrame = anon.page.frameLocator(`[data-plugin-slot="thread-top"] iframe[title="${name} プラグイン"]`);
       await expect(anonFrame.getByText("1 人")).toBeVisible({ timeout: 15_000 });
       await anonFrame.getByRole("button", { name: /参加する/ }).click();
       await expect(anonFrame.getByText("2 人")).toBeVisible();
 
       await page.reload();
-      const reloaded = page.frameLocator('[data-plugin-slot="thread-top"] iframe');
+      const reloaded = page.frameLocator(`[data-plugin-slot="thread-top"] iframe[title="${name} プラグイン"]`);
       await expect(reloaded.getByText("2 人")).toBeVisible({ timeout: 15_000 });
       await expect(reloaded.getByRole("button", { name: /参加済み/ })).toBeVisible();
     } finally {
@@ -316,14 +316,14 @@ test.describe("スレごとの共有値テンプレート", () => {
       });
 
       await openThread(page, thread.slug, thread.threadId);
-      const frame = page.frameLocator('[data-plugin-slot="thread-top"] iframe');
+      const frame = page.frameLocator(`[data-plugin-slot="thread-top"] iframe[title="${name} プラグイン"]`);
       await expect(frame.getByText("どれが好き？", { exact: true })).toBeVisible({ timeout: 15_000 });
       await frame.getByRole("button", { name: "はい（0）" }).click();
       await expect(frame.getByRole("button", { name: "はい（1）" })).toBeVisible();
       await expect(frame.getByText(/合計 1 票/)).toBeVisible();
 
       anon = await openAnonymous(browser, thread.slug, thread.threadId);
-      const anonFrame = anon.page.frameLocator('[data-plugin-slot="thread-top"] iframe');
+      const anonFrame = anon.page.frameLocator(`[data-plugin-slot="thread-top"] iframe[title="${name} プラグイン"]`);
       await expect(anonFrame.getByRole("button", { name: "はい（1）" })).toBeVisible({ timeout: 15_000 });
       await expect(anonFrame.getByText(/合計 1 票/)).toBeVisible();
 
@@ -331,7 +331,7 @@ test.describe("スレごとの共有値テンプレート", () => {
       await frame.getByRole("button", { name: "はい（1）" }).click();
       await expect(frame.getByRole("button", { name: "はい（0）" })).toBeVisible();
       await anon.page.reload();
-      const anonReloaded = anon.page.frameLocator('[data-plugin-slot="thread-top"] iframe');
+      const anonReloaded = anon.page.frameLocator(`[data-plugin-slot="thread-top"] iframe[title="${name} プラグイン"]`);
       await expect(anonReloaded.getByRole("button", { name: "はい（0）" })).toBeVisible({ timeout: 15_000 });
     } finally {
       await anon?.context.close();
@@ -355,7 +355,7 @@ test.describe("スレごとの共有値テンプレート", () => {
       });
 
       await openThread(page, thread.slug, thread.threadId);
-      const frame = page.frameLocator('[data-plugin-slot="thread-bottom"] iframe');
+      const frame = page.frameLocator(`[data-plugin-slot="thread-bottom"] iframe[title="${name} プラグイン"]`);
       const input = frame.locator('input[type="text"]');
       await expect(input).toBeVisible({ timeout: 15_000 });
       await input.fill("ログイン側の書き込み");
@@ -363,7 +363,7 @@ test.describe("スレごとの共有値テンプレート", () => {
       await expect(frame.getByText("ログイン側の書き込み")).toBeVisible();
 
       anon = await openAnonymous(browser, thread.slug, thread.threadId);
-      const anonFrame = anon.page.frameLocator('[data-plugin-slot="thread-bottom"] iframe');
+      const anonFrame = anon.page.frameLocator(`[data-plugin-slot="thread-bottom"] iframe[title="${name} プラグイン"]`);
       await expect(anonFrame.getByText("ログイン側の書き込み")).toBeVisible({ timeout: 15_000 });
 
       const anonInput = anonFrame.locator('input[type="text"]');
@@ -372,7 +372,7 @@ test.describe("スレごとの共有値テンプレート", () => {
       await expect(anonFrame.getByText(xss, { exact: true })).toBeVisible();
 
       await page.reload();
-      const reloaded = page.frameLocator('[data-plugin-slot="thread-bottom"] iframe');
+      const reloaded = page.frameLocator(`[data-plugin-slot="thread-bottom"] iframe[title="${name} プラグイン"]`);
       await expect(reloaded.getByText(xss, { exact: true })).toBeVisible({ timeout: 15_000 });
       // textContent 表示なので img 要素にならない（onerror も動かない）
       await expect(reloaded.locator("img")).toHaveCount(0);
