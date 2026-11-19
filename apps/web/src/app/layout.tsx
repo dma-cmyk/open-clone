@@ -2,6 +2,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui";
+import { PetRoot } from "@/features/pet/ui/pet-root";
 
 export const metadata: Metadata = {
   title: {
@@ -31,6 +32,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ja">
       <body>
         <ToastProvider>{children}</ToastProvider>
+        {/* 全ページの右下に置く AI ペット（パネルは開いたときに読み込む） */}
+        <PetRoot />
       </body>
     </html>
   );
