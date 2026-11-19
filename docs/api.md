@@ -89,7 +89,7 @@
 | readCompat | 60s | 180 |
 | readSearch | 60s | 30 |
 | readRanking | 60s | 60 |
-| readList | 120s | 120 |
+| readList | 60s | 120 |
 | rtTicket | 60s | 30 |
 | petMinute | 60s | 20 |
 | petDay | 86400s | 600 |

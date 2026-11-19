@@ -100,15 +100,17 @@ describe("表示名の組み立て", () => {
 });
 
 describe("偽装できないこと", () => {
-  it("手書きの【2d6:6+6=12】は本物の出目と見分けられる", () => {
-    const vanilla = neutralizeNameBrackets("【2d6:6+6=12】");
-    expect(vanilla).toBe("〔2d6:6+6=12〕");
+  it("手書きの【2d6:…】は本物の出目と見分けられる", () => {
+    // 偽の出目には 2d6 では出ない値（7）を使う。本物と同じ値（例 6+6=12）だと、本物の出目がたまたま
+    // 一致した回（1/36）に「本物の【】が無い」ことを確かめられなくなる。
+    const vanilla = neutralizeNameBrackets("【2d6:7+7=14】");
+    expect(vanilla).toBe("〔2d6:7+7=14〕");
 
-    const name = decorateName("【2d6:6+6=12】", 1, [], DICE_2D6);
-    expect(name).toContain("〔2d6:6+6=12〕");
+    const name = decorateName("【2d6:7+7=14】", 1, [], DICE_2D6);
+    expect(name).toContain("〔2d6:7+7=14〕");
     // 本物の出目は 1 個だけで、名前側の括弧は必ず別の文字になっている。
     expect(name.split("【")).toHaveLength(2);
-    expect(name).not.toContain("【2d6:6+6=12】");
+    expect(name).not.toContain("【2d6:7+7=14】");
   });
 
   it("手書きの【大吉】も本物のおみくじと見分けられる", () => {
