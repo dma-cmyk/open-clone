@@ -2767,7 +2767,9 @@ body {
   color: var(--oc-accent);
 }
 
-/* 呼び出しボタン（PC 64px / 390px 幅は 52px）。待機中はふわふわ動く。 */
+/* 呼び出しボタン（PC 64px / 390px 幅は 52px）。待機中はふわふわ動く。
+   背景・枠・丸い影は持たず、透明なペットの絵だけが画面の端に浮いて見えるようにする。
+   押せる範囲（外形 64px 四方）は変えず、内側の余白だけを詰めて絵を少し大きくする。 */
 .oc-pet-launcher {
   --oc-pet-bottom: 16px;
   position: fixed;
@@ -2776,22 +2778,36 @@ body {
   z-index: 60;
   width: 64px;
   height: 64px;
-  padding: 5px;
-  border: 2px solid var(--oc-border-strong);
+  padding: 2px;
+  border: 0;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 35%, #ffffff 0%, #e6f7e6 70%);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+  background: transparent;
+  /* 透過 PNG の形（輪郭）に沿った薄い影だけを落とす。白い背景でも緑の背景でも絵が埋もれない濃さ。
+     filter なので、ふわふわ動く絵に影が付いてくる。 */
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.35)) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2));
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .oc-pet-launcher:hover {
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+  /* マウスを載せたら影を少し濃くして、押せることを示す（大きさは変えない）。 */
+  filter: drop-shadow(0 6px 9px rgba(0, 0, 0, 0.5)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
 }
 .oc-pet-launcher:focus-visible {
   outline: 3px solid var(--oc-accent);
   outline-offset: 2px;
+}
+/* 不透明な四角のアップロード画像でも角が浮かないよう、絵の角を少し丸める（透過 PNG では見えない）。 */
+.oc-pet-launcher img {
+  border-radius: 18%;
+}
+/* 画像が読めないとき（名前の頭文字）だけは、文字が浮かないよう丸い背景を残す。 */
+.oc-pet-launcher .oc-pet-avatar-fallback {
+  border: 2px solid var(--oc-border-strong);
+  background: radial-gradient(circle at 50% 35%, #ffffff 0%, #e6f7e6 70%);
+  color: var(--oc-accent);
+  font-size: 26px;
 }
 
 /* 固定ボタンがページ末尾のボタンに重ならないための余白。 */
@@ -3174,7 +3190,11 @@ body {
     right: 10px;
     width: 52px;
     height: 52px;
-    padding: 4px;
+    padding: 2px;
+  }
+  /* 画像が読めないときの頭文字（丸い背景の中）も、52px のボタンに合わせる。 */
+  .oc-pet-launcher .oc-pet-avatar-fallback {
+    font-size: 20px;
   }
   .oc-pet-safespace {
     height: 68px;

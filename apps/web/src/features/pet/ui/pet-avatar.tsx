@@ -27,12 +27,14 @@ export function PetAvatar({
   const src = characterId === "custom" ? uploaded : PET_CHARACTERS.find((item) => item.id === characterId)?.src ?? null;
   const initial = Array.from(name.trim())[0] ?? "?";
   const box = fill ? { width: "100%", height: "100%" } : { width: size, height: size };
+  // fill（右下の呼び出しボタン）では、文字の大きさを CSS に任せる（ボタンの大きさに合わせる）。
+  const fallbackStyle = fill ? box : { ...box, fontSize: Math.round(size * 0.45) };
 
   if (!src || failedSrc === src) {
     return (
       <span
         className={className ? `oc-pet-avatar-fallback ${className}` : "oc-pet-avatar-fallback"}
-        style={{ ...box, fontSize: Math.round(size * 0.45) }}
+        style={fallbackStyle}
         aria-hidden="true"
       >
         {initial}
