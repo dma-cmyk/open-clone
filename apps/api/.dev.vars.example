@@ -39,3 +39,5 @@ OWNER_BOOTSTRAP_KEY=local-owner-bootstrap
 # CATBOX_API_URL=http://127.0.0.1:8898/user/api.php
 # LITTERBOX_API_URL=http://127.0.0.1:8898/resources/internals/api.php
 # CLOUDINARY_API_BASE=http://127.0.0.1:8898
+# AI ペット中継（POST /v1/pet/chat）の事業者ベース URL 差し替え（E2E 専用。本番には設定しない）
+# PET_PROVIDER_BASE_OVERRIDE=http://127.0.0.1:8898/pet

@@ -59,6 +59,12 @@ export interface Env {
   CATBOX_API_URL?: string;
   LITTERBOX_API_URL?: string;
   CLOUDINARY_API_BASE?: string;
+  /**
+   * AI ペット中継の事業者ベース URL 差し替え（E2E 専用。本番には設定しない）。
+   * 設定すると openai 形式は `{override}/openai`、anthropic 形式は `{override}/anthropic` へ送る。
+   * `e2e/scripts/start-api.sh` がスタブ URL を渡す。custom の URL 検査は差し替えの前に行う。
+   */
+  PET_PROVIDER_BASE_OVERRIDE?: string;
 }
 
 import type { AppRequestContext } from "shared";

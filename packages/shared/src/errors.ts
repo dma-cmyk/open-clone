@@ -29,6 +29,15 @@ export const ErrorCode = {
   OWNER_SETUP_CLOSED: "OWNER_SETUP_CLOSED",
   /** パスワード再設定の復旧コード・再設定 URL が無効（存在しないメール・誤り・期限切れ・使用済み・失効を区別しない） */
   RESET_INVALID: "RESET_INVALID",
+  // AI ペットの中継（POST /v1/pet/chat）。事業者側の失敗を区別して画面で案内する。
+  /** 事業者が API キーを拒否した（401/403）。502 で返す（このサイトの認証失敗と混同させない）。 */
+  PET_PROVIDER_AUTH: "PET_PROVIDER_AUTH",
+  /** 事業者側の回数・残高制限（429）。 */
+  PET_PROVIDER_RATE_LIMITED: "PET_PROVIDER_RATE_LIMITED",
+  /** 事業者がモデル名などの要求を拒否した、または応答を解釈できない。 */
+  PET_PROVIDER_ERROR: "PET_PROVIDER_ERROR",
+  /** 事業者が時間内に応答しなかった。 */
+  PET_PROVIDER_TIMEOUT: "PET_PROVIDER_TIMEOUT",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

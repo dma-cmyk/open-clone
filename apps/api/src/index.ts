@@ -29,6 +29,7 @@ import githubFiles from "./routes/github-files";
 import plugins from "./routes/plugins";
 import pluginNet from "./routes/plugin-net";
 import ai from "./routes/ai";
+import pet from "./routes/pet";
 import mcp from "./routes/mcp";
 import mcpPlugin from "./routes/mcp-plugin";
 import pluginTokens from "./routes/plugin-tokens";
@@ -94,6 +95,8 @@ app.route("/v1/plugins", plugins);
 app.route("/v1/plugin-net", pluginNet);
 // WP5
 app.route("/v1/ai", ai);
+// AI ペット（サイト組み込みチャット）の中継。キーは保存しない（設計 00 §5）。
+app.route("/v1/pet", pet);
 app.route("/mcp", mcp);
 app.route("/mcp/legacy", mcp);
 // WP-A: 個人用プラグイン作成トークン + 作成専用 MCP レーン（`ocp_`）

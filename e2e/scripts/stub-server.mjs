@@ -48,6 +48,11 @@ const CORS_HEADERS = {
   "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
 };
 
+/** AI ペット中継の最後の要求（`GET /pet/__last` が返す）。 */
+let petLastRequest = null;
+/** ツール呼び出し id の連番（`call_1`, `call_2`, …）。 */
+let petCallSeq = 0;
+
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
@@ -202,6 +207,233 @@ function githubRateLimit() {
   };
 }
 
+// ---- AI ペット中継（E2E スタブ） ----
+//
+// 設計 00 §5.1 の決まり: 動きは「最後のメッセージ」で決める。anthropic は最後の user の
+// tool_result ブロックを tool 扱いにする。API キーが `bad-key` なら常に 401。
+// 最後に受けた要求は `GET /pet/__last` で返す（system と tools が届いたかの確認用）。
+
+/** 要求ヘッダーから API キーを読む（OpenAI 形式は Bearer、Anthropic 形式は x-api-key）。 */
+function petApiKey(headers) {
+  const authorization = String(headers.authorization ?? "");
+  const bearer = /^Bearer\s+(.+)$/.exec(authorization);
+  if (bearer) return bearer[1];
+  const header = headers["x-api-key"];
+  return typeof header === "string" ? header : "";
+}
+
+/** OpenAI / Anthropic の content（文字列 or ブロック配列）から本文を取り出す。 */
+function petText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts = [];
+  for (const block of content) {
+    if (block && typeof block === "object" && typeof block.text === "string") parts.push(block.text);
+  }
+  return parts.join("");
+}
+
+/** ツール呼び出し id から名前を探す（tool 結果の本文に載せる）。 */
+function petToolName(messages, id) {
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue;
+    if (Array.isArray(message.tool_calls)) {
+      const call = message.tool_calls.find((entry) => entry && entry.id === id);
+      if (call && call.function && typeof call.function.name === "string") return call.function.name;
+    }
+    if (Array.isArray(message.content)) {
+      const block = message.content.find((entry) => entry && entry.type === "tool_use" && entry.id === id);
+      if (block && typeof block.name === "string") return block.name;
+    }
+  }
+  return "tool";
+}
+
+/** 「最後のメッセージ」を user の文か tool の結果かに分ける。 */
+function petLastStep(body, protocol) {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const last = messages[messages.length - 1];
+  if (!last || typeof last !== "object") return { kind: "empty" };
+  if (protocol === "openai" && last.role === "tool") {
+    return { kind: "tool", name: petToolName(messages, last.tool_call_id), content: petText(last.content) };
+  }
+  if (protocol === "anthropic" && last.role === "user" && Array.isArray(last.content)) {
+    const result = last.content.find((block) => block && block.type === "tool_result");
+    if (result) {
+      return { kind: "tool", name: petToolName(messages, result.tool_use_id), content: petText(result.content) };
+    }
+  }
+  return { kind: "user", text: petText(last.content) };
+}
+
+/** `{name, arguments}` の配列を、id・JSON 文字列・anthropic 用 input にそろえる。 */
+function petToolSpecs(specs) {
+  return specs.map((entry) => {
+    const name = entry && typeof entry.name === "string" ? entry.name : "unknown_tool";
+    const argumentsJson =
+      entry && typeof entry.arguments === "string" ? entry.arguments : JSON.stringify((entry && entry.arguments) ?? {});
+    let input = {};
+    try {
+      input = JSON.parse(argumentsJson);
+    } catch {
+      input = {};
+    }
+    petCallSeq += 1;
+    return { id: `call_${petCallSeq}`, name, arguments: argumentsJson, input };
+  });
+}
+
+function petOpenAiReply(body, content, toolCalls, finishReason) {
+  return {
+    id: `chatcmpl-stub-${nextId("x")}`,
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model: typeof body.model === "string" ? body.model : "stub-model",
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content, ...(toolCalls ? { tool_calls: toolCalls } : {}) },
+        finish_reason: finishReason,
+      },
+    ],
+    usage: { prompt_tokens: 12, completion_tokens: 7, total_tokens: 19 },
+  };
+}
+
+function petAnthropicReply(body, blocks, stopReason) {
+  return {
+    id: `msg_stub_${nextId("x")}`,
+    type: "message",
+    role: "assistant",
+    model: typeof body.model === "string" ? body.model : "stub-model",
+    content: blocks,
+    stop_reason: stopReason,
+    stop_sequence: null,
+    usage: { input_tokens: 12, output_tokens: 7 },
+  };
+}
+
+/** 最後のメッセージから、この返事を決める。 */
+function petDecide(body, protocol) {
+  const step = petLastStep(body, protocol);
+  if (step.kind === "tool") {
+    return { kind: "text", text: `ツール結果(${step.name}): ${Array.from(step.content).slice(0, 300).join("")}` };
+  }
+  const text = step.kind === "user" ? step.text : "";
+  const tool = /^#tool\s+(\S+)\s*([\s\S]*)$/.exec(text);
+  if (tool) {
+    const args = tool[2].trim().length > 0 ? tool[2].trim() : "{}";
+    return { kind: "tools", tools: petToolSpecs([{ name: tool[1], arguments: args }]) };
+  }
+  const tools = /^#tools\s+([\s\S]*)$/.exec(text);
+  if (tools) {
+    try {
+      const parsed = JSON.parse(tools[1]);
+      if (Array.isArray(parsed)) return { kind: "tools", tools: petToolSpecs(parsed) };
+    } catch {
+      // JSON でない `#tools` は普通の文として返す。
+    }
+  }
+  const slow = /^#slow\s+(\d+)\s*([\s\S]*)$/.exec(text);
+  if (slow) return { kind: "slow", waitMs: Number(slow[1]), text: slow[2] };
+  const error = /^#error\s+(\d{3})$/.exec(text);
+  if (error) return { kind: "error", status: Number(error[1]) };
+  return { kind: "text", text: `了解: ${text}` };
+}
+
+/** `/pet/*` を処理する。処理したら true。 */
+async function handlePet(req, res, pathname, body) {
+  if (pathname === "/pet/__last") {
+    sendJson(res, 200, petLastRequest);
+    return true;
+  }
+
+  const isOpenAiChat = pathname === "/pet/openai/chat/completions";
+  const isAnthropicChat = pathname === "/pet/anthropic/messages";
+  const isOpenAiModels = pathname === "/pet/openai/models";
+  const isAnthropicModels = pathname === "/pet/anthropic/models";
+  if (!isOpenAiChat && !isAnthropicChat && !isOpenAiModels && !isAnthropicModels) return false;
+
+  let parsed = {};
+  try {
+    parsed = body.length > 0 ? JSON.parse(body) : {};
+  } catch {
+    parsed = {};
+  }
+  const key = petApiKey(req.headers);
+  petLastRequest = { path: pathname, headers: req.headers, body: parsed };
+
+  if (key === "bad-key") {
+    sendJson(res, 401, { error: { message: "Incorrect API key provided: bad-key" } });
+    return true;
+  }
+
+  if (isOpenAiModels) {
+    sendJson(res, 200, { data: [{ id: "stub-mini" }, { id: "stub-large" }, { id: "stub-vision" }] });
+    return true;
+  }
+  if (isAnthropicModels) {
+    sendJson(res, 200, { data: [{ id: "stub-claude", display_name: "Stub Claude" }], has_more: false });
+    return true;
+  }
+
+  const protocol = isAnthropicChat ? "anthropic" : "openai";
+  const decision = petDecide(parsed, protocol);
+
+  if (decision.kind === "error") {
+    sendJson(res, decision.status, { error: { message: `bad request for key ${key}` } });
+    return true;
+  }
+  if (decision.kind === "slow") {
+    await new Promise((resolve) => setTimeout(resolve, decision.waitMs));
+    sendJson(
+      res,
+      200,
+      protocol === "anthropic"
+        ? petAnthropicReply(parsed, [{ type: "text", text: decision.text }], "end_turn")
+        : petOpenAiReply(parsed, decision.text, null, "stop"),
+    );
+    return true;
+  }
+  if (decision.kind === "tools") {
+    if (protocol === "anthropic") {
+      sendJson(
+        res,
+        200,
+        petAnthropicReply(
+          parsed,
+          decision.tools.map((call) => ({ type: "tool_use", id: call.id, name: call.name, input: call.input })),
+          "tool_use",
+        ),
+      );
+    } else {
+      sendJson(
+        res,
+        200,
+        petOpenAiReply(
+          parsed,
+          null,
+          decision.tools.map((call) => ({
+            id: call.id,
+            type: "function",
+            function: { name: call.name, arguments: call.arguments },
+          })),
+          "tool_calls",
+        ),
+      );
+    }
+    return true;
+  }
+  sendJson(
+    res,
+    200,
+    protocol === "anthropic"
+      ? petAnthropicReply(parsed, [{ type: "text", text: decision.text }], "end_turn")
+      : petOpenAiReply(parsed, decision.text, null, "stop"),
+  );
+  return true;
+}
+
 async function handle(req, res, url, body) {
   const { pathname, searchParams } = url;
   const method = req.method ?? "GET";
@@ -214,6 +446,7 @@ async function handle(req, res, url, body) {
   }
   if (pathname === "/__reset") {
     requests.length = 0;
+    petLastRequest = null;
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -383,6 +616,13 @@ async function handle(req, res, url, body) {
       html_url: `https://github.com/${owner}/${repo}`,
       permissions: { admin: true, push: true, pull: true },
     });
+    return;
+  }
+
+  // ---- AI ペット中継 ----
+  if (pathname.startsWith("/pet/")) {
+    if (await handlePet(req, res, pathname, body)) return;
+    sendJson(res, 404, { ok: false, error: "stub_not_found", method, path: pathname });
     return;
   }
 

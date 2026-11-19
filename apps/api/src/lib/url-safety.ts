@@ -37,15 +37,40 @@ const PRIVATE_HOSTNAME_PATTERNS: readonly RegExp[] = [
   /^metadata(?:\.|$)/i,
 ];
 
-/** IPv6 のループバック・リンクローカル・ULA・未指定を判定する（ブラケットは除去済み）。 */
+/** IPv6 に埋め込まれた 2 つの 16bit グループを IPv4 のドット表記にする。 */
+function embeddedIpv4(highHex: string, lowHex: string): string {
+  const high = Number.parseInt(highHex, 16);
+  const low = Number.parseInt(lowHex, 16);
+  return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+}
+
+// 埋め込み IPv4 はドット形式（::ffff:127.0.0.1）と 16 進 2 グループ（::ffff:7f00:1）の両方で来る。
+// WHATWG URL は後者へ正規化するため、片方だけを見ると私設 IPv4 がすり抜ける。
+const IPV4_MAPPED_IPV6_RE = /^::ffff:(?:(\d+\.\d+\.\d+\.\d+)|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/;
+const IPV4_COMPATIBLE_IPV6_RE = /^::(?:(\d+\.\d+\.\d+\.\d+)|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/;
+const NAT64_IPV6_RE = /^64:ff9b::(?:(\d+\.\d+\.\d+\.\d+)|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/;
+
+/** 埋め込み IPv4 の一致結果を検査する（1 = ドット形式、2/3 = 16 進 2 グループ）。 */
+function embeddedIpv4IsPrivate(match: RegExpExecArray): boolean {
+  if (match[1]) return isPrivateIpv4(match[1]);
+  return isPrivateIpv4(embeddedIpv4(match[2]!, match[3]!));
+}
+
+/** IPv6 のループバック・リンクローカル・ULA・未指定・埋め込み IPv4 を判定する（ブラケットは除去済み）。 */
 function isPrivateIpv6(host: string): boolean {
   const normalized = host.toLowerCase();
   if (normalized === "::1" || normalized === "::") return true;
   if (/^fe[89ab][0-9a-f]:/.test(normalized)) return true; // fe80::/10
   if (/^f[cd][0-9a-f]{2}:/.test(normalized)) return true; // fc00::/7
-  // IPv4-mapped (::ffff:127.0.0.1) は末尾の IPv4 を再検査する
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(normalized);
-  if (mapped) return isPrivateIpv4(mapped[1]!);
+  // IPv4-mapped（::ffff:127.0.0.1 / ::ffff:7f00:1）
+  const mapped = IPV4_MAPPED_IPV6_RE.exec(normalized);
+  if (mapped) return embeddedIpv4IsPrivate(mapped);
+  // IPv4-compatible（::127.0.0.1 / ::7f00:1）。::1 と :: は上で除外済み。
+  const compatible = IPV4_COMPATIBLE_IPV6_RE.exec(normalized);
+  if (compatible) return embeddedIpv4IsPrivate(compatible);
+  // NAT64 well-known prefix（64:ff9b::/96）
+  const nat64 = NAT64_IPV6_RE.exec(normalized);
+  if (nat64) return embeddedIpv4IsPrivate(nat64);
   return false;
 }
 
