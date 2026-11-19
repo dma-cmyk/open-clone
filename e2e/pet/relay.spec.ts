@@ -14,8 +14,9 @@
 import { randomBytes } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { ALLOWED_ORIGIN, API_BASE, readEnvelope } from "../helpers/api";
-import { fakeDeviceId, unique } from "../helpers/ids";
+import { fakeDeviceId } from "../helpers/ids";
 import { resetStubs, stubUrl } from "../helpers/stubs";
+import { petTestApiKey } from "./helpers";
 
 interface PetChatEnvelope {
   message: {
@@ -93,8 +94,8 @@ function chatBody(overrides: Record<string, unknown> = {}): Record<string, unkno
   };
 }
 
-async function lastStubRequest(): Promise<StubLastRequest> {
-  const response = await fetch(stubUrl("/pet/__last"));
+async function lastStubRequest(key: string): Promise<StubLastRequest> {
+  const response = await fetch(stubUrl(`/pet/__last?key=${encodeURIComponent(key)}`));
   expect(response.ok).toBe(true);
   return (await response.json()) as StubLastRequest;
 }
@@ -105,9 +106,10 @@ test.describe("中継 API", () => {
   });
 
   test("openai: 成功し、system と tools が事業者へ届く", async ({ request }) => {
+    const key = petTestApiKey("openai");
     const device = fakeDeviceId();
     const response = await request.post(`${API_BASE}/v1/pet/chat`, {
-      headers: petHeaders(`sk-e2e-openai-${unique("k")}`, device, nextIp()),
+      headers: petHeaders(key, device, nextIp()),
       data: chatBody(),
     });
     expect(response.status(), await response.text()).toBe(200);
@@ -119,7 +121,7 @@ test.describe("中継 API", () => {
     expect(data?.finishReason).toBe("stop");
     expect(data?.model).toBe("stub-model");
 
-    const last = await lastStubRequest();
+    const last = await lastStubRequest(key);
     expect(last.path).toBe("/pet/openai/chat/completions");
     expect(last.body["system"]).toBeUndefined();
     expect((last.body["messages"] as unknown[])[0]).toEqual({ role: "system", content: "あなたはペットです" });
@@ -130,8 +132,9 @@ test.describe("中継 API", () => {
   });
 
   test("anthropic: 成功し、system は最上位・tools は input_schema", async ({ request }) => {
+    const key = petTestApiKey("anthropic");
     const response = await request.post(`${API_BASE}/v1/pet/chat`, {
-      headers: petHeaders(`sk-e2e-anthropic-${unique("k")}`, fakeDeviceId(), nextIp()),
+      headers: petHeaders(key, fakeDeviceId(), nextIp()),
       data: chatBody({ provider: "anthropic", model: "stub-claude-test", messages: [{ role: "user", content: "おはよう" }] }),
     });
     expect(response.status(), await response.text()).toBe(200);
@@ -141,7 +144,7 @@ test.describe("中継 API", () => {
     expect(data?.finishReason).toBe("stop");
     expect(data?.model).toBe("stub-claude-test");
 
-    const last = await lastStubRequest();
+    const last = await lastStubRequest(key);
     expect(last.path).toBe("/pet/anthropic/messages");
     expect(last.body["system"]).toBe("あなたはペットです");
     expect(last.body["max_tokens"]).toBe(2048);
@@ -152,7 +155,8 @@ test.describe("中継 API", () => {
 
   for (const provider of ["openai", "anthropic"] as const) {
     test(`${provider}: ツール呼び出しの往復`, async ({ request }) => {
-      const headers = petHeaders(`sk-e2e-tool-${unique("k")}`, fakeDeviceId(), nextIp());
+      const key = petTestApiKey("tool");
+      const headers = petHeaders(key, fakeDeviceId(), nextIp());
 
       const first = await request.post(`${API_BASE}/v1/pet/chat`, {
         headers,
@@ -191,7 +195,7 @@ test.describe("中継 API", () => {
       expect(secondData?.message.toolCalls).toEqual([]);
 
       // 中継が tool の往復を事業者の形に直していること。
-      const last = await lastStubRequest();
+      const last = await lastStubRequest(key);
       const messages = last.body["messages"] as Array<Record<string, unknown>>;
       const lastMessage = messages[messages.length - 1]!;
       if (provider === "openai") {
@@ -235,7 +239,7 @@ test.describe("中継 API", () => {
   });
 
   test("事業者のエラー文に載ったキーも応答に出ない（#error）", async ({ request }) => {
-    const key = `sk-e2e-error-${unique("k")}`;
+    const key = petTestApiKey("error");
     const response = await request.post(`${API_BASE}/v1/pet/chat`, {
       headers: petHeaders(key, fakeDeviceId(), nextIp()),
       data: chatBody({ messages: [{ role: "user", content: "#error 400" }] }),
@@ -249,7 +253,7 @@ test.describe("中継 API", () => {
 
   test("custom の http URL は 400", async ({ request }) => {
     const response = await request.post(`${API_BASE}/v1/pet/chat`, {
-      headers: petHeaders(`sk-e2e-custom-${unique("k")}`, fakeDeviceId(), nextIp()),
+      headers: petHeaders(petTestApiKey("custom"), fakeDeviceId(), nextIp()),
       data: chatBody({ provider: "custom", baseUrl: "http://127.0.0.1:8931/pet/openai" }),
     });
     expect(response.status()).toBe(400);
@@ -258,7 +262,7 @@ test.describe("中継 API", () => {
   });
 
   test("回数制限: 1 分 20 回を超えると 429", async ({ request }) => {
-    const headers = petHeaders(`sk-e2e-rate-${unique("k")}`, fakeDeviceId(), nextIp());
+    const headers = petHeaders(petTestApiKey("rate"), fakeDeviceId(), nextIp());
     let limited = false;
     const statuses: number[] = [];
     for (let index = 0; index < 21; index += 1) {
@@ -279,8 +283,9 @@ test.describe("中継 API", () => {
   });
 
   test("モデル一覧: openai は 3 件を id 順で返す", async ({ request }) => {
+    const key = petTestApiKey("models");
     const response = await request.post(`${API_BASE}/v1/pet/models`, {
-      headers: petHeaders(`sk-e2e-models-${unique("k")}`, fakeDeviceId(), nextIp()),
+      headers: petHeaders(key, fakeDeviceId(), nextIp()),
       data: { provider: "openai" },
     });
     expect(response.status(), await response.text()).toBe(200);
@@ -293,13 +298,14 @@ test.describe("中継 API", () => {
       ],
       truncated: false,
     });
-    const last = await lastStubRequest();
+    const last = await lastStubRequest(key);
     expect(last.path).toBe("/pet/openai/models");
   });
 
   test("モデル一覧: anthropic は表示名つきで返す", async ({ request }) => {
+    const key = petTestApiKey("models");
     const response = await request.post(`${API_BASE}/v1/pet/models`, {
-      headers: petHeaders(`sk-e2e-models-${unique("k")}`, fakeDeviceId(), nextIp()),
+      headers: petHeaders(key, fakeDeviceId(), nextIp()),
       data: { provider: "anthropic" },
     });
     expect(response.status(), await response.text()).toBe(200);
@@ -308,7 +314,7 @@ test.describe("中継 API", () => {
       models: [{ id: "stub-claude", label: "Stub Claude" }],
       truncated: false,
     });
-    expect((await lastStubRequest()).path).toBe("/pet/anthropic/models");
+    expect((await lastStubRequest(key)).path).toBe("/pet/anthropic/models");
   });
 
   test("モデル一覧: bad-key は 502 でキーの値が出ない", async ({ request }) => {
@@ -324,7 +330,7 @@ test.describe("中継 API", () => {
 
   test("モデル一覧: custom の http URL は 400", async ({ request }) => {
     const response = await request.post(`${API_BASE}/v1/pet/models`, {
-      headers: petHeaders(`sk-e2e-models-${unique("k")}`, fakeDeviceId(), nextIp()),
+      headers: petHeaders(petTestApiKey("models"), fakeDeviceId(), nextIp()),
       data: { provider: "custom", baseUrl: "http://127.0.0.1:8931/pet/openai" },
     });
     expect(response.status()).toBe(400);

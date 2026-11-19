@@ -42,6 +42,9 @@ regexTarget = "line"
 regexes = [
   '''ownerpass-1234''',
   '''test-owner-key''',
+  # AI ペット中継の伏せ字の単体試験で使う偽の事業者キー（apps/api/test/pet-relay.test.ts）。
+  '''sk-live-abcdef123456''',
+  '''sk-e2e-AbCdEf123456''',
 ]
 
 # ドキュメント中のプレースホルダ（実値ではない）を許可する。

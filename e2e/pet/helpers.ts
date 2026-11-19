@@ -7,6 +7,7 @@
 //   `#slow <ms> <文>` → 待ってから返す / `#error` → 事業者のエラー / tool の結果 → 文章 / それ以外 → 了解: <文>
 // 本物の中継・本物のツールを通した確認は統合後に行う（報告書「統合後に確かめること」）。
 
+import { randomBytes } from "node:crypto";
 import { expect, type APIRequestContext, type BrowserContext, type Page, type Route } from "@playwright/test";
 
 export const API_BASE = process.env.E2E_API_URL ?? "http://127.0.0.1:8940";
@@ -148,7 +149,14 @@ export async function openPet(page: Page): Promise<void> {
   if (await launcher.isVisible()) {
     await launcher.click();
   } else {
-    await header.click();
+    // ヘッダーのボタンはサーバー描画で、ハイドレーション前のクリックは listener が無く
+    // 何も起きない。パネルが出るまで押し直す（開いた後の再クリックで閉じないよう先に確認する）。
+    await expect(async () => {
+      if (await page.getByTestId("pet-panel").isVisible()) return;
+      await header.click();
+      await expect(page.getByTestId("pet-panel")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
+    return;
   }
   await expect(page.getByTestId("pet-panel")).toBeVisible();
 }
@@ -217,6 +225,60 @@ export const PET_SESSIONS = {
 } as const;
 
 export const PET_STUB_BASE = process.env.E2E_STUB_URL ?? "http://127.0.0.1:8971";
+
+/**
+ * 試験ごとに一意な API キー。`/pet/__last?key=` の照合に使う。
+ * `unique()` はプロセス内の連番なので、並列の worker（pc / mobile）が同じミリ秒に
+ * 同じ連番を取ると衝突し得る。プロセスごとの乱数を混ぜて、キー単位の状態を取り違えない。
+ */
+const PET_KEY_PREFIX = randomBytes(4).toString("hex");
+let petKeySeq = 0;
+export function petTestApiKey(label: string): string {
+  petKeySeq += 1;
+  return `sk-e2e-${label}-${PET_KEY_PREFIX}-${petKeySeq}`;
+}
+
+/**
+ * ペット中継の回数制限を試験ごとに分ける。
+ * 中継はセッションを使わず（キーと本文だけで動く）、制限のキーはログイン時がアカウント、
+ * 未ログイン時が端末＋IP。並列試験では全ブラウザの IP が 127.0.0.1 になり、同じアカウント
+ * （seed の owner 等）も共有されるため、そのままだと 20 回/分の窓を取り合う。
+ *
+ * 中継の要求だけ oc_sess を外して未ログイン扱いにし、試験ごとに一意な cf-connecting-ip を付ける
+ * （画面の他の API は本物のセッションのまま。ツールの権限判定には影響しない）。
+ */
+const PET_RATE_IP_PREFIX = randomBytes(2);
+const relayRateIsolated = new WeakSet<Page>();
+let petRateIpSeq = 0;
+export async function isolatePetRelayRate(page: Page): Promise<void> {
+  if (relayRateIsolated.has(page)) return;
+  relayRateIsolated.add(page);
+  petRateIpSeq += 1;
+  const [hi = 1, lo = 1] = PET_RATE_IP_PREFIX;
+  const ip = `198.18.${hi}.${(lo + petRateIpSeq) % 256}`;
+  // ブラウザの Cookie（セッション）は中継に不要なので、この要求だけテストプロセスから
+  // 送り直す。ブラウザの Cookie を route.continue で確実に外す方法が無く、ログイン中の
+  // アカウント窓（20 回/分）を並列試験で取り合ってしまうため。UI が作った本文・キーは
+  // そのまま本物の中継 API へ渡し、応答もそのまま返す（中継・ツールの経路は本物のまま）。
+  await page.route("**/api/v1/pet/chat", async (route) => {
+    const request = route.request();
+    const response = await fetch(`${API_BASE}/v1/pet/chat`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: ALLOWED_ORIGIN,
+        "cf-connecting-ip": ip,
+        "x-pet-api-key": request.headers()["x-pet-api-key"] ?? "",
+      },
+      body: request.postData() ?? "",
+    });
+    await route.fulfill({
+      status: response.status,
+      contentType: response.headers.get("content-type") ?? "application/json",
+      body: await response.text(),
+    });
+  });
+}
 
 export function petApiUrl(path: string): string {
   return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
@@ -364,9 +426,12 @@ export async function setPetBoardStaff(
   expect(response.status(), await response.text()).toBe(200);
 }
 
-/** スタブが最後に受けた中継要求の本文（`/pet/__last`）。 */
-export async function petLastRequest(): Promise<Record<string, unknown> | null> {
-  const response = await fetch(`${PET_STUB_BASE}/pet/__last`);
+/**
+ * スタブがその API キーで最後に受けた中継要求の本文（`/pet/__last?key=`）。
+ * `__last` はキーごとに持つので、並列の試験同士で取り合わない。
+ */
+export async function petLastRequest(apiKey: string): Promise<Record<string, unknown> | null> {
+  const response = await fetch(`${PET_STUB_BASE}/pet/__last?key=${encodeURIComponent(apiKey)}`);
   if (!response.ok) return null;
   const parsed: unknown = await response.json();
   if (typeof parsed !== "object" || parsed === null || !("body" in parsed)) return null;
@@ -374,9 +439,9 @@ export async function petLastRequest(): Promise<Record<string, unknown> | null> 
   return typeof body === "object" && body !== null ? (body as Record<string, unknown>) : null;
 }
 
-/** スタブが最後に受けた要求の最後のメッセージ本文（tool の結果はここに入る）。 */
-export async function petLastMessageText(): Promise<string> {
-  const body = await petLastRequest();
+/** スタブがその API キーで最後に受けた要求の最後のメッセージ本文（tool の結果はここに入る）。 */
+export async function petLastMessageText(apiKey: string): Promise<string> {
+  const body = await petLastRequest(apiKey);
   const messages = Array.isArray(body?.["messages"]) ? body.messages : [];
   const last = messages[messages.length - 1];
   if (typeof last !== "object" || last === null) return "";
@@ -402,7 +467,10 @@ export async function stubTurnstile(page: Page, options: { hold?: boolean } = {}
     let seq = 0;
     const issue = (entry: WidgetEntry) => {
       seq += 1;
-      entry.callback(`pet-token-${Date.now().toString(36)}-${seq}`);
+      // 並列のページが同じミリ秒に同じ連番を発行しても衝突しないよう乱数を混ぜる
+      // （siteverify スタブはトークンを使い切りにするため、衝突すると片方が失敗する）。
+      const nonce = Math.random().toString(36).slice(2, 10);
+      entry.callback(`pet-token-${Date.now().toString(36)}-${nonce}-${seq}`);
     };
     const globals = window as unknown as {
       turnstile?: {

@@ -48,8 +48,14 @@ const CORS_HEADERS = {
   "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
 };
 
-/** AI ペット中継の最後の要求（`GET /pet/__last` が返す）。 */
-let petLastRequest = null;
+/**
+ * AI ペット中継の最後の要求（`GET /pet/__last?key=<キー>` が返す）。
+ * 並列試験（pc / mobile、workers=2）で `__last` を取り合わないよう、**API キーごと**に持つ。
+ * キーは試験ごとに一意なので、`/__reset` では消さない（他の worker の read を消してしまう）。
+ */
+const petLastRequests = new Map();
+/** テストが増えてもメモリを食い過ぎないための上限（古いキーから捨てる）。 */
+const MAX_PET_LAST_REQUESTS = 500;
 /** ツール呼び出し id の連番（`call_1`, `call_2`, …）。 */
 let petCallSeq = 0;
 
@@ -342,9 +348,15 @@ function petDecide(body, protocol) {
 }
 
 /** `/pet/*` を処理する。処理したら true。 */
-async function handlePet(req, res, pathname, body) {
+async function handlePet(req, res, url, body) {
+  const { pathname, searchParams } = url;
   if (pathname === "/pet/__last") {
-    sendJson(res, 200, petLastRequest);
+    const key = searchParams.get("key");
+    if (key === null || key.length === 0) {
+      sendJson(res, 400, { ok: false, error: "key_required" });
+      return true;
+    }
+    sendJson(res, 200, petLastRequests.get(key) ?? null);
     return true;
   }
 
@@ -361,7 +373,11 @@ async function handlePet(req, res, pathname, body) {
     parsed = {};
   }
   const key = petApiKey(req.headers);
-  petLastRequest = { path: pathname, headers: req.headers, body: parsed };
+  petLastRequests.set(key, { path: pathname, headers: req.headers, body: parsed });
+  if (petLastRequests.size > MAX_PET_LAST_REQUESTS) {
+    const oldest = petLastRequests.keys().next().value;
+    if (oldest !== undefined) petLastRequests.delete(oldest);
+  }
 
   if (key === "bad-key") {
     sendJson(res, 401, { error: { message: "Incorrect API key provided: bad-key" } });
@@ -445,8 +461,8 @@ async function handle(req, res, url, body) {
     return;
   }
   if (pathname === "/__reset") {
+    // ペットの `__last` はキーごとに一意なので消さない（並列 worker の read を消さない）。
     requests.length = 0;
-    petLastRequest = null;
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -621,7 +637,7 @@ async function handle(req, res, url, body) {
 
   // ---- AI ペット中継 ----
   if (pathname.startsWith("/pet/")) {
-    if (await handlePet(req, res, pathname, body)) return;
+    if (await handlePet(req, res, url, body)) return;
     sendJson(res, 404, { ok: false, error: "stub_not_found", method, path: pathname });
     return;
   }

@@ -8,10 +8,12 @@ import {
   configurePet,
   createPetBoard,
   createPetThread,
+  isolatePetRelayRate,
   openPet,
   petApiHeaders,
   petLastMessageText,
   petLastRequest,
+  petTestApiKey,
   replyPetThread,
   sendPetTool,
   stubTurnstile,
@@ -20,13 +22,19 @@ import {
   PET_SESSIONS,
 } from "./helpers";
 
-/** ペットを開いて会話できる状態にする（設定は 1 回だけ）。 */
-async function openPetChat(page: Page, context: BrowserContext, cookie: string | null): Promise<void> {
+/** ペットを開いて会話できる状態にする（設定は 1 回だけ。キーは試験ごとに一意）。 */
+async function openPetChat(
+  page: Page,
+  context: BrowserContext,
+  cookie: string | null,
+  apiKey: string,
+): Promise<void> {
+  await isolatePetRelayRate(page);
   await stubTurnstile(page);
   await usePetSession(context, cookie);
   await openPet(page);
   if ((await page.getByTestId("pet-provider").count()) > 0) {
-    await configurePet(page, { model: "stub-model", apiKey: "sk-test" });
+    await configurePet(page, { model: "stub-model", apiKey });
   }
   await expect(page.getByTestId("pet-input")).toBeVisible();
 }
@@ -60,11 +68,12 @@ async function createPlugin(request: APIRequestContext, name: string): Promise<s
 
 test.describe("ペットのツール（読み取り・移動・プラグイン・通報）", () => {
   test("add_my_plugin_version はカードの版と実際に付いた版が一致する", async ({ page, context, request }) => {
+    const apiKey = petTestApiKey("tools");
     const board = await createPetBoard(request);
     const thread = await createPetThread(request, board.slug);
     const pluginId = await createPlugin(request, `pet-ver-${Date.now().toString(36)}`.slice(0, 40));
     await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
-    await openPetChat(page, context, PET_SESSIONS.owner);
+    await openPetChat(page, context, PET_SESSIONS.owner, apiKey);
 
     await sendPetTool(page, "add_my_plugin_version", {
       pluginId,
@@ -89,10 +98,11 @@ test.describe("ペットのツール（読み取り・移動・プラグイン�
   });
 
   test("open_page はシェル内・フルページの移動後も会話を残し、外部 URL を拒む", async ({ page, context, request }) => {
+    const apiKey = petTestApiKey("tools");
     const board = await createPetBoard(request);
     const thread = await createPetThread(request, board.slug);
     await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
-    await openPetChat(page, context, null);
+    await openPetChat(page, context, null, apiKey);
 
     // 会話の目印になる返事を作る。
     await page.getByTestId("pet-input").fill("こんにちは");
@@ -123,15 +133,16 @@ test.describe("ペットのツール（読み取り・移動・プラグイン�
     await page.getByTestId("pet-input").fill("どうしたの？");
     await page.getByTestId("pet-send").click();
     await waitPetIdle(page);
-    const lastRequest = await petLastRequest();
+    const lastRequest = await petLastRequest(apiKey);
     expect(JSON.stringify(lastRequest?.messages ?? [])).toContain("INVALID_ARGS");
   });
 
   test("open_plugin_editor は下書きが入った状態でエディタを開く", async ({ page, context, request }) => {
+    const apiKey = petTestApiKey("tools");
     const board = await createPetBoard(request);
     const thread = await createPetThread(request, board.slug);
     await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
-    await openPetChat(page, context, PET_SESSIONS.owner);
+    await openPetChat(page, context, PET_SESSIONS.owner, apiKey);
 
     const name = `pet-draft-${Date.now().toString(36)}`.slice(0, 40);
     await sendPetTool(page, "open_plugin_editor", {
@@ -156,16 +167,17 @@ test.describe("ペットのツール（読み取り・移動・プラグイン�
   });
 
   test("read_help は節の一覧と本文（#pet 節を含む）を返す", async ({ page, context, request }) => {
+    const apiKey = petTestApiKey("tools");
     const board = await createPetBoard(request);
     const thread = await createPetThread(request, board.slug);
     await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
-    await openPetChat(page, context, null);
+    await openPetChat(page, context, null, apiKey);
 
     // 節の一覧（ツール結果はスタブに届いた JSON で確かめる）。
     await sendPetTool(page, "read_help", {});
     await expect(page.getByTestId("pet-messages")).toContainText("ツール結果(read_help)");
     await waitPetIdle(page);
-    const list = await petLastMessageText();
+    const list = await petLastMessageText(apiKey);
     expect(list).toContain('"id":"basics"');
     expect(list).toContain('"id":"pet"');
 
@@ -173,12 +185,13 @@ test.describe("ペットのツール（読み取り・移動・プラグイン�
     await sendPetTool(page, "read_help", { section: "pet" });
     await expect(page.getByTestId("pet-tool-line").filter({ hasText: "完了" })).toHaveCount(2);
     await waitPetIdle(page);
-    const section = await petLastMessageText();
+    const section = await petLastMessageText(apiKey);
     expect(section).toContain('"id":"pet"');
     expect(section).toContain("ペット");
   });
 
   test("handle_report は処理済みの通報ではカードを出さない", async ({ page, context, request }) => {
+    const apiKey = petTestApiKey("tools");
     const board = await createPetBoard(request);
     const thread = await createPetThread(request, board.slug);
     const target = await replyPetThread(request, thread.threadId, `通報の対象レス ${Date.now()}`, PET_SESSIONS.user);
@@ -199,7 +212,7 @@ test.describe("ペットのツール（読み取り・移動・プラグイン�
     expect(handled.status(), await handled.text()).toBe(200);
 
     await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
-    await openPetChat(page, context, PET_SESSIONS.owner);
+    await openPetChat(page, context, PET_SESSIONS.owner, apiKey);
     await sendPetTool(page, "handle_report", { reportId: String(reportId), action: "delete" });
 
     const failed = page.getByTestId("pet-tool-line").filter({ hasText: "できませんでした" });
@@ -207,6 +220,6 @@ test.describe("ペットのツール（読み取り・移動・プラグイン�
     await expect(failed).toContainText("処理済み");
     await expect(page.getByTestId("pet-confirm-card")).toHaveCount(0);
     await waitPetIdle(page);
-    expect(await petLastMessageText()).toContain("ALREADY_HANDLED");
+    expect(await petLastMessageText(apiKey)).toContain("ALREADY_HANDLED");
   });
 });

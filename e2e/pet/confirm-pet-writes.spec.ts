@@ -5,13 +5,16 @@
 
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { ALLOWED_ORIGIN, apiUrl } from "../helpers/api";
+import { fakeDeviceId } from "../helpers/ids";
 import {
   configurePet,
   createPetBoard,
   createPetThread,
+  isolatePetRelayRate,
   openPet,
   petCardDetail,
   petLastMessageText,
+  petTestApiKey,
   pinDeviceCookie,
   releaseTurnstile,
   replyPetThread,
@@ -33,24 +36,26 @@ async function shot(page: Page, name: string): Promise<void> {
 async function openPetChat(
   page: Page,
   context: BrowserContext,
-  options: { cookie: string | null; holdTurnstile?: boolean },
+  options: { cookie: string | null; holdTurnstile?: boolean; apiKey: string },
 ): Promise<void> {
+  await isolatePetRelayRate(page);
   await stubTurnstile(page, { hold: options.holdTurnstile ?? false });
   await usePetSession(context, options.cookie);
   await page.reload();
   await openPet(page);
   if ((await page.getByTestId("pet-provider").count()) > 0) {
-    await configurePet(page, { model: "stub-model", apiKey: "sk-test" });
+    await configurePet(page, { model: "stub-model", apiKey: options.apiKey });
   }
   await expect(page.getByTestId("pet-input")).toBeVisible();
 }
 
 test.describe("ペットの確認カード（書き込み）", () => {
   test("承認するとカードの本文どおりに書き込まれ、スレに出る", async ({ page, context, request }) => {
+    const apiKey = petTestApiKey("confirm");
     const board = await createPetBoard(request);
     const thread = await createPetThread(request, board.slug);
     await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
-    await openPetChat(page, context, { cookie: null });
+    await openPetChat(page, context, { cookie: null, apiKey });
 
     const body = `カード承認の本文 ${Date.now()}`;
     await sendPetTool(page, "create_post", { threadId: thread.threadId, body });
@@ -73,10 +78,11 @@ test.describe("ペットの確認カード（書き込み）", () => {
   });
 
   test("取り消すと書き込まれず、AI に CANCELED が返る", async ({ page, context, request }) => {
+    const apiKey = petTestApiKey("confirm");
     const board = await createPetBoard(request);
     const thread = await createPetThread(request, board.slug);
     await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
-    await openPetChat(page, context, { cookie: null });
+    await openPetChat(page, context, { cookie: null, apiKey });
 
     const body = `取り消す本文 ${Date.now()}`;
     await sendPetTool(page, "create_post", { threadId: thread.threadId, body });
@@ -88,18 +94,19 @@ test.describe("ペットの確認カード（書き込み）", () => {
     // スタブにツール結果として届いた内容（= AI が見た内容）に CANCELED がある。
     await expect(page.getByTestId("pet-messages")).toContainText("CANCELED");
     await waitPetIdle(page);
-    expect(await petLastMessageText()).toContain('"code":"CANCELED"');
+    expect(await petLastMessageText(apiKey)).toContain('"code":"CANCELED"');
 
     await page.reload();
     await expect(page.locator(".oc-post-main").filter({ hasText: body })).toHaveCount(0);
   });
 
   test("always 板ではログイン済みでも Turnstile が出て、通るまで実行できない", async ({ page, context, request }) => {
+    const apiKey = petTestApiKey("confirm");
     const board = await createPetBoard(request, { turnstile: "always" });
     const thread = await createPetThread(request, board.slug);
     await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
     // トークンをすぐには発行しない（通るまで押せないことを見る）。
-    await openPetChat(page, context, { cookie: PET_SESSIONS.owner, holdTurnstile: true });
+    await openPetChat(page, context, { cookie: PET_SESSIONS.owner, holdTurnstile: true, apiKey });
 
     const body = `ターンスタイルの本文 ${Date.now()}`;
     await sendPetTool(page, "create_post", { threadId: thread.threadId, body });
@@ -119,16 +126,13 @@ test.describe("ペットの確認カード（書き込み）", () => {
   });
 
   test("30 分の通過記録がある板では Turnstile を出さない", async ({ page, context, request }) => {
+    const apiKey = petTestApiKey("confirm");
     const board = await createPetBoard(request, { turnstile: "anonymous", turnstilePassMinutes: 30 });
     const thread = await createPetThread(request, board.slug);
-    // 端末クッキー（oc_did）をブラウザに持たせるため、まずスレ画面を開く。
-    await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
-    // 画面の API 呼び出しの応答で oc_did が付く（読み込み直後に問い合わせるので少し待つ）。
-    await expect
-      .poll(async () => (await context.cookies()).find((cookie) => cookie.name === "oc_did")?.value ?? "")
-      .not.toBe("");
-    const did = (await context.cookies()).find((cookie) => cookie.name === "oc_did")?.value ?? "";
-    expect(did, "oc_did クッキーが無い").not.toBe("");
+    // 端末クッキーを先に固定してから画面を開く。初回読み込みでは複数の API が oc_did を
+    // 発行し合うため、後から取得した値に固定すると、パスを作った端末と画面の端末がずれ得る。
+    const did = fakeDeviceId();
+    await pinDeviceCookie(context, did);
     // 同じ端末として 1 回投稿し、板の 30 分パスを作る（画面の投稿と同じ経路・同じ検証）。
     const seeded = await request.post(apiUrl(`/v1/threads/${thread.threadId}/posts`), {
       headers: {
@@ -141,12 +145,8 @@ test.describe("ペットの確認カード（書き込み）", () => {
     });
     expect(seeded.status(), await seeded.text()).toBe(201);
 
-    // 初回読み込みでは複数の API が端末 ID を発行して競合するため、パスを作った値に固定してから読み直す。
-    await pinDeviceCookie(context, did);
-    // 画面を読み直すと投稿欄が通過状態を取り直す（板ごとの 30 分パス）。
-    await page.reload();
-    await expect(page.getByTestId("pet-launcher")).toBeVisible();
-    await openPetChat(page, context, { cookie: null });
+    await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
+    await openPetChat(page, context, { cookie: null, apiKey });
 
     const body = `通過記録ありの本文 ${Date.now()}`;
     await sendPetTool(page, "create_post", { threadId: thread.threadId, body });
@@ -165,13 +165,14 @@ test.describe("ペットの確認カード（書き込み）", () => {
     context,
     request,
   }) => {
+    const apiKey = petTestApiKey("confirm");
     const board = await createPetBoard(request);
     const thread = await createPetThread(request, board.slug);
     const target = await replyPetThread(request, thread.threadId, `非表示にする本文 ${Date.now()}`, PET_SESSIONS.user);
 
     // 板スタッフ（サイト管理者）として非表示にする。
     await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
-    await openPetChat(page, context, { cookie: PET_SESSIONS.owner });
+    await openPetChat(page, context, { cookie: PET_SESSIONS.owner, apiKey });
     await sendPetTool(page, "hide_post", { postId: target.id, threadId: thread.threadId });
     const card = page.getByTestId("pet-confirm-card");
     await expect(card).toBeVisible();
@@ -185,7 +186,7 @@ test.describe("ペットの確認カード（書き込み）", () => {
     // 権限の無い利用者（板スタッフでない）は、サーバーの拒否がそのまま返る。
     const other = await replyPetThread(request, thread.threadId, `権限なしで消そうとする本文 ${Date.now()}`);
     await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
-    await openPetChat(page, context, { cookie: PET_SESSIONS.user });
+    await openPetChat(page, context, { cookie: PET_SESSIONS.user, apiKey });
     await sendPetTool(page, "hide_post", { postId: other.id, threadId: thread.threadId });
     await expect(page.getByTestId("pet-confirm-card")).toBeVisible();
     await page.getByTestId("pet-confirm-run").click();
@@ -193,7 +194,7 @@ test.describe("ペットの確認カード（書き込み）", () => {
     await expect(failed).toBeVisible();
     await expect(failed).toContainText("板スタッフ権限");
     await waitPetIdle(page);
-    expect(await petLastMessageText()).toContain('"code":"FORBIDDEN"');
+    expect(await petLastMessageText(apiKey)).toContain('"code":"FORBIDDEN"');
   });
 
   test("edit_my_post は always 板で Turnstile を出し、4096 バイトを超える本文はカードを出さない", async ({
@@ -201,11 +202,12 @@ test.describe("ペットの確認カード（書き込み）", () => {
     context,
     request,
   }) => {
+    const apiKey = petTestApiKey("confirm");
     const board = await createPetBoard(request, { turnstile: "always" });
     const thread = await createPetThread(request, board.slug);
     const mine = await replyPetThread(request, thread.threadId, `編集する自分のレス ${Date.now()}`);
     await page.goto(`/b/${board.slug}/t/${thread.threadId}?r=all`);
-    await openPetChat(page, context, { cookie: PET_SESSIONS.owner, holdTurnstile: true });
+    await openPetChat(page, context, { cookie: PET_SESSIONS.owner, holdTurnstile: true, apiKey });
 
     await sendPetTool(page, "edit_my_post", { postId: mine.id, threadId: thread.threadId, body: "直した本文" });
     const card = page.getByTestId("pet-confirm-card");
