@@ -1,7 +1,9 @@
 // 今見ている画面の情報（パス・題名・板・スレ・選択中の文字）を返すツール。
 
-import { parseRoute } from "@/app/_shell/router";
+import { z } from "zod";
+import { parseRoute } from "../../../app/_shell/router";
 import type { PetPageContext, PetReadTool } from "../contract";
+import { toolParameters } from "./args";
 
 const SELECTION_MAX_CHARS = 2000;
 
@@ -20,7 +22,7 @@ export const getPageContextTool: PetReadTool = {
   label: "今の画面を確認しています",
   description:
     "利用者が今開いている画面のパス・題名・板の slug・スレ番号・選択中の文字を返す。「この板」「このスレ」「ここ」と言われたら最初に呼ぶ。",
-  parameters: { type: "object", properties: {}, additionalProperties: false },
+  parameters: toolParameters(z.object({}).strict()),
   kind: "read",
   async run(_args, ctx) {
     return { ok: true, data: ctx.page };
