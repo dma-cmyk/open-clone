@@ -7,7 +7,7 @@
 //   `#slow <ms> <文>` → 待ってから返す / `#error` → 事業者のエラー / tool の結果 → 文章 / それ以外 → 了解: <文>
 // 本物の中継・本物のツールを通した確認は統合後に行う（報告書「統合後に確かめること」）。
 
-import { expect, type APIRequestContext, type Page, type Route } from "@playwright/test";
+import { expect, type APIRequestContext, type BrowserContext, type Page, type Route } from "@playwright/test";
 
 export const API_BASE = process.env.E2E_API_URL ?? "http://127.0.0.1:8940";
 export const ALLOWED_ORIGIN = process.env.E2E_ALLOWED_ORIGIN ?? "http://localhost:3420";
@@ -202,4 +202,277 @@ export async function seedBoardAndThread(
   const threadId = envelope.data?.threadId;
   if (!threadId) throw new Error("スレ作成の応答に threadId がありません");
   return { slug, title, threadId };
+}
+
+// ─── 統合後の試験（本物の中継・本物のツールを通す）用 ─────────────────────────
+//
+// 中継は `page.route` を使わず、本物の `POST /api/v1/pet/chat` を通す。事業者は
+// e2e スタブ（`scripts/stub-server.mjs` の `#tool <name> <JSON>`）で、結果は `/pet/__last` で読む。
+
+/** seed の固定セッション（`e2e/fixtures/seed.sql`）。 */
+export const PET_SESSIONS = {
+  owner: "e2e-owner-session-token",
+  user: "e2e-user-session-token",
+  moderator: "e2e-tour-moderator-session-token",
+} as const;
+
+export const PET_STUB_BASE = process.env.E2E_STUB_URL ?? "http://127.0.0.1:8971";
+
+export function petApiUrl(path: string): string {
+  return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+/** API 直叩きのヘッダー（`cookie` 省略で未ログイン）。 */
+export function petApiHeaders(cookie?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    Origin: ALLOWED_ORIGIN,
+    "content-type": "application/json",
+    "x-turnstile-token": "1x00000000000000000000AA",
+  };
+  if (cookie) headers["cookie"] = `oc_sess=${cookie}`;
+  return headers;
+}
+
+/** 追加するクッキーの型（`addCookies` の引数の要素）。 */
+type CookieToAdd = Parameters<BrowserContext["addCookies"]>[0][number];
+
+/** ブラウザのログイン状態を差し替える（`null` で未ログイン）。端末クッキー（oc_did）は残す。 */
+export async function usePetSession(context: BrowserContext, token: string | null): Promise<void> {
+  // 端末クッキーまで消すと「同じ端末」の前提（Turnstile の 30 分パス）が崩れるため、
+  // oc_sess 以外のクッキーはそのまま戻す（`clearCookies({ name })` の名前指定が効かない版がある）。
+  const host = new URL(process.env.E2E_WEB_URL ?? "http://localhost:3450").hostname;
+  const existing = await context.cookies();
+  await context.clearCookies();
+  const keep: CookieToAdd[] = existing
+    .filter((cookie) => cookie.name !== "oc_sess")
+    .map((cookie) => ({
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      httpOnly: cookie.httpOnly,
+      sameSite: cookie.sameSite,
+      ...(cookie.expires > 0 ? { expires: cookie.expires } : {}),
+    }));
+  if (token) {
+    keep.push({ name: "oc_sess", value: token, domain: host, path: "/", httpOnly: true, sameSite: "Lax" });
+  }
+  if (keep.length > 0) await context.addCookies(keep);
+}
+
+/**
+ * 端末クッキー（oc_did）を指定の値に固定する。
+ * 初回読み込みでは複数の API 呼び出しが並び、それぞれが端末 ID を発行して最後の応答が勝つ。
+ * 通過記録（30 分パス）を作ったあとは、同じ値に固定してから操作する。
+ */
+export async function pinDeviceCookie(context: BrowserContext, deviceId: string): Promise<void> {
+  const host = new URL(process.env.E2E_WEB_URL ?? "http://localhost:3450").hostname;
+  const existing = await context.cookies();
+  await context.clearCookies();
+  const keep: CookieToAdd[] = existing
+    .filter((cookie) => cookie.name !== "oc_did")
+    .map((cookie) => ({
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      httpOnly: cookie.httpOnly,
+      sameSite: cookie.sameSite,
+      ...(cookie.expires > 0 ? { expires: cookie.expires } : {}),
+    }));
+  keep.push({ name: "oc_did", value: deviceId, domain: host, path: "/", httpOnly: true, sameSite: "Lax" });
+  await context.addCookies(keep);
+}
+
+/** 板を作る（既定は Turnstile off）。`settings` でポリシーを変える。 */
+export async function createPetBoard(
+  request: APIRequestContext,
+  options: { turnstile?: "off" | "anonymous" | "always"; turnstilePassMinutes?: number } = {},
+): Promise<{ slug: string; name: string }> {
+  const suffix = `${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`.slice(-8);
+  const slug = `pet-tools-${suffix}`;
+  const name = `ペットツール試験板 ${suffix}`;
+  const response = await request.post(petApiUrl("/v1/boards"), {
+    headers: petApiHeaders(PET_SESSIONS.owner),
+    data: {
+      slug,
+      name,
+      category: "E2E",
+      description: "AI ペットのツール試験用",
+      settings: {
+        turnstile: options.turnstile ?? "off",
+        turnstilePassMinutes: options.turnstilePassMinutes ?? 30,
+        cooldownSeconds: 0,
+      },
+    },
+  });
+  expect(response.status(), await response.text()).toBe(201);
+  return { slug, name };
+}
+
+export async function createPetThread(
+  request: APIRequestContext,
+  slug: string,
+  options: { body?: string; cookie?: string } = {},
+): Promise<{ threadId: number; title: string }> {
+  const title = `ペットツール試験スレ ${Date.now()}`;
+  const response = await request.post(petApiUrl(`/v1/boards/${slug}/threads`), {
+    headers: petApiHeaders(options.cookie ?? PET_SESSIONS.owner),
+    data: {
+      title,
+      body: options.body ?? "1げっと\nAI ペットのツール試験用のスレです。",
+      // スレ立ては本文の `turnstileToken` だけを見る（ヘッダーは読まれない）。
+      turnstileToken: "1x00000000000000000000AA",
+    },
+  });
+  expect(response.status(), await response.text()).toBe(201);
+  const envelope = (await response.json()) as { ok: boolean; data?: { threadId?: number } };
+  const threadId = envelope.data?.threadId;
+  if (!threadId) throw new Error("スレ作成の応答に threadId がありません");
+  return { threadId, title };
+}
+
+/** レスを 1 つ足す（本文を返す）。 */
+export async function replyPetThread(
+  request: APIRequestContext,
+  threadId: number,
+  body: string,
+  cookie: string = PET_SESSIONS.owner,
+): Promise<{ id: number; num: number }> {
+  const response = await request.post(petApiUrl(`/v1/threads/${threadId}/posts`), {
+    headers: petApiHeaders(cookie),
+    data: { body, turnstileToken: "1x00000000000000000000AA" },
+  });
+  expect(response.status(), await response.text()).toBe(201);
+  const envelope = (await response.json()) as { ok: boolean; data?: { post?: { id: number; num: number } } };
+  const post = envelope.data?.post;
+  if (!post) throw new Error("レス作成の応答に post がありません");
+  return post;
+}
+
+/** 板のスタッフにする（`level` は admin / deputy / moderator）。 */
+export async function setPetBoardStaff(
+  request: APIRequestContext,
+  slug: string,
+  accountName: string,
+  level: "admin" | "deputy" | "moderator",
+): Promise<void> {
+  const response = await request.post(petApiUrl(`/v1/boards/${slug}/staff`), {
+    headers: petApiHeaders(PET_SESSIONS.owner),
+    data: { accountName, level },
+  });
+  expect(response.status(), await response.text()).toBe(200);
+}
+
+/** スタブが最後に受けた中継要求の本文（`/pet/__last`）。 */
+export async function petLastRequest(): Promise<Record<string, unknown> | null> {
+  const response = await fetch(`${PET_STUB_BASE}/pet/__last`);
+  if (!response.ok) return null;
+  const parsed: unknown = await response.json();
+  if (typeof parsed !== "object" || parsed === null || !("body" in parsed)) return null;
+  const body = parsed.body;
+  return typeof body === "object" && body !== null ? (body as Record<string, unknown>) : null;
+}
+
+/** スタブが最後に受けた要求の最後のメッセージ本文（tool の結果はここに入る）。 */
+export async function petLastMessageText(): Promise<string> {
+  const body = await petLastRequest();
+  const messages = Array.isArray(body?.["messages"]) ? body.messages : [];
+  const last = messages[messages.length - 1];
+  if (typeof last !== "object" || last === null) return "";
+  const content = Reflect.get(last, "content");
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => (typeof block === "object" && block !== null && typeof Reflect.get(block, "text") === "string" ? String(Reflect.get(block, "text")) : ""))
+      .join("");
+  }
+  return "";
+}
+
+/** 画面の Turnstile をスタブに差し替える（`window.turnstile` を先に置く）。`hold: true` で解放まで発行しない。 */
+export async function stubTurnstile(page: Page, options: { hold?: boolean } = {}): Promise<void> {
+  await page.addInitScript((initialHold: boolean) => {
+    interface WidgetEntry {
+      id: string;
+      callback: (token: string) => void;
+    }
+    const entries: WidgetEntry[] = [];
+    const state = { hold: initialHold };
+    let seq = 0;
+    const issue = (entry: WidgetEntry) => {
+      seq += 1;
+      entry.callback(`pet-token-${Date.now().toString(36)}-${seq}`);
+    };
+    const globals = window as unknown as {
+      turnstile?: {
+        render: (element: HTMLElement, options: { callback: (token: string) => void }) => string;
+        remove: (id: string) => void;
+        reset: (id: string) => void;
+      };
+      __petTurnstile?: {
+        renders: () => number;
+        held: () => boolean;
+        release: () => void;
+      };
+    };
+    globals.turnstile = {
+      render(element, opts) {
+        seq += 1;
+        const id = `pet-widget-${seq}`;
+        const entry = { id, callback: opts.callback };
+        entries.push(entry);
+        const box = document.createElement("div");
+        box.className = "pet-turnstile-stub";
+        box.textContent = "stub-turnstile";
+        element.appendChild(box);
+        if (!state.hold) window.setTimeout(() => issue(entry), 0);
+        return id;
+      },
+      remove(id) {
+        const index = entries.findIndex((entry) => entry.id === id);
+        if (index >= 0) entries.splice(index, 1);
+      },
+      reset(id) {
+        const entry = entries.find((candidate) => candidate.id === id);
+        if (entry) window.setTimeout(() => issue(entry), 0);
+      },
+    };
+    globals.__petTurnstile = {
+      renders: () => entries.length,
+      held: () => state.hold,
+      release() {
+        state.hold = false;
+        for (const entry of entries) window.setTimeout(() => issue(entry), 0);
+      },
+    };
+  }, options.hold ?? false);
+}
+
+/** `stubTurnstile({ hold: true })` のトークンを解放する。 */
+export async function releaseTurnstile(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const globals = window as unknown as { __petTurnstile?: { release: () => void } };
+    globals.__petTurnstile?.release();
+  });
+}
+
+/** ツールを 1 つ呼ばせる（スタブの `#tool`）。 */
+export async function sendPetTool(page: Page, name: string, args: Record<string, unknown>): Promise<void> {
+  await waitPetIdle(page);
+  await sendPetMessage(page, `#tool ${name} ${JSON.stringify(args)}`);
+}
+
+/** 会話が終わる（送信ボタンが「送る」に戻る）まで待つ。実行中に次の送信をすると「止める」を押してしまう。 */
+export async function waitPetIdle(page: Page): Promise<void> {
+  await expect(page.getByTestId("pet-send")).toHaveText("送る");
+}
+
+/** 確認カードの「本文」欄（`details` の label が「本文」の dd）。 */
+export function petCardDetail(page: Page, label: string) {
+  return page
+    .getByTestId("pet-confirm-card")
+    .locator(".oc-pet-confirm-row")
+    .filter({ has: page.locator(`dt:text-is("${label}")`) })
+    .locator("dd");
 }

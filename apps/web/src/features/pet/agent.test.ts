@@ -11,6 +11,7 @@ import {
   runPetTurn,
   sanitizeMessages,
   toolResultContent,
+  type PetTurnEvent,
 } from "./agent";
 import type {
   PetApproval,
@@ -192,12 +193,98 @@ describe("runPetTurn", () => {
     });
 
     expect(order).toEqual(["read", "navigate:{\"path\":\"/b/news\"}", "ctx.navigate"]);
-    // 移動ツールの実行より前に、読むツールの結果まで含めた履歴が保存されている。
-    expect(saves.some((snapshot) => snapshot.length === 1 && snapshot[0] === "read")).toBe(true);
+    // 実際の遷移より前に、ツールの結果まで含めた履歴が保存されている。
+    expect(saves.some((snapshot) => snapshot.join("|") === "read|navigate:{\"path\":\"/b/news\"}")).toBe(true);
     expect(result.navigated).toBe(true);
     // 移動したら、その後の往復はしない。
     const toolMessages = result.messages.filter((message) => message.role === "tool");
     expect(toolMessages).toHaveLength(2);
+  });
+
+  it("移動ツールが拒否したら、実際の結果を AI に返し、移動しない", async () => {
+    const navigatedTo: string[] = [];
+    const events: PetTurnEvent[] = [];
+    // 進行役が保存した履歴（次に AI へ送る形）。移動で往復は終わるので、ここで確かめる。
+    let savedMessages: PetMessage[] = [];
+
+    const result = await runPetTurn({
+      config,
+      system: "system",
+      tools: [
+        {
+          name: "open_page",
+          label: "ページを開いています",
+          description: "移動",
+          parameters: { type: "object", properties: { path: { type: "string" } } },
+          kind: "navigate",
+          async run(args) {
+            // 本物の open_page と同じく、外部の URL は navigate を呼ばずに断る。
+            const target = args && typeof args === "object" && "path" in args ? String(args.path) : "";
+            if (!target.startsWith("/") || target.startsWith("//")) {
+              return { ok: false, code: "INVALID_ARGS", error: "同じサイト内のパスだけ開けます。" };
+            }
+            return testResult({ path: target });
+          },
+        },
+      ],
+      ctx: ctx({ navigate: (path) => navigatedTo.push(path) }),
+      messages: [{ role: "user", content: "外部のサイトを開いて" }],
+      send: async () => chatResponse(null, [call("c1", "open_page", { path: "https://example.com/" })]),
+      confirm: async () => null,
+      onEvent: (event) => events.push(event),
+      onMessages: (messages) => {
+        savedMessages = [...messages];
+      },
+    });
+
+    // 実際に移動していない。
+    expect(navigatedTo).toEqual([]);
+    expect(result.navigated).toBe(false);
+    // AI に返す・履歴に残るのは、ツールが返した失敗の結果。
+    const tool = savedMessages.find((message) => message.role === "tool");
+    expect(tool && tool.role === "tool" ? JSON.parse(tool.content) : null).toMatchObject({
+      ok: false,
+      code: "INVALID_ARGS",
+    });
+    // 画面のツール行も失敗として扱われる。
+    const end = events.find((event) => event.type === "tool_end");
+    expect(end && end.type === "tool_end" ? end.result.ok : true).toBe(false);
+    expect(result.messages.some((message) => message.role === "tool")).toBe(true);
+  });
+
+  it("移動ツールが成功したら、ツールの結果をそのまま返して navigated になる", async () => {
+    const navigatedTo: string[] = [];
+    const result = await runPetTurn({
+      config,
+      system: "system",
+      tools: [
+        {
+          name: "open_page",
+          label: "ページを開いています",
+          description: "移動",
+          parameters: { type: "object", properties: { path: { type: "string" } } },
+          kind: "navigate",
+          async run(args, toolCtx) {
+            const target = args && typeof args === "object" && "path" in args ? String(args.path) : "";
+            toolCtx.navigate(target);
+            return testResult({ path: target });
+          },
+        },
+      ],
+      ctx: ctx({ navigate: (path) => navigatedTo.push(path) }),
+      messages: [{ role: "user", content: "板を開いて" }],
+      send: async () => chatResponse(null, [call("c1", "open_page", { path: "/b/news" })]),
+      confirm: async () => null,
+    });
+
+    expect(navigatedTo).toEqual(["/b/news"]);
+    expect(result.navigated).toBe(true);
+    const tool = result.messages.find((message) => message.role === "tool");
+    // 進行役が作った `{navigated:true}` ではなく、ツールが返した結果。
+    expect(tool && tool.role === "tool" ? JSON.parse(tool.content) : null).toEqual({
+      ok: true,
+      data: { path: "/b/news" },
+    });
   });
 
   it("書くツールは必ず確認カードを出し、取り消したら CANCELED を返して実行しない", async () => {

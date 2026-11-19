@@ -273,16 +273,30 @@ export async function runPetTurn(input: PetTurnInput): Promise<PetTurnResult> {
       }
 
       if (navigations.length > 0) {
+        // 移動は、ツールを実行して結果を受け取った後・履歴を保存した後に行う。
+        // ツールには「行き先を控えるだけ」の navigate を渡し、実際の遷移はここで行う
+        // （フルページ遷移で会話の進行が切れても、履歴には実際の結果が残る）。
+        const targets: string[] = [];
         for (const pending of navigations) {
           input.onEvent?.({ type: "tool_start", call: pending.call, label: pending.tool.label });
-          finishTool(pending.tool, pending.call, { ok: true, data: { navigated: true } });
+          const attempted: string[] = [];
+          const deferredCtx: PetToolContext = {
+            ...input.ctx,
+            navigate: (path: string) => {
+              attempted.push(path);
+            },
+          };
+          const result = await runTool(pending.tool, pending.args, deferredCtx, { turnstileToken: null });
+          // AI と画面には実際の結果（失敗なら INVALID_ARGS など）を返す。
+          finishTool(pending.tool, pending.call, result);
+          if (result.ok) targets.push(...attempted);
         }
         // 移動の前に履歴を残す（移動がフルページ遷移でも会話が続く）。
         input.onMessages?.(messages);
-        for (const pending of navigations) {
-          await runTool(pending.tool, pending.args, input.ctx, { turnstileToken: null });
+        for (const path of targets) {
+          input.ctx.navigate(path);
         }
-        navigated = true;
+        navigated = targets.length > 0;
         break;
       }
 
