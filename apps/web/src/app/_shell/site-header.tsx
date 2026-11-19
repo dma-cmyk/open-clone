@@ -6,6 +6,7 @@ import { Link } from "./router";
 import { api } from "@/features/board-ui/api";
 import { PluginSlot } from "@/components/plugin-slot";
 import { TourHost, startTour, tourPageKeyForPath } from "@/features/site-tour";
+import { requestPetOpen } from "@/features/pet/ui/open-store";
 
 interface Account {
   id: string;
@@ -46,6 +47,16 @@ export function SiteHeader() {
           <Link href="/">板一覧</Link>
           <Link href="/boards/new">板を作る</Link>
           <Link href="/settings">設定</Link>
+          <button
+            type="button"
+            className="oc-header-pet"
+            data-tour="site-pet"
+            data-testid="pet-header-button"
+            title="AI ペット（使い方の案内・掲示板の操作の代行）を開く"
+            onClick={() => requestPetOpen()}
+          >
+            ペット
+          </button>
           <a href="/plugins" className="oc-hide-sp">
             プラグイン
           </a>
