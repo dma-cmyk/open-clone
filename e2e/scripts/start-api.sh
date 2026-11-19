@@ -52,6 +52,10 @@ fi
 # 既定は無効（実 API への誤爆防止）。WP4 の spec は E2E_UPLOAD_STUB=1 / E2E_GITHUB_STUB=1 で有効化する。
 STUB_URL="${E2E_STUB_URL:-http://127.0.0.1:8898}"
 EXTRA_VARS=()
+# AI ペットの中継（POST /v1/pet/chat・/models）は常にスタブへ向ける。
+# E2E から実事業者へ通信して課金される事故を防ぐ（本番には設定しない）。
+EXTRA_VARS+=(--var "PET_PROVIDER_BASE_OVERRIDE:$STUB_URL/pet")
+echo "[e2e] pet provider stub 有効: $STUB_URL/pet"
 if [ "${E2E_UPLOAD_STUB:-0}" = "1" ]; then
   EXTRA_VARS+=(
     --var "CATBOX_API_URL:$STUB_URL/user/api.php"

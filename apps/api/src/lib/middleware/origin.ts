@@ -94,7 +94,7 @@ export const corsHeaders = createMiddleware<AppEnv>(async (c, next) => {
   if (origin && (allowed.includes("*") || allowed.includes(origin))) {
     c.header("Access-Control-Allow-Origin", origin);
     c.header("Access-Control-Allow-Credentials", "true");
-    c.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-turnstile-token");
+    c.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-turnstile-token, X-Pet-Api-Key");
     c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
     c.header("Vary", "Origin");
   }

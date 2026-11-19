@@ -52,6 +52,10 @@
 | `INVITE_INVALID` | 招待キーが無効・期限切れ・使用済み |
 | `OWNER_SETUP_CLOSED` | owner 初期設定は完了済み（再実行不可） |
 | `RESET_INVALID` | パスワード再設定の復旧コード/URL が無効（存在しないメール・誤り・期限切れ・使用済み・失効を区別しない） |
+| `PET_PROVIDER_AUTH` | 要確認 |
+| `PET_PROVIDER_RATE_LIMITED` | 要確認 |
+| `PET_PROVIDER_ERROR` | 要確認 |
+| `PET_PROVIDER_TIMEOUT` | 要確認 |
 
 ### 1.3 認証
 
@@ -85,8 +89,11 @@
 | readCompat | 60s | 180 |
 | readSearch | 60s | 30 |
 | readRanking | 60s | 60 |
-| readList | 60s | 120 |
+| readList | 120s | 120 |
 | rtTicket | 60s | 30 |
+| petMinute | 60s | 20 |
+| petDay | 86400s | 600 |
+| petModelsMinute | 60s | 10 |
 
 ## 2. エンドポイント一覧（自動抽出）
 
@@ -231,6 +238,8 @@
 | GET | `/health` | — | `meta.ts` | 11 |
 | GET | `/site` | — | `meta.ts` | 25 |
 | GET | `/usage` | `requireAdminActive` | `meta.ts` | 39 |
+| POST | `/chat` | — | `pet.ts` | 73 |
+| POST | `/models` | — | `pet.ts` | 94 |
 | POST | `/fetch` | — | `plugin-net.ts` | 30 |
 | GET | `/log` | `requireRole` | `plugin-net.ts` | 116 |
 | POST | `/revoke-all` | `requireAuth` | `plugin-tokens.ts` | 83 |
@@ -341,6 +350,7 @@
 | `plugins.ts` | WP3 | `/v1/plugins` | 実装あり |
 | `plugin-net.ts` | WP3 | `/v1/plugin-net` | 実装あり |
 | `ai.ts` | WP5 | `/v1/ai` | 実装あり |
+| `pet.ts` | AI ペット | `/v1/pet` | 実装あり |
 | `mcp.ts` | WP5 | `/mcp, /mcp/legacy` | 実装あり |
 | `plugin-tokens.ts` | WP-A | `/v1/me/plugin-tokens` | 実装あり |
 | `mcp-plugin.ts` | WP-A | `/mcp-plugin, /mcp-plugin/legacy` | 実装あり |
@@ -6555,6 +6565,390 @@
     "accountId",
     "createdAt",
     "expiresAt"
+  ]
+}
+```
+
+### `packages/shared/src/schemas/pet.ts`
+
+#### `petChatRequestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": [
+        "openai",
+        "anthropic",
+        "gemini",
+        "openrouter",
+        "deepseek",
+        "custom"
+      ]
+    },
+    "baseUrl": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "system": {
+      "type": "string",
+      "maxLength": 24000
+    },
+    "messages": {
+      "minItems": 1,
+      "maxItems": 80,
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "const": "user"
+              },
+              "content": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 24000
+              }
+            },
+            "required": [
+              "role",
+              "content"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "const": "assistant"
+              },
+              "content": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 24000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "toolCalls": {
+                "maxItems": 16,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                    },
+                    "arguments": {
+                      "type": "string",
+                      "maxLength": 24000
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "arguments"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "role",
+              "content"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "const": "tool"
+              },
+              "toolCallId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "content": {
+                "type": "string",
+                "maxLength": 24000
+              }
+            },
+            "required": [
+              "role",
+              "toolCallId",
+              "name",
+              "content"
+            ]
+          }
+        ]
+      }
+    },
+    "tools": {
+      "maxItems": 48,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "parameters": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "parameters"
+        ]
+      }
+    },
+    "maxTokens": {
+      "type": "integer",
+      "minimum": 64,
+      "maximum": 8192
+    }
+  },
+  "required": [
+    "provider",
+    "model",
+    "system",
+    "messages",
+    "tools"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `petMessageSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "const": "user"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24000
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "const": "assistant"
+        },
+        "content": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 24000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolCalls": {
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "arguments": {
+                "type": "string",
+                "maxLength": 24000
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "arguments"
+            ]
+          }
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "const": "tool"
+        },
+        "toolCallId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 24000
+        }
+      },
+      "required": [
+        "role",
+        "toolCallId",
+        "name",
+        "content"
+      ]
+    }
+  ]
+}
+```
+
+#### `petModelsRequestSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": [
+        "openai",
+        "anthropic",
+        "gemini",
+        "openrouter",
+        "deepseek",
+        "custom"
+      ]
+    },
+    "baseUrl": {
+      "type": "string",
+      "maxLength": 300
+    }
+  },
+  "required": [
+    "provider"
+  ],
+  "additionalProperties": false
+}
+```
+
+#### `petToolCallSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "arguments": {
+      "type": "string",
+      "maxLength": 24000
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "arguments"
+  ]
+}
+```
+
+#### `petToolSpecSchema`
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "parameters": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    }
+  },
+  "required": [
+    "name",
+    "description",
+    "parameters"
   ]
 }
 ```

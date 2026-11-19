@@ -192,6 +192,16 @@ export const RATE_LIMITS = {
   readRanking: { windowSeconds: 60, max: 60 },
   readList: { windowSeconds: 60, max: 120 },
   rtTicket: { windowSeconds: 60, max: 30 },
+  /**
+   * AI ペットの中継（POST /v1/pet/chat）。上限は shared/schemas/pet.ts の `PET_LIMITS`
+   * （perMinute 20 / perDay 600）を call 側で渡す。ここは窓長の定義だけを持つ
+   * （RateLimiter DO は scope 名から窓長を引くため、scope ごとに項目が要る）。
+   * キーはアカウント ID、未ログインは端末＋IP（匿名書き込みと同じ考え方）。
+   */
+  petMinute: { windowSeconds: 60, max: 20 },
+  petDay: { windowSeconds: 86_400, max: 600 },
+  /** `POST /v1/pet/models`（chat とは別枠）。上限は `PET_LIMITS.modelsPerMinute` を call 側で渡す。 */
+  petModelsMinute: { windowSeconds: 60, max: 10 },
 } as const;
 
 // --- API ---
