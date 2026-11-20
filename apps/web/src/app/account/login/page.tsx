@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
   const [turnstileWaiting, setTurnstileWaiting] = useState(false);
+  const [needTurnstile, setNeedTurnstile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [next, setNext] = useState("/account");
@@ -78,10 +79,15 @@ export default function LoginPage() {
       resetTurnstile();
       if (err instanceof ApiRequestError && err.code === "TOTP_REQUIRED") {
         setNeedTotp(true);
+        setNeedTurnstile(false);
         setError("TOTP コードを入力してください。");
       } else if (err instanceof ApiRequestError && err.code === "TOTP_INVALID") {
         setNeedTotp(true);
+        setNeedTurnstile(false);
         setError(err.message);
+      } else if (err instanceof ApiRequestError && err.code === "TURNSTILE_FAILED") {
+        setNeedTurnstile(true);
+        setError(errorMessage(err));
       } else {
         setError(errorMessage(err));
       }
@@ -138,6 +144,11 @@ export default function LoginPage() {
               onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ""))}
             />
           </div>
+        ) : null}
+        {needTurnstile ? (
+          <p className="oc-small" role="status" style={{ margin: 0 }}>
+            安全確認のため Bot 確認（Turnstile）が必要です。確認完了後にもう一度ログインしてください。
+          </p>
         ) : null}
         <TurnstileWidget
           onToken={onToken}

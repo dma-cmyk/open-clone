@@ -10,11 +10,83 @@ import {
   hmacSha256Hex,
   randomHex,
   sha256Hex,
+  timingSafeEqual,
   ulid,
   type AppRequestContext,
   type AuthAccount,
 } from "shared";
 import type { AppEnv } from "./env";
+
+function isValidIpv4(value: string): boolean {
+  const parts = value.split(".");
+  if (parts.length !== 4) return false;
+  return parts.every((part) => /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/.test(part));
+}
+
+function isValidIpv6(value: string): boolean {
+  if (value.length < 2 || value.length > 45 || !value.includes(":")) return false;
+  if (!/^[0-9a-fA-F:.]+$/.test(value)) return false;
+  const parts = value.split("::");
+  if (parts.length > 2) return false;
+  const hasCompression = parts.length === 2;
+  const left = parts[0] === "" ? [] : parts[0]!.split(":");
+  const right = hasCompression && parts[1] !== "" ? parts[1]!.split(":") : [];
+  const checkGroups = (groups: string[], allowIpv4Tail: boolean): number | null => {
+    let count = 0;
+    for (let i = 0; i < groups.length; i += 1) {
+      const group = groups[i]!;
+      if (allowIpv4Tail && i === groups.length - 1 && group.includes(".")) {
+        if (!isValidIpv4(group)) return null;
+        count += 2;
+      } else if (/^[0-9a-fA-F]{1,4}$/.test(group)) {
+        count += 1;
+      } else {
+        return null;
+      }
+    }
+    return count;
+  };
+  const leftCount = checkGroups(left, !hasCompression);
+  const rightCount = checkGroups(right, hasCompression);
+  if (leftCount === null || rightCount === null) return false;
+  const total = leftCount + rightCount;
+  return hasCompression ? total < 8 : total === 8;
+}
+
+function isValidIp(value: string): boolean {
+  return isValidIpv4(value) || isValidIpv6(value);
+}
+
+/**
+ * 信頼された境界プロキシ（Vercel rewrites）から正しい `x-oc-edge-secret` 付きで届いた場合のみ
+ * `x-real-ip`（無ければ `x-forwarded-for` 先頭）を採用し、形式不正や秘密不一致時は `cf-connecting-ip` へ戻す。
+ */
+function resolveClientIp(raw: Request, env: AppEnv["Bindings"]): string {
+  const edgeSecret = env.EDGE_PROXY_SECRET;
+  const providedSecret = raw.headers.get("x-oc-edge-secret");
+  const trustedProxy =
+    typeof edgeSecret === "string" &&
+    edgeSecret.trim().length > 0 &&
+    typeof providedSecret === "string" &&
+    providedSecret.length > 0 &&
+    timingSafeEqual(providedSecret, edgeSecret);
+
+  const realIp = raw.headers.get("x-real-ip")?.trim() || undefined;
+  const forwardedFirst = raw.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
+  if (trustedProxy) {
+    const candidate = realIp ?? forwardedFirst;
+    if (candidate && isValidIp(candidate)) return candidate;
+  }
+
+  const cfIp = raw.headers.get("cf-connecting-ip")?.trim() || undefined;
+  if (cfIp) return cfIp;
+
+  if (env.ENVIRONMENT === "development" && !trustedProxy) {
+    if (realIp) return realIp;
+    if (forwardedFirst) return forwardedFirst;
+  }
+  return "127.0.0.1";
+}
 
 /** セッションのスライディング更新を行うか（残り半分を切ったら更新） */
 function shouldTouchSession(expiresAt: number, now: number): boolean {
@@ -39,12 +111,7 @@ export const requestContext = createMiddleware<AppEnv>(async (c, next) => {
   }
   const deviceHash = await hmacSha256Hex(env.ID_SALT, `device:${deviceId}`);
 
-  const raw = c.req.raw;
-  const ip =
-    raw.headers.get("cf-connecting-ip") ??
-    raw.headers.get("x-real-ip") ??
-    raw.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "127.0.0.1";
+  const ip = resolveClientIp(c.req.raw, env);
   const ipHash = await hmacSha256Hex(env.ID_SALT, `ip:${ip}`);
 
   // --- セッション ---

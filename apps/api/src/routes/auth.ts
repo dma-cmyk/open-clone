@@ -42,7 +42,13 @@ import {
 } from "../services/account/recovery";
 import { findActiveSiteSuspension } from "../services/account/suspension";
 import { getSiteSettings } from "../services/account/site-config";
-import { attemptKey, cleanupOldAttempts, countAttemptsSince, recordAttempt } from "../services/account/attempts";
+import {
+  accountAttemptKey,
+  attemptKey,
+  cleanupOldAttempts,
+  countAttemptsSince,
+  recordAttempt,
+} from "../services/account/attempts";
 import { grantStepUp, getStepUpExpiry } from "../services/account/step-up";
 import {
   cleanupPasswordResetFailures,
@@ -75,14 +81,21 @@ function auditActor(role: AccountRow["role"]): "owner" | "special_admin" | "acco
   return "account";
 }
 
-function turnstileNeeded(settings: SiteSettings, failures: number): boolean {
+const LOGIN_ACCOUNT_WINDOW_SECONDS = 15 * 60;
+const LOGIN_ACCOUNT_TURNSTILE_THRESHOLD = 10;
+
+function turnstileNeeded(settings: SiteSettings, failures: number, accountFailures = 0): boolean {
   const mode = settings["security.require_turnstile"];
   if (mode === "always") return true;
   if (mode === "off") return false;
-  return failures >= 3;
+  return failures >= 3 || accountFailures >= LOGIN_ACCOUNT_TURNSTILE_THRESHOLD;
 }
 
-function requireTurnstileToken(c: { req: { header(name: string): string | undefined } }): void {
+function requireTurnstileToken(c: {
+  req: { header(name: string): string | undefined };
+  get?(key: never): unknown;
+}): void {
+  if (c.get?.("turnstileVerified" as never) === true) return;
   if (!c.req.header("x-turnstile-token")) {
     throw new ApiError(400, ErrorCode.TURNSTILE_FAILED, "Turnstile 認証が必要です");
   }
@@ -190,18 +203,25 @@ app.post("/login", requireTurnstile({ required: false }), async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const settings = await getSiteSettings(db);
   const keyHash = await attemptKey(ctx.device.ipHash, body.email);
-  const failures = await countAttemptsSince(db, ["login_failed"], keyHash, now - RATE_LIMITS.login.windowSeconds);
+  const accountKeyHash = await accountAttemptKey(c.env.ID_SALT, body.email);
+  const [failures, accountFailures] = await Promise.all([
+    countAttemptsSince(db, ["login_failed"], keyHash, now - RATE_LIMITS.login.windowSeconds),
+    countAttemptsSince(db, ["login_failed"], accountKeyHash, now - LOGIN_ACCOUNT_WINDOW_SECONDS),
+  ]);
 
   if (failures >= RATE_LIMITS.login.max) {
     throw ApiError.rateLimited("ログイン試行が多すぎます。しばらく待ってから再試行してください");
   }
-  if (turnstileNeeded(settings, failures)) requireTurnstileToken(c);
+  if (turnstileNeeded(settings, failures, accountFailures)) requireTurnstileToken(c);
 
   const account = await loadAccountByEmail(db, body.email);
   const passwordOk = await verifyPassword(body.password, account?.password_hash ?? null);
 
   if (!account || !passwordOk) {
-    await recordAttempt(db, "login_failed", keyHash, account?.id ?? null);
+    await Promise.all([
+      recordAttempt(db, "login_failed", keyHash, account?.id ?? null),
+      recordAttempt(db, "login_failed", accountKeyHash, account?.id ?? null),
+    ]);
     c.executionCtx.waitUntil(cleanupOldAttempts(db));
     throw ApiError.unauthorized("メールアドレスまたはパスワードが正しくありません");
   }
@@ -212,7 +232,10 @@ app.post("/login", requireTurnstile({ required: false }), async (c) => {
     deviceHash: ctx.device.deviceHash,
   });
   if (account.status !== "active" || suspension) {
-    await recordAttempt(db, "login_failed", keyHash, account.id);
+    await Promise.all([
+      recordAttempt(db, "login_failed", keyHash, account.id),
+      recordAttempt(db, "login_failed", accountKeyHash, account.id),
+    ]);
     throw new ApiError(403, ErrorCode.BANNED, "このアカウントは利用停止中です");
   }
 

@@ -1,7 +1,8 @@
 // ログイン/登録試行の短期記録（IP+メール毎の HMAC キー）。
 // 生 IP・生メールは保存しない。レート制限と Turnstile 段階要求の判定に使う。
 
-import { sha256Hex, ulid } from "shared";
+import { hmacSha256Hex, sha256Hex, ulid } from "shared";
+import { normalizeEmail } from "../../lib/email";
 
 export type AttemptKind =
   | "login_failed"
@@ -17,6 +18,14 @@ export type AttemptKind =
 
 export async function attemptKey(ipHash: string, identifier: string): Promise<string> {
   return sha256Hex(`${ipHash}|${identifier.trim().toLowerCase()}`);
+}
+
+/**
+ * IP に依存しないアカウント（正規化メール）単位の試行キー。
+ * 生メールは保存せず、IP+メールの `attemptKey()` とも名前空間を分離する。
+ */
+export async function accountAttemptKey(idSalt: string, email: string): Promise<string> {
+  return hmacSha256Hex(idSalt, `login-account:${normalizeEmail(email)}`);
 }
 
 export async function recordAttempt(

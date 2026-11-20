@@ -45,6 +45,8 @@ regexes = [
   # AI ペット中継の伏せ字の単体試験で使う偽の事業者キー（apps/api/test/pet-relay.test.ts）。
   '''sk-live-abcdef123456''',
   '''sk-e2e-AbCdEf123456''',
+  # F1 境界プロキシ IP 検証の単体テストで使う偽の秘密値（apps/api/test/edge-proxy-ip.test.ts）。
+  '''test-edge-proxy-secret-value''',
 ]
 
 # ドキュメント中のプレースホルダ（実値ではない）を許可する。
