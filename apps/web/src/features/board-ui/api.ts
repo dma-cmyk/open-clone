@@ -278,20 +278,29 @@ export const api = {
     }));
   },
 
-  getBoard(slug: string): Promise<{ board: BoardDetail; staff: StaffEntry[]; canManage: boolean }> {
+  getBoard(slug: string): Promise<{
+    board: BoardDetail;
+    staff: StaffEntry[];
+    canManage: boolean;
+    staffLevel: StaffEntry["level"] | null;
+  }> {
     return get<{
       board?: BoardDetail;
       staff?: (StaffEntry & { accountName?: string })[];
       canManage?: boolean;
+      staffLevel?: StaffEntry["level"] | null;
       design?: BoardDetail["design"];
       settings?: BoardDetail["settings"];
     }>(`/boards/${encodeURIComponent(slug)}`).then((data) => {
       const board = data.board ?? { id: slug, slug, name: slug, category: "" };
+      const canManage = Boolean(data.canManage);
+      const staffLevel = data.staffLevel !== undefined ? data.staffLevel : (canManage ? "admin" : null);
       return {
         board: {
           ...board,
           design: board.design ?? data.design,
           settings: board.settings ?? data.settings,
+          staffLevel,
         },
         staff: Array.isArray(data.staff)
           ? data.staff.map((entry) => ({
@@ -300,7 +309,8 @@ export const api = {
               level: entry.level,
             }))
           : [],
-        canManage: Boolean(data.canManage),
+        canManage,
+        staffLevel,
       };
     });
   },

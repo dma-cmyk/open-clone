@@ -172,23 +172,35 @@ export async function attachPolicies(
  * board agent は作成者がその板の admin（またはサイト管理者）であることを毎回確認する。
  */
 export async function assertDelegatorActive(env: Env, row: AgentRow): Promise<void> {
-  const creator = await env.DB.prepare("SELECT id, role, status FROM accounts WHERE id = ?")
+  const creator = await env.DB.prepare(
+    `SELECT a.id, a.role, a.status, sa.stopped_at
+     FROM accounts a
+     LEFT JOIN special_admin_state sa ON sa.account_id = a.id
+     WHERE a.id = ?`,
+  )
     .bind(row.created_by)
-    .first<{ id: string; role: "owner" | "special_admin" | "user"; status: "active" | "suspended" }>();
+    .first<{
+      id: string;
+      role: "owner" | "special_admin" | "user";
+      status: "active" | "suspended";
+      stopped_at: number | null;
+    }>();
 
   if (!creator || creator.status !== "active") {
     throw ApiError.forbidden("委譲者アカウントが無効です");
   }
 
+  const role = creator.role === "special_admin" && creator.stopped_at !== null ? "user" : creator.role;
+
   if (row.owner_type === "site") {
-    if (creator.role !== "owner" && creator.role !== "special_admin") {
+    if (role !== "owner" && role !== "special_admin") {
       throw ApiError.forbidden("サイト AI の委譲者はサイト管理者である必要があります");
     }
     return;
   }
 
   if (row.owner_type === "board") {
-    if (creator.role === "owner" || creator.role === "special_admin") return;
+    if (role === "owner" || role === "special_admin") return;
     if (row.board_id === null) throw ApiError.forbidden("板が指定されていません");
     const staff = await env.DB.prepare(
       "SELECT level FROM board_staff WHERE board_id = ? AND account_id = ? AND level = 'admin'",

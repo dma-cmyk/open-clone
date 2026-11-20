@@ -40,8 +40,11 @@ export async function verifySession(db: D1Database, token: string): Promise<Sess
   const now = Math.floor(Date.now() / 1000);
   const row = await db
     .prepare(
-      `SELECT s.expires_at, a.id, a.name, a.email, a.role, a.status
-       FROM sessions s JOIN accounts a ON a.id = s.account_id
+      `SELECT s.expires_at, a.id, a.name, a.email, a.role, a.status,
+              sa.stopped_at AS special_admin_stopped_at
+       FROM sessions s
+       JOIN accounts a ON a.id = s.account_id
+       LEFT JOIN special_admin_state sa ON sa.account_id = a.id
        WHERE s.token_hash = ? AND s.expires_at > ?`,
     )
     .bind(tokenHash, now)
@@ -52,12 +55,22 @@ export async function verifySession(db: D1Database, token: string): Promise<Sess
       email: string | null;
       role: AuthAccount["role"];
       status: AuthAccount["status"];
+      special_admin_stopped_at: number | null;
     }>();
   if (!row) return null;
+  const specialAdminStopped =
+    row.role === "special_admin" && row.special_admin_stopped_at !== null;
   return {
     tokenHash,
     expiresAt: row.expires_at,
-    account: { id: row.id, name: row.name, email: row.email, role: row.role, status: row.status },
+    account: {
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      role: specialAdminStopped ? "user" : row.role,
+      status: row.status,
+      ...(specialAdminStopped ? { specialAdminStopped: true } : {}),
+    },
   };
 }
 

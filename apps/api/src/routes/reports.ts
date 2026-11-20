@@ -298,7 +298,25 @@ app.post("/:id/handle", requireAuth, async (c) => {
         },
       });
     }
-    if (input.action === "delete") await deletePost(postId, deps);
+    if (input.action === "delete") {
+      await deletePost(postId, deps);
+      await writeAudit(db, {
+        actorType,
+        actorId: actor.accountId,
+        action: "post.delete",
+        target: String(postId),
+        detail: {
+          postId,
+          boardId: row.board_id,
+          threadId: row.thread_id,
+          source: "report",
+          reportId: row.id,
+          reason: row.reason,
+          reasonLabel: REPORT_REASON_LABELS[(row.reason as ReportReason) ?? "other"],
+          note: input.note,
+        },
+      });
+    }
   }
 
   const now = Math.floor(Date.now() / 1000);

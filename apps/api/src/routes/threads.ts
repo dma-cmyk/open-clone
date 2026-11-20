@@ -32,7 +32,16 @@ import {
   type PostRow,
   type ThreadRow,
 } from "../services/board/store";
-import { assertBoardStaff, hasBoardStaff, isSiteAdmin, actorFrom, canReadBoardContent, type AccessActor } from "../services/board/access";
+import { writeAudit } from "../lib/audit";
+import {
+  assertBoardStaff,
+  auditActorType,
+  hasBoardStaff,
+  isSiteAdmin,
+  actorFrom,
+  canReadBoardContent,
+  type AccessActor,
+} from "../services/board/access";
 import { listThreads, loadThreadPosts } from "../services/board/threads";
 import { publishEvent } from "../services/board/realtime";
 
@@ -383,8 +392,30 @@ app.delete("/:id", async (c) => {
     if (settings.selfEditWindowMinutes > 0 && thread.created_at + settings.selfEditWindowMinutes * 60 < Math.floor(Date.now() / 1000)) {
       throw ApiError.forbidden("本人削除の期限が過ぎています");
     }
-    // 他人のレスが 1 件でもあるなら本人削除は不可（荒らしによる議論の消去を防ぐ。設計 70 の方向）。
-    if (thread.post_count > 1) {
+    // 他人のレスが 1 件でもあるなら本人削除は不可（スレ主だけの追記なら削除可。F10）。
+    const ownerAccounts = [...new Set([thread.owner_account_id, identity.accountId].filter((v): v is string => v !== null))];
+    const ownerDevices = [...new Set([thread.owner_device_hash, identity.deviceHash].filter((v): v is string => v !== null))];
+    const ownerConditions: string[] = [];
+    const ownerBindings: string[] = [];
+    if (ownerAccounts.length > 0) {
+      ownerConditions.push(`(account_id IS NOT NULL AND account_id IN (${ownerAccounts.map(() => "?").join(", ")}))`);
+      ownerBindings.push(...ownerAccounts);
+    }
+    if (ownerDevices.length > 0) {
+      ownerConditions.push(`(account_id IS NULL AND device_hash IN (${ownerDevices.map(() => "?").join(", ")}))`);
+      ownerBindings.push(...ownerDevices);
+    }
+    const ownerExpr = ownerConditions.length > 0 ? ownerConditions.join(" OR ") : "0";
+    const otherPost = await db
+      .prepare(
+        `SELECT 1 FROM posts
+         WHERE thread_id = ? AND kind = 'post' AND deleted = 0 AND num > 1
+           AND CASE WHEN (${ownerExpr}) THEN 0 ELSE 1 END = 1
+         LIMIT 1`,
+      )
+      .bind(thread.id, ...ownerBindings)
+      .first<{ 1: number }>();
+    if (otherPost) {
       throw ApiError.forbidden("他人のレスがあるスレは本人削除できません。削除依頼（通報）から板スタッフへご相談ください");
     }
     await db.prepare("UPDATE threads SET status = 'deleted' WHERE id = ?").bind(thread.id).run();
@@ -400,6 +431,13 @@ app.delete("/:id", async (c) => {
     await assertBoardStaff(db, actor, thread.board_id, "deputy");
   }
   await db.prepare("UPDATE threads SET status = 'deleted' WHERE id = ?").bind(thread.id).run();
+  await writeAudit(db, {
+    actorType: auditActorType(actor),
+    actorId: actor.accountId,
+    action: "thread.delete",
+    target: String(thread.id),
+    detail: { threadId: thread.id, boardId: thread.board_id, title: thread.title },
+  });
   await publishEvent(c.env, c.executionCtx, `thread:${thread.id}`, "post.deleted", {
     threadId: thread.id,
     reason: "thread_deleted",

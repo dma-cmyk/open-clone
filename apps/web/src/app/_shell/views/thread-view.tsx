@@ -89,6 +89,9 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
   const [tsubuyakiComments, setTsubuyakiComments] = useState<Post[]>([]);
   const boardInfo = useApiData(() => api.getBoard(slug), [slug]);
   const canManage = Boolean(boardInfo.data?.canManage);
+  const staffLevel = boardInfo.data?.staffLevel ?? (canManage ? "admin" : null);
+  const canHidePosts = staffLevel === "admin" || staffLevel === "deputy" || staffLevel === "moderator";
+  const canDeletePosts = staffLevel === "admin" || staffLevel === "deputy";
   // 板設定（本人編集・本人削除・引用スレの許可）。ボタン表示は補助で、最終判定は API 側。
   const boardSettings = boardInfo.data?.board.settings;
   const allowQuoteThread = boardSettings?.allowQuoteThread !== false;
@@ -908,6 +911,8 @@ export function ThreadView({ slug, threadId }: { slug: string; threadId: number 
                     showImages={settings.display.showImages}
                     aa={settings.display.aa}
                     canManage={canManage}
+                    canHide={canHidePosts}
+                    canDelete={canDeletePosts}
                     highlight={false}
                     isNew={newIds.has(post.num)}
                     onQuote={onQuote}

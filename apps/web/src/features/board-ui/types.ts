@@ -61,6 +61,7 @@ export interface BoardDetail extends BoardSummary {
   ownerAccountId?: string;
   staff?: StaffEntry[];
   canManage?: boolean;
+  staffLevel?: StaffEntry["level"] | null;
 }
 
 export interface ThreadSummary {

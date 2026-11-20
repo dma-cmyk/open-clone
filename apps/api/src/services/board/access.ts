@@ -12,11 +12,24 @@ export interface AccessActor {
 }
 
 export function actorFrom(account: AuthAccount | null | undefined): AccessActor {
-  return { accountId: account?.id ?? null, role: account?.role ?? null };
+  if (!account) return { accountId: null, role: null };
+  const role = account.role === "special_admin" && account.specialAdminStopped ? "user" : account.role;
+  return { accountId: account.id, role };
 }
 
 export function isSiteAdmin(actor: AccessActor): boolean {
   return actor.role === "owner" || actor.role === "special_admin";
+}
+
+/** 閲覧者の板スタッフ階級（削除板では操作不可のため null）。 */
+export async function viewerStaffLevel(
+  db: D1Database,
+  actor: AccessActor,
+  board: Pick<BoardRow, "id" | "status">,
+): Promise<BoardStaffLevel | null> {
+  if (board.status !== "active") return null;
+  if (isSiteAdmin(actor)) return "admin";
+  return await loadStaffLevel(db, board.id, actor.accountId);
 }
 
 /**

@@ -13,6 +13,8 @@ export interface AuthAccount {
   email: string | null;
   role: GlobalRole;
   status: "active" | "suspended";
+  /** 停止中の特別管理人（入口で権限を外し role="user" に落とすため、表示と管理系403判定用に保持） */
+  specialAdminStopped?: boolean;
 }
 
 /** 端末識別（匿名トラッキング用。DESIGN §5.1） */

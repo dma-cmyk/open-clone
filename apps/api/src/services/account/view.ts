@@ -45,7 +45,7 @@ export async function buildAuthSession(db: D1Database, session: SessionVerificat
   const [row, totp, stop, stepUpExpiry] = await Promise.all([
     getAccountRow(db, session.account.id),
     getTotpStatus(db, session.account.id),
-    session.account.role === "special_admin"
+    session.account.role === "special_admin" || session.account.specialAdminStopped === true
       ? getSpecialAdminStop(db, session.account.id)
       : Promise.resolve(null),
     getStepUpExpiry(db, session.tokenHash),
