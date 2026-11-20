@@ -61,6 +61,8 @@ export async function runPrune(env: Env): Promise<{
   expiredBans: number;
   /** 期限切れの「ロボット確認済み」行の削除（レビュー 82 / R82-06）。 */
   expiredTurnstilePasses: number;
+  /** 期限切れのセッション行の削除（F9）。 */
+  expiredSessions: number;
 }> {
   const db = env.DB;
   const now = Math.floor(Date.now() / 1000);
@@ -99,10 +101,22 @@ export async function runPrune(env: Env): Promise<{
     .bind(now)
     .run();
 
+  // 期限切れのセッション行を定期削除（F9）。
+  // 索引 idx_sessions_expires（0001_init.sql）を使い、1 回の削除は 500 件まで。
+  const expiredSessions = await db
+    .prepare(
+      `DELETE FROM sessions WHERE rowid IN (
+         SELECT rowid FROM sessions WHERE expires_at <= ? LIMIT 500
+       )`,
+    )
+    .bind(now)
+    .run();
+
   return {
     deletedBoards: boards.meta.changes ?? 0,
     closedThreads: threads.meta.changes ?? 0,
     expiredBans: bans.meta.changes ?? 0,
     expiredTurnstilePasses: expiredPasses.meta.changes ?? 0,
+    expiredSessions: expiredSessions.meta.changes ?? 0,
   };
 }

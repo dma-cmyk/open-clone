@@ -5,6 +5,7 @@ import {
   ApiError,
   decodeShiftJis,
   encodeShiftJis,
+  escapeHtml,
   formatDatLine,
   formatSubjectLine,
   renderBbsmenu,
@@ -15,7 +16,8 @@ import { getReqCtx } from "../lib/context";
 import { assertReadRateLimit } from "../lib/do";
 import { createPostInternal, createThreadInternal } from "../lib/pipeline";
 import { actorFrom, canReadBoardContent, type AccessActor } from "../services/board/access";
-import { getThreadRow, resolveBoardRow, type BoardRow, type PostRow } from "../services/board/store";
+import { boardSettingsOf, getThreadRow, resolveBoardRow, type BoardRow, type PostRow } from "../services/board/store";
+import { needsTurnstile } from "../services/board/turnstile";
 
 const app = new Hono<AppEnv>();
 
@@ -220,12 +222,27 @@ app.get("/:slug/index.rdf", async (c) => {
   return utf8Response(rss, "application/rss+xml");
 });
 
+function sjisErrorHtml(message: string, backLink = true): Response {
+  const back = backLink ? '<br><a href="javascript:history.back()">戻る</a>' : "";
+  return sjisResponse(`<html><body>${escapeHtml(message)}${back}</body></html>`, "text/html");
+}
+
 /** 2ch 互換の書き込み（bbs.cgi）。専ブラからの投稿・スレ立て。 */
 app.post("/:slug/bbs.cgi", async (c) => {
   const db = c.env.DB;
   const board = await resolveBoardRow(db, c.req.param("slug"));
   if (!board) throw ApiError.notFound("板が見つかりません");
   const reqCtx = getReqCtx(c);
+  const identity = {
+    deviceHash: reqCtx.device.deviceHash,
+    ipHash: reqCtx.device.ipHash,
+    accountId: reqCtx.session?.account.id ?? null,
+  };
+  const settings = boardSettingsOf(board);
+  if (needsTurnstile(settings, identity.accountId !== null)) {
+    return sjisErrorHtml("この板は専ブラからの書き込みに対応していません。ブラウザから書き込んでください。");
+  }
+
   const contentType = c.req.header("content-type") ?? "";
 
   let fields: Record<string, string>;
@@ -241,15 +258,10 @@ app.post("/:slug/bbs.cgi", async (c) => {
 
   const message = (fields["MESSAGE"] ?? "").trim();
   if (message.length === 0) {
-    return sjisResponse("<html><body>本文が空です。<br><a href=\"javascript:history.back()\">戻る</a></body></html>", "text/html");
+    return sjisErrorHtml("本文が空です。");
   }
   const name = fields["FROM"] ?? "";
   const mail = fields["mail"] ?? "";
-  const identity = {
-    deviceHash: reqCtx.device.deviceHash,
-    ipHash: reqCtx.device.ipHash,
-    accountId: reqCtx.session?.account.id ?? null,
-  };
 
   try {
     const key = fields["key"] ?? "";
@@ -257,7 +269,7 @@ app.post("/:slug/bbs.cgi", async (c) => {
     if (Number.isInteger(threadId) && threadId > 0) {
       const thread = await getThreadRow(db, threadId);
       if (!thread || thread.board_id !== board.id) {
-        return sjisResponse("<html><body>スレッドが見つかりません。</body></html>", "text/html");
+        return sjisErrorHtml("スレッドが見つかりません。", false);
       }
       await createPostInternal(
         {
@@ -267,7 +279,6 @@ app.post("/:slug/bbs.cgi", async (c) => {
           mail,
           body: message,
           ...identity,
-          skipTurnstile: true,
         },
         { env: c.env, ctx: c.executionCtx },
       );
@@ -279,7 +290,7 @@ app.post("/:slug/bbs.cgi", async (c) => {
 
     const subject = (fields["subject"] ?? "").trim();
     if (subject.length === 0) {
-      return sjisResponse("<html><body>スレタイが空です。</body></html>", "text/html");
+      return sjisErrorHtml("スレタイが空です。", false);
     }
     const created = await createThreadInternal(
       {
@@ -289,7 +300,6 @@ app.post("/:slug/bbs.cgi", async (c) => {
         name,
         mail,
         ...identity,
-        skipTurnstile: true,
       },
       { env: c.env, ctx: c.executionCtx },
     );
@@ -299,7 +309,7 @@ app.post("/:slug/bbs.cgi", async (c) => {
     );
   } catch (error) {
     const messageText = error instanceof ApiError ? error.message : "書き込みに失敗しました";
-    return sjisResponse(`<html><body>${messageText}<br><a href="javascript:history.back()">戻る</a></body></html>`, "text/html");
+    return sjisErrorHtml(messageText);
   }
 });
 

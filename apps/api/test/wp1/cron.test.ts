@@ -70,4 +70,66 @@ describe("cron", () => {
     expect(blocked.status).toBe(409);
     expect(blocked.body.ok).toBe(false);
   });
+
+  it("期限切れのセッションだけを消し、有効なセッションは残す", async () => {
+    const { account } = await authedClient({ name: "cron-sess-user" });
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO sessions (token_hash, account_id, expires_at, ua, created_at, touched_at) VALUES (?, ?, ?, 'ua', ?, ?)",
+      ).bind("cron-sess-expired-1", account.id, now - 60, now - 1000, now - 1000),
+      env.DB.prepare(
+        "INSERT INTO sessions (token_hash, account_id, expires_at, ua, created_at, touched_at) VALUES (?, ?, ?, 'ua', ?, ?)",
+      ).bind("cron-sess-expired-2", account.id, now - 1, now - 1000, now - 1000),
+      env.DB.prepare(
+        "INSERT INTO sessions (token_hash, account_id, expires_at, ua, created_at, touched_at) VALUES (?, ?, ?, 'ua', ?, ?)",
+      ).bind("cron-sess-valid-1", account.id, now + 3600, now, now),
+    ]);
+
+    const result = await runPrune(env);
+    expect(result.expiredSessions).toBe(2);
+
+    const remaining = await env.DB.prepare(
+      "SELECT token_hash FROM sessions WHERE token_hash LIKE 'cron-sess-%' ORDER BY token_hash",
+    ).all<{ token_hash: string }>();
+    expect(remaining.results.map((row) => row.token_hash)).toEqual(["cron-sess-valid-1"]);
+  });
+
+  it("期限切れセッションの削除は 1 回あたり 500 件まで", async () => {
+    const { account } = await authedClient({ name: "cron-sess-batch" });
+    const now = Math.floor(Date.now() / 1000);
+    const inserts: D1PreparedStatement[] = [];
+    for (let i = 0; i < 505; i += 1) {
+      inserts.push(
+        env.DB.prepare(
+          "INSERT INTO sessions (token_hash, account_id, expires_at, ua, created_at, touched_at) VALUES (?, ?, ?, 'ua', ?, ?)",
+        ).bind(`cron-batch-exp-${i}`, account.id, now - 10, now - 1000, now - 1000),
+      );
+    }
+    inserts.push(
+      env.DB.prepare(
+        "INSERT INTO sessions (token_hash, account_id, expires_at, ua, created_at, touched_at) VALUES (?, ?, ?, 'ua', ?, ?)",
+      ).bind("cron-batch-valid", account.id, now + 3600, now, now),
+    );
+    // D1 batch は 100 件単位に分けて投入する
+    for (let offset = 0; offset < inserts.length; offset += 100) {
+      await env.DB.batch(inserts.slice(offset, offset + 100));
+    }
+
+    const first = await runPrune(env);
+    expect(first.expiredSessions).toBe(500);
+
+    const afterFirst = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM sessions WHERE token_hash LIKE 'cron-batch-exp-%'",
+    ).first<{ n: number }>();
+    expect(afterFirst?.n).toBe(5);
+
+    const second = await runPrune(env);
+    expect(second.expiredSessions).toBe(5);
+
+    const remaining = await env.DB.prepare(
+      "SELECT token_hash FROM sessions WHERE token_hash LIKE 'cron-batch-%'",
+    ).all<{ token_hash: string }>();
+    expect(remaining.results.map((row) => row.token_hash)).toEqual(["cron-batch-valid"]);
+  });
 });

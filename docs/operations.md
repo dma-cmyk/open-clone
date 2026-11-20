@@ -56,9 +56,11 @@ curl -fsS -b 'oc_sess=<admin-session-cookie>' https://<api-domain>/v1/meta/usage
 - **レス上限到達**: 1000 レス（スレ主は 1005）で `POST /posts` は `409 CONFLICT` を返し、以降は書き込めません。
   `threads.status` は `active` のままなので、専ブラの dat は `LIMIT 1000` で打ち切られます。
   open2ch の over1000/dat落ちに相当する状態遷移は実装していません（スレ自体は閲覧可能）。
-- **compat `bbs.cgi` の Turnstile**: 専ブラは Turnstile を解けないため `skipTurnstile: true` で書き込みます。
-  そのため一般 HTTP クライアントがフォームを模倣すると Turnstile を迂回できます。最終防衛は RateLimiter DO
-  （device/IP 窓）とアク禁です。compat 経路を公開する場合は、この前提でレート制限値と監視を調整してください。
+- **compat（専ブラ互換）の読み書き**: 本番環境では全 mutation で Origin ヘッダが必須（`originGuard`）のため、
+  Origin を送らない本物の専ブラは書き込めず、実質**読み取り専用**（`bbsmenu.html` / `subject.txt` / `dat` /
+  `index.rdf` / `SETTING.TXT`）です。また `POST /compat/:slug/bbs.cgi` も板の Turnstile 設定（`needsTurnstile`）に
+  従うため、`always` または未ログインの `anonymous` 板では書き込む前に Shift_JIS の HTML で拒否します
+  （書き込めるのは `off` の板など Turnstile 不要の条件かつ許可された Origin／開発環境のみ）。
 
 ## 2. 緊急停止
 
