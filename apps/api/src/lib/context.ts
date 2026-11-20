@@ -59,7 +59,8 @@ function isValidIp(value: string): boolean {
 
 /**
  * 信頼された境界プロキシ（Vercel rewrites）から正しい `x-oc-edge-secret` 付きで届いた場合のみ
- * `x-real-ip`（無ければ `x-forwarded-for` 先頭）を採用し、形式不正や秘密不一致時は `cf-connecting-ip` へ戻す。
+ * `x-forwarded-for` の先頭を利用者の IP として採用し、形式不正や秘密不一致時は `cf-connecting-ip` へ戻す。
+ * `x-real-ip` は Cloudflare Workers 上で Cloudflare が接続元（Vercel 中継サーバー）の IP で上書きするため信頼判定には使わない。
  */
 function resolveClientIp(raw: Request, env: AppEnv["Bindings"]): string {
   const edgeSecret = env.EDGE_PROXY_SECRET;
@@ -71,17 +72,16 @@ function resolveClientIp(raw: Request, env: AppEnv["Bindings"]): string {
     providedSecret.length > 0 &&
     timingSafeEqual(providedSecret, edgeSecret);
 
-  const realIp = raw.headers.get("x-real-ip")?.trim() || undefined;
   const forwardedFirst = raw.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
-  if (trustedProxy) {
-    const candidate = realIp ?? forwardedFirst;
-    if (candidate && isValidIp(candidate)) return candidate;
+  if (trustedProxy && forwardedFirst && isValidIp(forwardedFirst)) {
+    return forwardedFirst;
   }
 
   const cfIp = raw.headers.get("cf-connecting-ip")?.trim() || undefined;
   if (cfIp) return cfIp;
 
   if (env.ENVIRONMENT === "development" && !trustedProxy) {
+    const realIp = raw.headers.get("x-real-ip")?.trim() || undefined;
     if (realIp) return realIp;
     if (forwardedFirst) return forwardedFirst;
   }

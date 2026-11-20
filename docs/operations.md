@@ -230,7 +230,7 @@ wrangler d1 execute open-clone-restore --remote --file backup-2026-11-08.sql
 
 ## 8. Vercel 中継と利用者 IP（EDGE_PROXY_SECRET / OC_EDGE_SECRET）
 
-サイト（Vercel）の rewrites 経由で API（Cloudflare Workers）へ届くリクエストでは、`cf-connecting-ip` が Vercel の中継サーバーの IP になります。利用者の実 IP を引き継ぐため、`apps/web/vercel.json` の `/api/v1/(.*)`・`/api/(.*)`・`/compat/(.*)` ルートの `transforms` で `x-oc-edge-secret` ヘッダーを上書き（`set`）し、Worker 側で `EDGE_PROXY_SECRET` と時間一定比較で一致したときだけ `x-real-ip`（無ければ `x-forwarded-for` 先頭）を採用します。
+サイト（Vercel）の rewrites 経由で API（Cloudflare Workers）へ届くリクエストでは、`cf-connecting-ip` が Vercel の中継サーバーの IP になります。利用者の実 IP を引き継ぐため、`apps/web/vercel.json` の `/api/v1/(.*)`・`/api/(.*)`・`/compat/(.*)` ルートの `transforms` で `x-oc-edge-secret` ヘッダーを上書き（`set`）し、Worker 側で `EDGE_PROXY_SECRET` と時間一定比較で一致したときだけ `x-forwarded-for` の先頭を採用します（`x-real-ip` は Cloudflare Workers 上で Cloudflare が接続元 IP で上書きするため使わず、Vercel が外部転送時に送る `x-forwarded-for` を参照します）。
 
 ### 8.1 設定する値
 
