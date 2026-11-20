@@ -32,6 +32,19 @@ const BEARER_MCP_PATHS: Record<string, true> = {
 };
 
 /**
+ * GitHub webhook 用のパス（F8）。完全一致のみ。
+ */
+const GITHUB_WEBHOOK_PATHS: Record<string, true> = {
+  "/v1/plugins/hooks/github": true,
+  "/v1/github/hooks/github": true,
+};
+
+function matchesNonBrowserLane(c: Context<AppEnv>, paths: Record<string, true>): boolean {
+  if (getCookie(c, SESSION_COOKIE)) return false;
+  return paths[new URL(c.req.url).pathname] === true;
+}
+
+/**
  * Origin なしでも許可してよい「非ブラウザの Bearer MCP 呼び出し」か。
  * - `Authorization: Bearer <token>` がある（トークンの正当性は後段の認証が判定する）
  * - セッション Cookie を送っていない（Cookie 認証の CSRF 防御を維持する）
@@ -39,9 +52,18 @@ const BEARER_MCP_PATHS: Record<string, true> = {
  */
 function isBearerMcpLane(c: Context<AppEnv>): boolean {
   const authorization = c.req.header("authorization")?.trim() ?? "";
-  if (!/^Bearer\s+\S+$/i.test(authorization)) return false;
-  if (getCookie(c, SESSION_COOKIE)) return false;
-  return BEARER_MCP_PATHS[new URL(c.req.url).pathname] === true;
+  return /^Bearer\s+\S+$/i.test(authorization) && matchesNonBrowserLane(c, BEARER_MCP_PATHS);
+}
+
+/**
+ * Origin なしでも許可してよい「GitHub webhook」か。
+ * - `x-hub-signature-256` がある（署名の正当性は後段のハンドラが判定する）
+ * - セッション Cookie を送っていない（Cookie 認証の CSRF 防御を維持する）
+ * - パスが webhook 2 パスの完全一致
+ */
+function isGithubWebhook(c: Context<AppEnv>): boolean {
+  const signature = c.req.header("x-hub-signature-256")?.trim() ?? "";
+  return signature.length > 0 && matchesNonBrowserLane(c, GITHUB_WEBHOOK_PATHS);
 }
 
 /**
@@ -72,9 +94,9 @@ export const originGuard = createMiddleware<AppEnv>(async (c, next) => {
     } else {
       // Origin なし mutation はブラウザ経由では発生しない（curl / サーバ間）。
       // 本番では拒否、開発時のみ許可する。
-      // 例外は Bearer 認証の MCP レーンだけ（非ブラウザの CLI/外部 AI。報告書29 決定1）。
-      // トークン自体が認証であり CSRF は成立しない。トークンの可否は後段の認証が判定する。
-      if (!isDev && !allowAll && !isBearerMcpLane(c)) {
+      // 例外は Bearer 認証の MCP レーン（報告書29 決定1）と署名付きの GitHub webhook だけ。
+      // どちらもトークン・署名自体が認証であり CSRF は成立しない。正当性は後段が判定する。
+      if (!isDev && !allowAll && !isBearerMcpLane(c) && !isGithubWebhook(c)) {
         throw new ApiError(403, "BAD_ORIGIN", "Origin ヘッダが必要です");
       }
     }
