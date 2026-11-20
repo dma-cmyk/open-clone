@@ -16,6 +16,12 @@ export interface Env {
   ID_SALT: string;
   ENC_KEY: string;
   OWNER_BOOTSTRAP_KEY: string;
+  /**
+   * Vercel rewrites 経由の信頼プロキシ検証用シークレット（本番は wrangler secret put、
+   * Vercel 側の OC_EDGE_SECRET と同値を設定する）。未設定・空文字なら x-oc-edge-secret を
+   * 信頼せず、従来どおり cf-connecting-ip を使う。
+   */
+  EDGE_PROXY_SECRET?: string;
   TURNSTILE_SECRET_KEY?: string;
   /** ローカル/E2E スタブ用の siteverify URL 上書き（未設定なら本番）。 */
   TURNSTILE_VERIFY_URL?: string;

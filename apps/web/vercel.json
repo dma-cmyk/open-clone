@@ -16,15 +16,54 @@
     },
     {
       "src": "/api/v1/(.*)",
-      "dest": "https://open-clone-api.dma-cmyk.workers.dev/v1/$1"
+      "dest": "https://open-clone-api.dma-cmyk.workers.dev/v1/$1",
+      "transforms": [
+        {
+          "type": "request.headers",
+          "op": "set",
+          "target": {
+            "key": "x-oc-edge-secret"
+          },
+          "args": "$OC_EDGE_SECRET",
+          "env": [
+            "OC_EDGE_SECRET"
+          ]
+        }
+      ]
     },
     {
       "src": "/api/(.*)",
-      "dest": "https://open-clone-api.dma-cmyk.workers.dev/v1/$1"
+      "dest": "https://open-clone-api.dma-cmyk.workers.dev/v1/$1",
+      "transforms": [
+        {
+          "type": "request.headers",
+          "op": "set",
+          "target": {
+            "key": "x-oc-edge-secret"
+          },
+          "args": "$OC_EDGE_SECRET",
+          "env": [
+            "OC_EDGE_SECRET"
+          ]
+        }
+      ]
     },
     {
       "src": "/compat/(.*)",
-      "dest": "https://open-clone-api.dma-cmyk.workers.dev/compat/$1"
+      "dest": "https://open-clone-api.dma-cmyk.workers.dev/compat/$1",
+      "transforms": [
+        {
+          "type": "request.headers",
+          "op": "set",
+          "target": {
+            "key": "x-oc-edge-secret"
+          },
+          "args": "$OC_EDGE_SECRET",
+          "env": [
+            "OC_EDGE_SECRET"
+          ]
+        }
+      ]
     },
     {
       "src": "/(.*)",

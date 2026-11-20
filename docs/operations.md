@@ -225,3 +225,42 @@ wrangler d1 execute open-clone-restore --remote --file backup-2026-11-08.sql
 | 個人情報・違法投稿 | 非表示 → 通報処理 → 必要なら削除 | owner |
 | 侵害の疑い | セッション全失効・秘密ローテーション | owner（インフラは Cloudflare 側） |
 | 無料枠枯渇 | §4.7 / 使用量削減 | owner（Paid 昇格判断） |
+
+## 8. Vercel 中継と利用者 IP（EDGE_PROXY_SECRET / OC_EDGE_SECRET）
+
+サイト（Vercel）の rewrites 経由で API（Cloudflare Workers）へ届くリクエストでは、`cf-connecting-ip` が Vercel の中継サーバーの IP になります。利用者の実 IP を引き継ぐため、`apps/web/vercel.json` の `/api/v1/(.*)`・`/api/(.*)`・`/compat/(.*)` ルートの `transforms` で `x-oc-edge-secret` ヘッダーを上書き（`set`）し、Worker 側で `EDGE_PROXY_SECRET` と時間一定比較で一致したときだけ `x-real-ip`（無ければ `x-forwarded-for` 先頭）を採用します。
+
+### 8.1 設定する値
+
+Workers 側と Vercel 側に**同じランダム値**（例: `openssl rand -hex 32`）を設定します。
+
+| 場所 | 変数名 | 用途 |
+|---|---|---|
+| Cloudflare Workers（secret） | `EDGE_PROXY_SECRET` | `x-oc-edge-secret` の照合キー（未設定・空なら `cf-connecting-ip` のみ使用） |
+| Vercel（Environment Variable / Production） | `OC_EDGE_SECRET` | `vercel.json` の `transforms` が `x-oc-edge-secret` へ設定する値 |
+
+### 8.2 本番に出す順番
+
+1. Worker 側に秘密値を登録する:
+   ```sh
+   cd apps/api
+   wrangler secret put EDGE_PROXY_SECRET
+   ```
+2. Worker をデプロイする（この時点では `x-oc-edge-secret` が届かないため、従来どおり `cf-connecting-ip` で動く）。
+3. Vercel プロジェクト設定（Environment Variables）に `OC_EDGE_SECRET`（手順 1 と同じ値）を追加してもらう。
+4. `apps/web/vercel.json` を含む変更を `main` に push する（Vercel が再デプロイされ、中継時に `x-oc-edge-secret` が付与される）。
+
+> **注意**: 秘密値をローテーションする途中で片方だけ更新すると、一致しなくなるため一時的に `cf-connecting-ip` 扱いになります。
+
+### 8.3 効いているかの確かめ方
+
+サイト経由で検索 API を連続 **31 回** 送り、最初の 30 回が `200`、**31 回目で `429`（`RATE_LIMITED`）** が返ることを確認します（`RATE_LIMITS.readSearch` の 30 回/分/IP が利用者ごとの IP で数えられている証拠）。
+
+```sh
+for i in $(seq 1 31); do
+  code=$(curl -sS -o /dev/null -w '%{http_code}' "https://<web-domain>/api/v1/search?q=test&type=thread")
+  printf '%02d: %s\n' "$i" "$code"
+done
+# 01..30: 200
+# 31: 429
+```

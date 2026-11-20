@@ -41,17 +41,40 @@ function loadScript(onReady: () => void, onError: () => void): void {
   }
   const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
   if (existing) {
-    existing.addEventListener("load", onReady, { once: true });
-    existing.addEventListener("error", onError, { once: true });
-    return;
+    if (existing.dataset.turnstileState === "error") {
+      existing.remove();
+    } else if (existing.dataset.turnstileState === "loaded") {
+      onError();
+      return;
+    } else {
+      existing.addEventListener("load", onReady, { once: true });
+      existing.addEventListener("error", onError, { once: true });
+      return;
+    }
   }
   const script = document.createElement("script");
   script.id = SCRIPT_ID;
   script.src = SCRIPT_SRC;
   script.async = true;
   script.defer = true;
-  script.addEventListener("load", onReady, { once: true });
-  script.addEventListener("error", onError, { once: true });
+  script.dataset.turnstileState = "loading";
+  script.addEventListener(
+    "load",
+    () => {
+      script.dataset.turnstileState = "loaded";
+      onReady();
+    },
+    { once: true },
+  );
+  script.addEventListener(
+    "error",
+    () => {
+      script.dataset.turnstileState = "error";
+      script.remove();
+      onError();
+    },
+    { once: true },
+  );
   document.head.appendChild(script);
 }
 
