@@ -36,10 +36,12 @@ import {
 import {
   actorFrom,
   assertBoardStaff,
+  auditActorType,
   canReadBoardContent,
   hasBoardStaff,
   isSiteAdmin,
   resolveManageableBoard,
+  viewerStaffLevel,
 } from "../services/board/access";
 import { assertReadRateLimit } from "../lib/do";
 import { createThreadInternal } from "../lib/pipeline";
@@ -185,7 +187,8 @@ app.get("/:slug", async (c) => {
   // 削除板は一般の閲覧者には「無い板」として 404（板スタッフ・サイト管理者だけが見える。K2）。
   // 板そのものの公開 API をこの判定に揃え、スレ単位の読み取り API も同じ判定を使う。
   if (!(await canReadBoardContent(db, actor, row))) throw ApiError.notFound("板が見つかりません");
-  const canManage = row.status === "active" ? await hasBoardStaff(db, actor, row.id, "admin") : false;
+  const staffLevel = await viewerStaffLevel(db, actor, row);
+  const canManage = staffLevel === "admin";
 
   const staff = await db
     .prepare(
@@ -223,6 +226,7 @@ app.get("/:slug", async (c) => {
       },
       staff: items,
       canManage,
+      staffLevel,
       settings: boardSettingsOf(row),
       design: boardDesignOf(row),
     }),
@@ -589,17 +593,27 @@ app.delete("/:slug/bans/:id", requireAuth, async (c) => {
   const row = await resolveBoardRow(db, c.req.param("slug"));
   if (!row) throw ApiError.notFound("板が見つかりません");
   const ban = await db
-    .prepare("SELECT board_id FROM board_bans WHERE id = ?")
+    .prepare("SELECT id, board_id, identity_hash, kind FROM board_bans WHERE id = ?")
     .bind(c.req.param("id"))
-    .first<{ board_id: number | null }>();
+    .first<{ id: string; board_id: number | null; identity_hash: string; kind: string }>();
   if (!ban) throw ApiError.notFound("アクセス禁止が見つかりません");
   if (ban.board_id === null) {
     if (!isSiteAdmin(actor)) throw ApiError.forbidden("サイト全体の解除は owner / special_admin のみです");
   } else {
     const { board } = await resolveManageableBoard(db, actor, row.slug, "moderator");
     await assertBoardActive(board);
+    if (ban.board_id !== board.id) {
+      throw ApiError.notFound("アクセス禁止が見つかりません");
+    }
   }
-  await db.prepare("DELETE FROM board_bans WHERE id = ?").bind(c.req.param("id")).run();
+  await db.prepare("DELETE FROM board_bans WHERE id = ?").bind(ban.id).run();
+  await writeAudit(db, {
+    actorType: auditActorType(actor),
+    actorId: actor.accountId,
+    action: "ban.lift",
+    target: ban.identity_hash,
+    detail: { banId: ban.id, boardId: ban.board_id, kind: ban.kind },
+  });
   return c.json(ok({ removed: true }));
 });
 

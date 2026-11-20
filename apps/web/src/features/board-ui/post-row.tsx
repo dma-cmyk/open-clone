@@ -14,6 +14,8 @@ interface PostRowProps {
   showImages: boolean;
   aa: boolean;
   canManage: boolean;
+  canHide?: boolean;
+  canDelete?: boolean;
   highlight?: boolean;
   isNew?: boolean;
   onQuote: (num: number) => void;
@@ -106,6 +108,8 @@ export function PostRow({
   showImages,
   aa,
   canManage,
+  canHide,
+  canDelete,
   highlight,
   isNew,
   onQuote,
@@ -222,15 +226,15 @@ export function PostRow({
             削除
           </button>
         ) : null}
-        {canManage ? (
-          <>
-            <button type="button" onClick={() => onDelete(post, "hide")} title="全員から見えなくなります（管理画面から戻せます）">
-              全員から非表示
-            </button>
-            <button type="button" onClick={() => onDelete(post, "delete")}>
-              削除
-            </button>
-          </>
+        {(canHide ?? canManage) ? (
+          <button type="button" onClick={() => onDelete(post, "hide")} title="全員から見えなくなります（管理画面から戻せます）">
+            全員から非表示
+          </button>
+        ) : null}
+        {(canDelete ?? canManage) ? (
+          <button type="button" onClick={() => onDelete(post, "delete")}>
+            削除
+          </button>
         ) : null}
         <PluginSlot
           slot="post-actions"

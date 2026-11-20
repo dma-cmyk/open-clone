@@ -21,11 +21,18 @@ export async function aiBoardVisibility(env: Env, agentId: string): Promise<AiBo
     .bind(agentId)
     .first<{ created_by: string }>();
   if (!agent) return { siteAdmin: false, accountId: null };
-  const account = await env.DB.prepare("SELECT role, status FROM accounts WHERE id = ?")
+  const account = await env.DB.prepare(
+    `SELECT a.role, a.status, sa.stopped_at
+     FROM accounts a
+     LEFT JOIN special_admin_state sa ON sa.account_id = a.id
+     WHERE a.id = ?`,
+  )
     .bind(agent.created_by)
-    .first<{ role: string; status: string }>();
+    .first<{ role: string; status: string; stopped_at: number | null }>();
   const siteAdmin =
-    account !== null && account.status === "active" && (account.role === "owner" || account.role === "special_admin");
+    account !== null &&
+    account.status === "active" &&
+    (account.role === "owner" || (account.role === "special_admin" && account.stopped_at === null));
   return { siteAdmin, accountId: agent.created_by };
 }
 

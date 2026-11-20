@@ -3,9 +3,15 @@
 // DESIGN §5.4 のサーバ側強制はこのミドルウェアで行う（UI 制御は補助）。
 
 import { createMiddleware } from "hono/factory";
-import { ApiError, canAny, rolesOf, type GlobalRole, type PermissionAction, type CanOptions } from "shared";
+import { ApiError, canAny, rolesOf, type AuthAccount, type GlobalRole, type PermissionAction, type CanOptions } from "shared";
 import type { AppEnv } from "../env";
 import { getReqCtx } from "../context";
+
+function effectiveGlobalRole(account: AuthAccount | null | undefined): GlobalRole | undefined {
+  if (!account) return undefined;
+  if (account.role === "special_admin" && account.specialAdminStopped) return "user";
+  return account.role;
+}
 
 /** このファイルが返すミドルウェアの型（AppEnv を束縛した Hono ミドルウェア）。 */
 export type AppMiddleware = ReturnType<typeof createMiddleware<AppEnv>>;
@@ -24,7 +30,8 @@ export function requireRole(...roles: GlobalRole[]): AppMiddleware {
   return createMiddleware<AppEnv>(async (c, next) => {
     const session = getReqCtx(c).session;
     if (!session) throw ApiError.unauthorized();
-    if (!roles.includes(session.account.role)) throw ApiError.forbidden();
+    const role = effectiveGlobalRole(session.account)!;
+    if (!roles.includes(role)) throw ApiError.forbidden();
     await next();
   });
 }
@@ -45,9 +52,10 @@ export function requireBoardStaff(
     const ctx = getReqCtx(c);
     if (!ctx.session) throw ApiError.unauthorized();
     const account = ctx.session.account;
+    const role = effectiveGlobalRole(account);
 
     // owner / special_admin は全板でスタッフ相当
-    if (account.role === "owner" || account.role === "special_admin") {
+    if (role === "owner" || role === "special_admin") {
       await next();
       return;
     }
@@ -70,7 +78,7 @@ export function requireBoardStaff(
 export function requireAction(action: PermissionAction, options: CanOptions = {}): AppMiddleware {
   return createMiddleware<AppEnv>(async (c, next) => {
     const roles = rolesOf({
-      globalRole: getReqCtx(c).session?.account.role,
+      globalRole: effectiveGlobalRole(getReqCtx(c).session?.account),
       isAiAgent: false, // AI 用は WP5 の policy engine が別途評価
     });
     if (!canAny(roles, action, options)) throw ApiError.forbidden();

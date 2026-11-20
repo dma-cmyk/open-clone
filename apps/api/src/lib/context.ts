@@ -120,8 +120,11 @@ export const requestContext = createMiddleware<AppEnv>(async (c, next) => {
   if (sessionToken) {
     const tokenHash = await sha256Hex(sessionToken);
     const row = await env.DB.prepare(
-      `SELECT s.token_hash, s.expires_at, a.id, a.name, a.email, a.role, a.status
-       FROM sessions s JOIN accounts a ON a.id = s.account_id
+      `SELECT s.token_hash, s.expires_at, a.id, a.name, a.email, a.role, a.status,
+              sa.stopped_at AS special_admin_stopped_at
+       FROM sessions s
+       JOIN accounts a ON a.id = s.account_id
+       LEFT JOIN special_admin_state sa ON sa.account_id = a.id
        WHERE s.token_hash = ? AND s.expires_at > ?`,
     )
       .bind(tokenHash, now)
@@ -133,8 +136,11 @@ export const requestContext = createMiddleware<AppEnv>(async (c, next) => {
         email: string | null;
         role: AuthAccount["role"];
         status: AuthAccount["status"];
+        special_admin_stopped_at: number | null;
       }>();
     if (row) {
+      const specialAdminStopped =
+        row.role === "special_admin" && row.special_admin_stopped_at !== null;
       session = {
         tokenHash,
         expiresAt: row.expires_at,
@@ -142,8 +148,11 @@ export const requestContext = createMiddleware<AppEnv>(async (c, next) => {
           id: row.id,
           name: row.name,
           email: row.email,
-          role: row.role,
+          // 停止中の特別管理人は入口で権限を外し、全認可判定で一般利用者相当として扱う（F3）。
+          // 表示用（/auth/session・/accounts/me）と /admin の 403 reason 維持のためフラグだけ残す。
+          role: specialAdminStopped ? "user" : row.role,
           status: row.status,
+          ...(specialAdminStopped ? { specialAdminStopped: true } : {}),
         },
       };
       if (shouldTouchSession(row.expires_at, now)) {

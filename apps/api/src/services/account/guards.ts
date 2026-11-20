@@ -21,6 +21,14 @@ export const requireAdminActive = createMiddleware<AppEnv>(async (c, next) => {
     await next();
     return;
   }
+  if (session.account.specialAdminStopped) {
+    const stop = await getSpecialAdminStop(c.env.DB, session.account.id);
+    throw new ApiError(403, ErrorCode.FORBIDDEN, "特別管理人権限は停止されています", {
+      reason: "special_admin_stopped",
+      stoppedAt: stop?.stoppedAt ?? null,
+      note: stop?.reason ?? null,
+    });
+  }
   if (role !== "special_admin") throw ApiError.forbidden("管理者権限が必要です");
   const stop = await getSpecialAdminStop(c.env.DB, session.account.id);
   if (stop) {

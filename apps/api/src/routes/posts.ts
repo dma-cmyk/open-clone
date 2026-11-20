@@ -320,6 +320,13 @@ app.delete("/:id", async (c) => {
     throw ApiError.forbidden("レス削除は副管理人以上が必要です（モデレーターは非表示のみ）");
   }
   await deletePost(row.id, { env: c.env, ctx: c.executionCtx });
+  await writeAudit(db, {
+    actorType: auditActorType(actor),
+    actorId: actor.accountId,
+    action: "post.delete",
+    target: String(row.id),
+    detail: { postId: row.id, boardId: row.board_id, threadId: row.thread_id, num: row.num, source: "post_menu" },
+  });
   return c.json(ok({ postId: row.id, deleted: true }));
 });
 

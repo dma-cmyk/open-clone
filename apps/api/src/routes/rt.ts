@@ -34,10 +34,18 @@ async function assertChannelReadable(
   const board = await getBoardRow(env.DB, boardId);
   let actor: AccessActor = { accountId: null, role: null };
   if (accountId !== null) {
-    const account = await env.DB.prepare("SELECT role, status FROM accounts WHERE id = ?")
+    const account = await env.DB.prepare(
+      `SELECT a.role, a.status, sa.stopped_at
+       FROM accounts a
+       LEFT JOIN special_admin_state sa ON sa.account_id = a.id
+       WHERE a.id = ?`,
+    )
       .bind(accountId)
-      .first<{ role: "owner" | "special_admin" | "user"; status: string }>();
-    if (account && account.status === "active") actor = { accountId, role: account.role };
+      .first<{ role: "owner" | "special_admin" | "user"; status: string; stopped_at: number | null }>();
+    if (account && account.status === "active") {
+      const role = account.role === "special_admin" && account.stopped_at !== null ? "user" : account.role;
+      actor = { accountId, role };
+    }
   }
   if (!board || !(await canReadBoardContent(env.DB, actor, board))) {
     throw ApiError.notFound("チャンネルが見つかりません");
